@@ -5,13 +5,12 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "scheme": "declutterly",
-    "userInterfaceStyle": "automatic",
+    "userInterfaceStyle": "dark",
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.declutterly.app",
       "appleTeamId": "T2A8YY9YDW",
-      "icon": "./assets/icon.icon",
       "infoPlist": {
         "NSCameraUsageDescription": "Declutterly needs camera access to capture photos of your spaces for AI analysis",
         "NSPhotoLibraryUsageDescription": "Declutterly needs photo library access to save and load room photos"
@@ -45,7 +44,6 @@
       "expo-font",
       "expo-web-browser",
       "expo-video",
-      "expo-image",
       [
         "expo-camera",
         {

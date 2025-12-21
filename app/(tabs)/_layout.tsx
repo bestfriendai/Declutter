@@ -1,77 +1,66 @@
 /**
  * Declutterly - Tab Layout
- * Main tab navigation with Home, Progress, and Profile tabs
+ * iOS 26 Native Liquid Glass Tab Bar
  */
 
-import { Colors } from '@/constants/Colors';
-import { Tabs } from 'expo-router';
-import React from 'react';
-import { useColorScheme, Platform } from 'react-native';
+import { Platform, DynamicColorIOS } from 'react-native';
+import { NativeTabs, Icon, Label } from 'expo-router/unstable-native-tabs';
 
 export default function TabLayout() {
-  const rawColorScheme = useColorScheme();
-  const colorScheme = rawColorScheme === 'dark' ? 'dark' : 'light';
-  const colors = Colors[colorScheme];
+  // Dynamic colors for Liquid Glass - adapts to glass background
+  const tintColor = Platform.OS === 'ios'
+    ? DynamicColorIOS({ dark: '#FFFFFF', light: '#000000' })
+    : '#6366F1';
+
+  const labelColor = Platform.OS === 'ios'
+    ? DynamicColorIOS({ dark: 'rgba(255,255,255,0.8)', light: 'rgba(0,0,0,0.8)' })
+    : '#6366F1';
 
   return (
-    <Tabs
-      screenOptions={{
-        tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: colors.tabIconDefault,
-        tabBarStyle: {
-          backgroundColor: colors.card,
-          borderTopColor: colors.border,
-          ...Platform.select({
-            ios: {
-              position: 'absolute',
-            },
-          }),
-        },
-        headerShown: false,
+    <NativeTabs
+      tintColor={tintColor}
+      labelStyle={{
+        color: labelColor,
       }}
     >
-      <Tabs.Screen
+      <NativeTabs.Trigger
         name="index"
         options={{
           title: 'Home',
-          tabBarIcon: ({ color, focused }) => (
-            <TabBarIcon name={focused ? 'house.fill' : 'house'} color={color} />
-          ),
         }}
-      />
-      <Tabs.Screen
+      >
+        <Icon
+          sf={{ default: 'house', selected: 'house.fill' }}
+          selectedColor={tintColor}
+        />
+        <Label>Home</Label>
+      </NativeTabs.Trigger>
+
+      <NativeTabs.Trigger
         name="progress"
         options={{
           title: 'Progress',
-          tabBarIcon: ({ color, focused }) => (
-            <TabBarIcon name={focused ? 'chart.bar.fill' : 'chart.bar'} color={color} />
-          ),
         }}
-      />
-      <Tabs.Screen
+      >
+        <Icon
+          sf={{ default: 'chart.bar', selected: 'chart.bar.fill' }}
+          selectedColor={tintColor}
+        />
+        <Label>Progress</Label>
+      </NativeTabs.Trigger>
+
+      <NativeTabs.Trigger
         name="profile"
         options={{
           title: 'Profile',
-          tabBarIcon: ({ color, focused }) => (
-            <TabBarIcon name={focused ? 'person.fill' : 'person'} color={color} />
-          ),
         }}
-      />
-    </Tabs>
-  );
-}
-
-// Simple SF Symbol icon component
-function TabBarIcon({ name, color }: { name: string; color: string }) {
-  // Using expo-symbols for iOS SF Symbols
-  const { SymbolView } = require('expo-symbols');
-
-  return (
-    <SymbolView
-      name={name}
-      size={24}
-      tintColor={color}
-      style={{ width: 28, height: 28 }}
-    />
+      >
+        <Icon
+          sf={{ default: 'person', selected: 'person.fill' }}
+          selectedColor={tintColor}
+        />
+        <Label>Profile</Label>
+      </NativeTabs.Trigger>
+    </NativeTabs>
   );
 }

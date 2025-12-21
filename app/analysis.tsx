@@ -1,53 +1,62 @@
 /**
  * Declutterly - Analysis Screen
- * AI analysis results and task breakdown
+ * Cinematic AI analysis with Apple TV style results reveal
  */
 
+import React, { useEffect, useState, useRef, useMemo } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  Pressable,
+  useColorScheme,
+  Dimensions,
+} from 'react-native';
+import Animated, {
+  FadeIn,
+  FadeInDown,
+  FadeInUp,
+  FadeInRight,
+  FadeOut,
+  SlideInUp,
+  SlideOutDown,
+  ZoomIn,
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  withTiming,
+  withSequence,
+  withDelay,
+  withRepeat,
+  Easing,
+  interpolate,
+  runOnJS,
+} from 'react-native-reanimated';
+import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Image } from 'expo-image';
+import { router, useLocalSearchParams } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as FileSystem from 'expo-file-system';
+import * as Haptics from 'expo-haptics';
+
 import { Colors, PriorityColors } from '@/constants/Colors';
+import { Typography } from '@/theme/typography';
 import { useDeclutter } from '@/context/DeclutterContext';
 import { analyzeRoomImage, analyzeProgress, getMotivation } from '@/services/gemini';
 import { AIAnalysisResult, CleaningTask } from '@/types/declutter';
-import {
-  Button,
-  Form,
-  Gauge,
-  Group,
-  Host,
-  HStack,
-  Section,
-  Spacer,
-  Text,
-  VStack,
-} from '@expo/ui/swift-ui';
-import {
-  buttonStyle,
-  controlSize,
-  foregroundStyle,
-  frame,
-  glassEffect,
-} from '@expo/ui/swift-ui/modifiers';
-import * as FileSystem from 'expo-file-system';
-import { Image } from 'expo-image';
-import { router, useLocalSearchParams } from 'expo-router';
-import React, { useEffect, useState, useRef } from 'react';
-import {
-  useColorScheme,
-  View,
-  StyleSheet,
-  ScrollView,
-  ActivityIndicator,
-  Animated,
-  Easing,
-  Dimensions,
-  Text as RNText,
-} from 'react-native';
+import { GlassCard } from '@/components/ui/GlassCard';
+import { SingleRing } from '@/components/ui/ActivityRings';
+import { useCardPress } from '@/hooks/useAnimatedPress';
 
-const { width } = Dimensions.get('window');
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 export default function AnalysisScreen() {
-  const rawColorScheme = useColorScheme();
-  const colorScheme = rawColorScheme === 'dark' ? 'dark' : 'light';
+  const colorScheme = useColorScheme() ?? 'dark';
   const colors = Colors[colorScheme];
+  const insets = useSafeAreaInsets();
   const { roomId, imageUri, mode } = useLocalSearchParams<{
     roomId: string;
     imageUri?: string;
@@ -72,74 +81,65 @@ export default function AnalysisScreen() {
   } | null>(null);
   const [motivation, setMotivation] = useState<string>('');
   const [loadingStage, setLoadingStage] = useState(0);
-
-  // Animation refs
-  const pulseAnim = useRef(new Animated.Value(1)).current;
-  const rotateAnim = useRef(new Animated.Value(0)).current;
-  const progressAnim = useRef(new Animated.Value(0)).current;
-  const fadeAnim = useRef(new Animated.Value(1)).current;
+  const [showResults, setShowResults] = useState(false);
 
   const room = rooms.find(r => r.id === roomId);
 
-  // Loading stages
+  // Animations
+  const scanProgress = useSharedValue(0);
+  const pulseScale = useSharedValue(1);
+  const glowOpacity = useSharedValue(0.3);
+
+  // Loading stages with emojis and descriptions
   const loadingStages = [
-    { emoji: '📷', text: 'Processing your photo...' },
-    { emoji: '🔍', text: 'Analyzing room layout...' },
-    { emoji: '🧹', text: 'Identifying clutter areas...' },
-    { emoji: '📋', text: 'Creating your personalized plan...' },
-    { emoji: '✨', text: 'Almost ready!' },
+    { emoji: '📷', title: 'Capturing', subtitle: 'Processing your photo...' },
+    { emoji: '🔍', title: 'Scanning', subtitle: 'Analyzing room layout...' },
+    { emoji: '🧠', title: 'Thinking', subtitle: 'AI identifying clutter...' },
+    { emoji: '📋', title: 'Planning', subtitle: 'Creating your tasks...' },
+    { emoji: '✨', title: 'Finishing', subtitle: 'Almost ready!' },
   ];
 
-  // Animate loading stages
+  // Animate loading
   useEffect(() => {
     if (isAnalyzing) {
-      // Pulse animation
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulseAnim, {
-            toValue: 1.1,
-            duration: 800,
-            useNativeDriver: true,
-          }),
-          Animated.timing(pulseAnim, {
-            toValue: 1,
-            duration: 800,
-            useNativeDriver: true,
-          }),
-        ])
-      ).start();
+      // Scan line animation
+      scanProgress.value = withRepeat(
+        withTiming(1, { duration: 2000, easing: Easing.inOut(Easing.ease) }),
+        -1,
+        true
+      );
 
-      // Rotate animation for scanning effect
-      Animated.loop(
-        Animated.timing(rotateAnim, {
-          toValue: 1,
-          duration: 3000,
-          easing: Easing.linear,
-          useNativeDriver: true,
-        })
-      ).start();
+      // Pulse animation
+      pulseScale.value = withRepeat(
+        withSequence(
+          withTiming(1.1, { duration: 800 }),
+          withTiming(1, { duration: 800 })
+        ),
+        -1
+      );
+
+      // Glow animation
+      glowOpacity.value = withRepeat(
+        withSequence(
+          withTiming(0.6, { duration: 1000 }),
+          withTiming(0.3, { duration: 1000 })
+        ),
+        -1
+      );
 
       // Progress through stages
       const stageInterval = setInterval(() => {
-        setLoadingStage(prev => {
-          const next = prev < loadingStages.length - 1 ? prev + 1 : prev;
-          Animated.timing(progressAnim, {
-            toValue: (next + 1) / loadingStages.length,
-            duration: 300,
-            useNativeDriver: false,
-          }).start();
-          return next;
-        });
-      }, 2000);
+        setLoadingStage(prev =>
+          prev < loadingStages.length - 1 ? prev + 1 : prev
+        );
+      }, 2500);
 
       return () => {
         clearInterval(stageInterval);
-        pulseAnim.setValue(1);
-        rotateAnim.setValue(0);
+        scanProgress.value = 0;
+        pulseScale.value = 1;
+        glowOpacity.value = 0.3;
       };
-    } else {
-      setLoadingStage(0);
-      progressAnim.setValue(0);
     }
   }, [isAnalyzing]);
 
@@ -151,23 +151,34 @@ export default function AnalysisScreen() {
     }
   }, [roomId, imageUri, mode]);
 
+  const scanLineStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: interpolate(scanProgress.value, [0, 1], [0, 300]) }],
+    opacity: interpolate(scanProgress.value, [0, 0.5, 1], [0.5, 1, 0.5]),
+  }));
+
+  const pulseStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: pulseScale.value }],
+  }));
+
+  const glowStyle = useAnimatedStyle(() => ({
+    opacity: glowOpacity.value,
+  }));
+
   const runAnalysis = async () => {
     if (!imageUri || !roomId) return;
 
     setAnalyzing(true);
     setAnalysisError(null);
+    setLoadingStage(0);
 
     try {
-      // Read image as base64
       const base64 = await FileSystem.readAsStringAsync(imageUri, {
         encoding: 'base64',
       });
 
-      // Get AI analysis
       const analysisResult = await analyzeRoomImage(base64);
       setResult(analysisResult);
 
-      // Update room with analysis results
       updateRoom(roomId, {
         messLevel: analysisResult.messLevel,
         aiSummary: analysisResult.summary,
@@ -175,14 +186,18 @@ export default function AnalysisScreen() {
         lastAnalyzedAt: new Date(),
       });
 
-      // Set tasks for the room
       setTasksForRoom(roomId, analysisResult.tasks);
 
-      // Get extra motivation
       const motivationalMessage = await getMotivation(
         `User just analyzed their ${room?.type || 'room'}. Mess level: ${analysisResult.messLevel}%`
       );
       setMotivation(motivationalMessage);
+
+      // Show results with animation delay
+      setTimeout(() => {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        setShowResults(true);
+      }, 500);
     } catch (error) {
       console.error('Analysis error:', error);
       setAnalysisError(
@@ -202,28 +217,22 @@ export default function AnalysisScreen() {
     setAnalysisError(null);
 
     try {
-      // Get before and latest photos
       const beforePhoto = room.photos.find(p => p.type === 'before') || room.photos[0];
       const latestPhoto = room.photos[room.photos.length - 1];
 
-      // Read images as base64
       const [beforeBase64, afterBase64] = await Promise.all([
-        FileSystem.readAsStringAsync(beforePhoto.uri, {
-          encoding: 'base64',
-        }),
-        FileSystem.readAsStringAsync(latestPhoto.uri, {
-          encoding: 'base64',
-        }),
+        FileSystem.readAsStringAsync(beforePhoto.uri, { encoding: 'base64' }),
+        FileSystem.readAsStringAsync(latestPhoto.uri, { encoding: 'base64' }),
       ]);
 
-      // Get progress analysis
       const progress = await analyzeProgress(beforeBase64, afterBase64);
       setProgressResult(progress);
 
-      // Update room progress
       updateRoom(roomId!, {
         currentProgress: Math.max(room.currentProgress, progress.progressPercentage),
       });
+
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (error) {
       console.error('Progress analysis error:', error);
       setAnalysisError(
@@ -237,10 +246,12 @@ export default function AnalysisScreen() {
   };
 
   const handleGoToRoom = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     router.replace(`/room/${roomId}`);
   };
 
   const handleRetry = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     if (mode === 'compare') {
       runProgressAnalysis();
     } else {
@@ -248,18 +259,13 @@ export default function AnalysisScreen() {
     }
   };
 
-  const rotateInterpolate = rotateAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['0deg', '360deg'],
-  });
-
-  // Loading state with image preview
+  // Cinematic Loading State
   if (isAnalyzing) {
     const currentStage = loadingStages[loadingStage];
 
     return (
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
-        {/* Image Preview with Scanning Effect */}
+      <View style={styles.container}>
+        {/* Full screen image with effects */}
         {imageUri && (
           <View style={styles.loadingImageContainer}>
             <Image
@@ -268,96 +274,106 @@ export default function AnalysisScreen() {
               contentFit="cover"
             />
 
-            {/* Scanning Overlay */}
-            <View style={styles.scanningOverlay}>
-              <Animated.View
-                style={[
-                  styles.scanLine,
-                  {
-                    transform: [
-                      {
-                        translateY: progressAnim.interpolate({
-                          inputRange: [0, 1],
-                          outputRange: [0, 300],
-                        }),
-                      },
-                    ],
-                  },
-                ]}
-              />
+            {/* Dark overlay with gradient */}
+            <LinearGradient
+              colors={['rgba(0,0,0,0.3)', 'rgba(0,0,0,0.5)', 'rgba(0,0,0,0.8)']}
+              style={StyleSheet.absoluteFill}
+            />
+
+            {/* Scanning effect */}
+            <View style={styles.scanContainer}>
+              {/* Animated scan line */}
+              <Animated.View style={[styles.scanLine, scanLineStyle]}>
+                <LinearGradient
+                  colors={['transparent', '#A78BFA', '#818CF8', 'transparent']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={StyleSheet.absoluteFill}
+                />
+              </Animated.View>
 
               {/* Corner brackets */}
-              <View style={[styles.scanCorner, styles.scanCornerTL]} />
-              <View style={[styles.scanCorner, styles.scanCornerTR]} />
-              <View style={[styles.scanCorner, styles.scanCornerBL]} />
-              <View style={[styles.scanCorner, styles.scanCornerBR]} />
-            </View>
+              <View style={[styles.corner, styles.cornerTL]} />
+              <View style={[styles.corner, styles.cornerTR]} />
+              <View style={[styles.corner, styles.cornerBL]} />
+              <View style={[styles.corner, styles.cornerBR]} />
 
-            {/* Gradient overlay */}
-            <View style={styles.gradientOverlay} />
+              {/* Glow effect */}
+              <Animated.View style={[styles.scanGlow, glowStyle]}>
+                <LinearGradient
+                  colors={['transparent', 'rgba(139, 92, 246, 0.3)', 'transparent']}
+                  style={StyleSheet.absoluteFill}
+                />
+              </Animated.View>
+            </View>
           </View>
         )}
 
-        {/* Loading Info Card */}
-        <View style={[styles.loadingCard, { backgroundColor: colors.card }]}>
-          <View style={styles.loadingHeader}>
-            <Animated.View
-              style={[
-                styles.loadingEmojiContainer,
-                { transform: [{ scale: pulseAnim }] },
-              ]}
-            >
-              <RNText style={styles.loadingEmoji}>{currentStage.emoji}</RNText>
+        {/* Loading card */}
+        <Animated.View
+          entering={SlideInUp.springify()}
+          style={[styles.loadingCard, { paddingBottom: insets.bottom + 20 }]}
+        >
+          <BlurView intensity={80} tint="dark" style={StyleSheet.absoluteFill} />
+
+          <View style={styles.loadingContent}>
+            {/* Stage emoji with pulse */}
+            <Animated.View style={[styles.stageEmojiContainer, pulseStyle]}>
+              <LinearGradient
+                colors={['rgba(139, 92, 246, 0.3)', 'rgba(59, 130, 246, 0.2)']}
+                style={styles.stageEmojiGradient}
+              />
+              <Text style={styles.stageEmoji}>{currentStage.emoji}</Text>
             </Animated.View>
-            <View style={styles.loadingTextContainer}>
-              <RNText style={[styles.loadingTitle, { color: colors.text }]}>
-                Analyzing your space...
-              </RNText>
-              <RNText style={[styles.loadingSubtitle, { color: colors.textSecondary }]}>
-                {currentStage.text}
-              </RNText>
+
+            {/* Stage text */}
+            <Text style={[Typography.title2, { color: '#FFFFFF', marginTop: 16 }]}>
+              {currentStage.title}
+            </Text>
+            <Text style={[Typography.body, { color: 'rgba(255,255,255,0.7)', marginTop: 4 }]}>
+              {currentStage.subtitle}
+            </Text>
+
+            {/* Progress indicators */}
+            <View style={styles.stageIndicators}>
+              {loadingStages.map((_, index) => (
+                <View
+                  key={index}
+                  style={[
+                    styles.stageIndicator,
+                    {
+                      backgroundColor: index <= loadingStage
+                        ? '#A78BFA'
+                        : 'rgba(255,255,255,0.2)',
+                      width: index <= loadingStage ? 24 : 8,
+                    },
+                  ]}
+                />
+              ))}
+            </View>
+
+            {/* Tip */}
+            <View style={styles.tipBadge}>
+              <Text style={[Typography.caption1, { color: 'rgba(255,255,255,0.8)' }]}>
+                💡 The more visible your room, the better the analysis!
+              </Text>
             </View>
           </View>
+        </Animated.View>
 
-          {/* Progress Bar */}
-          <View style={[styles.progressBarContainer, { backgroundColor: colors.border }]}>
-            <Animated.View
-              style={[
-                styles.progressBar,
-                {
-                  backgroundColor: colors.primary,
-                  width: progressAnim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: ['0%', '100%'],
-                  }),
-                },
-              ]}
-            />
-          </View>
-
-          {/* Stage Indicators */}
-          <View style={styles.stageIndicators}>
-            {loadingStages.map((stage, index) => (
-              <View
-                key={index}
-                style={[
-                  styles.stageIndicator,
-                  {
-                    backgroundColor:
-                      index <= loadingStage ? colors.primary : colors.border,
-                  },
-                ]}
-              />
-            ))}
-          </View>
-
-          {/* Tips */}
-          <View style={[styles.tipContainer, { backgroundColor: colors.primary + '15' }]}>
-            <RNText style={[styles.tipText, { color: colors.primary }]}>
-              💡 Tip: The more of your room visible, the better our AI can help!
-            </RNText>
-          </View>
-        </View>
+        {/* Back button */}
+        <Animated.View
+          entering={FadeIn.delay(200)}
+          style={[styles.backButton, { top: insets.top + 12 }]}
+        >
+          <Pressable
+            onPress={() => router.back()}
+            style={styles.glassButton}
+          >
+            <BlurView intensity={60} tint="dark" style={StyleSheet.absoluteFill} />
+            <Text style={{ color: '#FFFFFF', fontSize: 18 }}>✕</Text>
+          </Pressable>
+        </Animated.View>
       </View>
     );
   }
@@ -365,464 +381,740 @@ export default function AnalysisScreen() {
   // Error state
   if (analysisError) {
     return (
-      <Host style={styles.container}>
-        <Form>
-          <Section title="">
-            <VStack spacing={24} alignment="center">
-              <Text size={48}>😕</Text>
-              <Text size={20} weight="semibold">Oops!</Text>
-              <Text
-                size={14}
-                modifiers={[foregroundStyle(colors.textSecondary)]}
-              >
-                {analysisError}
-              </Text>
-              <HStack spacing={12}>
-                <Button
-                  label="Try Again"
-                  onPress={handleRetry}
-                  modifiers={[buttonStyle('borderedProminent')]}
-                />
-                <Button
-                  label="Go Back"
-                  onPress={() => router.back()}
-                  modifiers={[buttonStyle('bordered')]}
-                />
-              </HStack>
-            </VStack>
-          </Section>
-        </Form>
-      </Host>
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <LinearGradient
+          colors={colorScheme === 'dark'
+            ? ['#1a1a2e', '#16213e', '#0f3460']
+            : ['#f8f9fa', '#e9ecef', '#dee2e6']}
+          style={StyleSheet.absoluteFill}
+        />
+
+        <Animated.View
+          entering={ZoomIn.springify()}
+          style={styles.errorContent}
+        >
+          <Text style={styles.errorEmoji}>😕</Text>
+          <Text style={[Typography.title1, { color: colors.text, marginTop: 20 }]}>
+            Oops!
+          </Text>
+          <Text style={[Typography.body, { color: colors.textSecondary, textAlign: 'center', marginTop: 8, maxWidth: 280 }]}>
+            {analysisError}
+          </Text>
+
+          <View style={styles.errorButtons}>
+            <Pressable
+              onPress={handleRetry}
+              style={({ pressed }) => [styles.primaryButton, { opacity: pressed ? 0.8 : 1 }]}
+            >
+              <LinearGradient
+                colors={[...colors.gradientPrimary]}
+                style={StyleSheet.absoluteFill}
+              />
+              <Text style={[Typography.headline, { color: '#FFFFFF' }]}>Try Again</Text>
+            </Pressable>
+
+            <Pressable
+              onPress={() => router.back()}
+              style={({ pressed }) => [styles.secondaryButton, { opacity: pressed ? 0.8 : 1 }]}
+            >
+              <Text style={[Typography.body, { color: colors.textSecondary }]}>Go Back</Text>
+            </Pressable>
+          </View>
+        </Animated.View>
+      </View>
     );
   }
 
-  // Progress comparison view
+  // Progress comparison results
   if (mode === 'compare' && progressResult) {
     return (
-      <Host style={styles.container}>
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
         <ScrollView
           style={styles.scrollView}
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[
+            styles.scrollContent,
+            { paddingTop: insets.top + 60, paddingBottom: insets.bottom + 100 },
+          ]}
+          showsVerticalScrollIndicator={false}
         >
-          <Form>
-            <Section title="">
-              <HStack>
-                <Button
-                  label="← Back"
-                  onPress={() => router.back()}
-                  modifiers={[buttonStyle('plain')]}
-                />
-              </HStack>
-            </Section>
-
-            <Section title="">
-              <VStack spacing={16} alignment="center">
-                <Text size={48}>🎉</Text>
-                <Text size={24} weight="bold">Great Progress!</Text>
-              </VStack>
-            </Section>
-
-            {/* Progress gauge */}
-            <Section title="Progress Made">
-              <VStack spacing={12} alignment="center">
-                <Gauge
-                  current={{ value: progressResult.progressPercentage / 100 }}
-                  type="circular"
-                  modifiers={[frame({ width: 150, height: 150 })]}
-                />
-                <Text size={36} weight="bold">{progressResult.progressPercentage}%</Text>
-                <Text modifiers={[foregroundStyle(colors.textSecondary)]}>
-                  improvement detected
-                </Text>
-              </VStack>
-            </Section>
-
-            {/* What was done */}
-            {progressResult.completedTasks.length > 0 && (
-              <Section title="✅ What You Accomplished">
-                {progressResult.completedTasks.map((task, i) => (
-                  <HStack key={i} spacing={8}>
-                    <Text>✓</Text>
-                    <Text>{task}</Text>
-                  </HStack>
-                ))}
-              </Section>
-            )}
-
-            {/* What remains */}
-            {progressResult.remainingTasks.length > 0 && (
-              <Section title="📋 Still To Do">
-                {progressResult.remainingTasks.map((task, i) => (
-                  <HStack key={i} spacing={8}>
-                    <Text>•</Text>
-                    <Text>{task}</Text>
-                  </HStack>
-                ))}
-              </Section>
-            )}
-
-            {/* Encouragement */}
-            <Section title="">
-              <Group
-                modifiers={[
-                  glassEffect({ glass: { variant: 'regular', interactive: false } }),
-                  frame({ minHeight: 80 }),
-                ]}
-              >
-                <Text size={16} weight="medium">
-                  {progressResult.encouragement}
-                </Text>
-              </Group>
-            </Section>
-
-            <Section title="">
-              <Button
-                label="Continue Cleaning"
-                onPress={handleGoToRoom}
-                modifiers={[
-                  buttonStyle('borderedProminent'),
-                  controlSize('large'),
-                  frame({ maxWidth: 400 }),
-                ]}
+          {/* Hero section */}
+          <Animated.View entering={FadeInDown.delay(100).springify()}>
+            <GlassCard variant="hero" style={styles.progressHero}>
+              <LinearGradient
+                colors={['rgba(34, 197, 94, 0.3)', 'rgba(59, 130, 246, 0.2)']}
+                style={StyleSheet.absoluteFill}
               />
-            </Section>
-          </Form>
+              <Text style={styles.heroEmoji}>🎉</Text>
+              <Text style={[Typography.largeTitle, { color: '#FFFFFF', marginTop: 12 }]}>
+                Great Progress!
+              </Text>
+
+              <View style={styles.progressRingContainer}>
+                <SingleRing
+                  progress={progressResult.progressPercentage}
+                  size={140}
+                  strokeWidth={12}
+                  color="#22C55E"
+                  backgroundColor="rgba(255,255,255,0.1)"
+                />
+                <View style={styles.progressRingCenter}>
+                  <Text style={[Typography.display1, { color: '#FFFFFF' }]}>
+                    {progressResult.progressPercentage}%
+                  </Text>
+                  <Text style={[Typography.caption1, { color: 'rgba(255,255,255,0.7)' }]}>
+                    improvement
+                  </Text>
+                </View>
+              </View>
+            </GlassCard>
+          </Animated.View>
+
+          {/* Completed tasks */}
+          {progressResult.completedTasks.length > 0 && (
+            <Animated.View entering={FadeInDown.delay(200).springify()} style={styles.section}>
+              <Text style={[Typography.title3, { color: colors.text, marginBottom: 12 }]}>
+                ✅ What You Accomplished
+              </Text>
+              <GlassCard style={styles.tasksList}>
+                {progressResult.completedTasks.map((task, i) => (
+                  <Animated.View
+                    key={i}
+                    entering={FadeInRight.delay(i * 50)}
+                    style={styles.completedTask}
+                  >
+                    <View style={styles.taskCheckmark}>
+                      <Text style={{ color: '#22C55E' }}>✓</Text>
+                    </View>
+                    <Text style={[Typography.body, { color: colors.text, flex: 1 }]}>
+                      {task}
+                    </Text>
+                  </Animated.View>
+                ))}
+              </GlassCard>
+            </Animated.View>
+          )}
+
+          {/* Remaining tasks */}
+          {progressResult.remainingTasks.length > 0 && (
+            <Animated.View entering={FadeInDown.delay(300).springify()} style={styles.section}>
+              <Text style={[Typography.title3, { color: colors.text, marginBottom: 12 }]}>
+                📋 Still To Do
+              </Text>
+              <GlassCard style={styles.tasksList}>
+                {progressResult.remainingTasks.map((task, i) => (
+                  <View key={i} style={styles.remainingTask}>
+                    <View style={styles.taskBullet} />
+                    <Text style={[Typography.body, { color: colors.textSecondary, flex: 1 }]}>
+                      {task}
+                    </Text>
+                  </View>
+                ))}
+              </GlassCard>
+            </Animated.View>
+          )}
+
+          {/* Encouragement */}
+          <Animated.View entering={FadeInDown.delay(400).springify()} style={styles.section}>
+            <GlassCard variant="elevated" style={styles.encouragementCard}>
+              <Text style={styles.encouragementEmoji}>💪</Text>
+              <Text style={[Typography.body, { color: colors.text, textAlign: 'center', marginTop: 12 }]}>
+                {progressResult.encouragement}
+              </Text>
+            </GlassCard>
+          </Animated.View>
+
+          {/* Action button */}
+          <Animated.View entering={FadeInUp.delay(500).springify()} style={styles.actionSection}>
+            <Pressable
+              onPress={handleGoToRoom}
+              style={({ pressed }) => [styles.actionButton, { opacity: pressed ? 0.9 : 1 }]}
+            >
+              <LinearGradient
+                colors={[...colors.gradientPrimary]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={StyleSheet.absoluteFill}
+              />
+              <Text style={[Typography.headline, { color: '#FFFFFF' }]}>
+                Continue Cleaning
+              </Text>
+            </Pressable>
+          </Animated.View>
         </ScrollView>
-      </Host>
+
+        {/* Back button */}
+        <Animated.View
+          entering={FadeIn}
+          style={[styles.backButton, { top: insets.top + 12 }]}
+        >
+          <Pressable onPress={() => router.back()} style={styles.glassButtonDark}>
+            <BlurView intensity={60} tint={colorScheme} style={StyleSheet.absoluteFill} />
+            <Text style={{ color: colors.text }}>← Back</Text>
+          </Pressable>
+        </Animated.View>
+      </View>
     );
   }
 
-  // Analysis results view
+  // Analysis results
   if (result) {
     const totalTime = result.tasks.reduce((acc, t) => acc + t.estimatedMinutes, 0);
+    const hours = Math.floor(totalTime / 60);
+    const minutes = totalTime % 60;
+    const timeString = hours > 0 ? `${hours}h ${minutes}m` : `${minutes} min`;
 
     return (
-      <Host style={styles.container}>
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
         <ScrollView
           style={styles.scrollView}
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[
+            styles.scrollContent,
+            { paddingTop: insets.top + 60, paddingBottom: insets.bottom + 100 },
+          ]}
+          showsVerticalScrollIndicator={false}
         >
-          <Form>
-            <Section title="">
-              <HStack>
-                <Button
-                  label="← Back"
-                  onPress={() => router.back()}
-                  modifiers={[buttonStyle('plain')]}
+          {/* Hero with image preview */}
+          <Animated.View entering={FadeInDown.delay(100).springify()}>
+            <View style={styles.resultHero}>
+              {imageUri && (
+                <Image
+                  source={{ uri: imageUri }}
+                  style={styles.resultHeroImage}
+                  contentFit="cover"
                 />
-              </HStack>
-            </Section>
+              )}
+              <LinearGradient
+                colors={['transparent', 'rgba(0,0,0,0.8)']}
+                style={styles.resultHeroGradient}
+              />
+              <View style={styles.resultHeroContent}>
+                <Text style={styles.resultEmoji}>✨</Text>
+                <Text style={[Typography.largeTitle, { color: '#FFFFFF' }]}>
+                  Analysis Complete!
+                </Text>
+              </View>
+            </View>
+          </Animated.View>
 
-            {/* Header */}
-            <Section title="">
-              <VStack spacing={16} alignment="center">
-                <Text size={48}>✨</Text>
-                <Text size={24} weight="bold">Analysis Complete!</Text>
-              </VStack>
-            </Section>
+          {/* Stats row */}
+          <Animated.View entering={FadeInDown.delay(200).springify()} style={styles.statsRow}>
+            <View style={styles.statItem}>
+              <SingleRing
+                progress={100 - result.messLevel}
+                size={80}
+                strokeWidth={8}
+                color={result.messLevel > 70 ? '#EF4444' : result.messLevel > 40 ? '#F59E0B' : '#22C55E'}
+                backgroundColor={colorScheme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'}
+              />
+              <View style={styles.statCenter}>
+                <Text style={[Typography.title2, { color: colors.text }]}>
+                  {result.messLevel}%
+                </Text>
+              </View>
+              <Text style={[Typography.caption1, { color: colors.textSecondary, marginTop: 8 }]}>
+                Clutter Level
+              </Text>
+            </View>
 
-            {/* Mess Level */}
-            <Section title="Current State">
-              <HStack spacing={16}>
-                <VStack spacing={4} alignment="center">
-                  <Gauge
-                    current={{ value: result.messLevel / 100 }}
-                    type="circular"
-                    modifiers={[frame({ width: 100, height: 100 })]}
-                  />
-                  <Text size={12} modifiers={[foregroundStyle(colors.textSecondary)]}>
-                    Clutter Level
-                  </Text>
-                </VStack>
+            <View style={styles.statItem}>
+              <View style={styles.statCircle}>
+                <Text style={styles.statNumber}>{result.tasks.length}</Text>
+              </View>
+              <Text style={[Typography.caption1, { color: colors.textSecondary, marginTop: 8 }]}>
+                Tasks
+              </Text>
+            </View>
 
-                <VStack spacing={8} alignment="leading">
-                  <Text size={14}>{result.summary}</Text>
-                  <HStack spacing={4}>
-                    <Text size={13} modifiers={[foregroundStyle(colors.primary)]}>
-                      ⏱️ ~{totalTime} min total
-                    </Text>
-                  </HStack>
-                </VStack>
-              </HStack>
-            </Section>
+            <View style={styles.statItem}>
+              <View style={styles.statCircle}>
+                <Text style={styles.statTime}>{timeString}</Text>
+              </View>
+              <Text style={[Typography.caption1, { color: colors.textSecondary, marginTop: 8 }]}>
+                Est. Time
+              </Text>
+            </View>
+          </Animated.View>
 
-            {/* Quick Wins */}
-            {result.quickWins.length > 0 && (
-              <Section title="⚡ Quick Wins (2 min each)">
-                {result.quickWins.slice(0, 3).map((win, i) => (
-                  <HStack key={i} spacing={8}>
-                    <Text>•</Text>
-                    <Text>{win}</Text>
-                  </HStack>
+          {/* Summary */}
+          <Animated.View entering={FadeInDown.delay(300).springify()} style={styles.section}>
+            <GlassCard style={styles.summaryCard}>
+              <Text style={[Typography.body, { color: colors.text }]}>
+                {result.summary}
+              </Text>
+            </GlassCard>
+          </Animated.View>
+
+          {/* Quick wins */}
+          {result.quickWins.length > 0 && (
+            <Animated.View entering={FadeInDown.delay(400).springify()} style={styles.section}>
+              <Text style={[Typography.title3, { color: colors.text, marginBottom: 12 }]}>
+                ⚡ Quick Wins
+              </Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.quickWinsScroll}
+              >
+                {result.quickWins.slice(0, 4).map((win, i) => (
+                  <QuickWinCard key={i} text={win} delay={i * 50} />
                 ))}
-              </Section>
-            )}
+              </ScrollView>
+            </Animated.View>
+          )}
 
-            {/* Task Preview */}
-            <Section title={`📋 Your Plan (${result.tasks.length} tasks)`}>
-              {result.tasks.slice(0, 5).map(task => (
-                <TaskPreviewCard
-                  key={task.id}
-                  task={task}
-                  colors={colors}
-                />
+          {/* Tasks preview */}
+          <Animated.View entering={FadeInDown.delay(500).springify()} style={styles.section}>
+            <Text style={[Typography.title3, { color: colors.text, marginBottom: 12 }]}>
+              📋 Your Plan
+            </Text>
+            <GlassCard style={styles.tasksList}>
+              {result.tasks.slice(0, 5).map((task, i) => (
+                <TaskPreviewCard key={task.id} task={task} index={i} />
               ))}
               {result.tasks.length > 5 && (
-                <Text
-                  size={14}
-                  modifiers={[foregroundStyle(colors.textSecondary)]}
-                >
-                  +{result.tasks.length - 5} more tasks...
+                <View style={styles.moreTasks}>
+                  <Text style={[Typography.caption1, { color: colors.textSecondary }]}>
+                    +{result.tasks.length - 5} more tasks
+                  </Text>
+                </View>
+              )}
+            </GlassCard>
+          </Animated.View>
+
+          {/* Encouragement */}
+          <Animated.View entering={FadeInDown.delay(600).springify()} style={styles.section}>
+            <GlassCard variant="elevated" style={styles.encouragementCard}>
+              <Text style={styles.encouragementEmoji}>💪</Text>
+              <Text style={[Typography.body, { color: colors.text, textAlign: 'center', marginTop: 12 }]}>
+                {result.encouragement}
+              </Text>
+              {motivation && (
+                <Text style={[Typography.caption1, { color: colors.textSecondary, textAlign: 'center', marginTop: 8 }]}>
+                  {motivation}
                 </Text>
               )}
-            </Section>
+            </GlassCard>
+          </Animated.View>
 
-            {/* Encouragement */}
-            <Section title="">
-              <Group
-                modifiers={[
-                  glassEffect({ glass: { variant: 'regular', interactive: false } }),
-                  frame({ minHeight: 80 }),
-                ]}
-              >
-                <VStack spacing={8}>
-                  <Text size={16} weight="medium">
-                    {result.encouragement}
-                  </Text>
-                  {motivation && (
-                    <Text
-                      size={14}
-                      modifiers={[foregroundStyle(colors.textSecondary)]}
-                    >
-                      {motivation}
-                    </Text>
-                  )}
-                </VStack>
-              </Group>
-            </Section>
-
-            {/* Action Button */}
-            <Section title="">
-              <Button
-                label="🚀 Start Cleaning"
-                onPress={handleGoToRoom}
-                modifiers={[
-                  buttonStyle('borderedProminent'),
-                  controlSize('large'),
-                  frame({ maxWidth: 400 }),
-                ]}
+          {/* Action button */}
+          <Animated.View entering={FadeInUp.delay(700).springify()} style={styles.actionSection}>
+            <Pressable
+              onPress={handleGoToRoom}
+              style={({ pressed }) => [styles.actionButton, { opacity: pressed ? 0.9 : 1 }]}
+            >
+              <LinearGradient
+                colors={[...colors.gradientPrimary]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={StyleSheet.absoluteFill}
               />
-            </Section>
-          </Form>
+              <Text style={[Typography.headline, { color: '#FFFFFF' }]}>
+                🚀 Start Cleaning
+              </Text>
+            </Pressable>
+          </Animated.View>
         </ScrollView>
-      </Host>
+
+        {/* Back button */}
+        <Animated.View
+          entering={FadeIn}
+          style={[styles.backButton, { top: insets.top + 12 }]}
+        >
+          <Pressable onPress={() => router.back()} style={styles.glassButtonDark}>
+            <BlurView intensity={60} tint={colorScheme} style={StyleSheet.absoluteFill} />
+            <Text style={{ color: colors.text }}>← Back</Text>
+          </Pressable>
+        </Animated.View>
+      </View>
     );
   }
 
   // Fallback
   return (
-    <Host style={styles.container}>
-      <VStack spacing={16} alignment="center">
-        <Text size={20}>No analysis data</Text>
-        <Button label="Go Back" onPress={() => router.back()} />
-      </VStack>
-    </Host>
+    <View style={[styles.container, styles.fallbackContainer, { backgroundColor: colors.background }]}>
+      <Text style={[Typography.title2, { color: colors.text }]}>No analysis data</Text>
+      <Pressable onPress={() => router.back()} style={styles.fallbackButton}>
+        <Text style={[Typography.body, { color: colors.primary }]}>Go Back</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+// Quick Win Card
+function QuickWinCard({ text, delay }: { text: string; delay: number }) {
+  const colorScheme = useColorScheme() ?? 'dark';
+  const colors = Colors[colorScheme];
+  const { animatedStyle, onPressIn, onPressOut } = useCardPress();
+
+  return (
+    <Animated.View entering={FadeInRight.delay(delay)}>
+      <AnimatedPressable
+        onPressIn={onPressIn}
+        onPressOut={onPressOut}
+        style={animatedStyle}
+      >
+        <View
+          style={[
+            styles.quickWinCard,
+            {
+              backgroundColor: colorScheme === 'dark'
+                ? 'rgba(251, 146, 60, 0.15)'
+                : 'rgba(251, 146, 60, 0.1)',
+            },
+          ]}
+        >
+          <Text style={{ fontSize: 20 }}>⚡</Text>
+          <Text
+            style={[Typography.caption1Medium, { color: '#FB923C', marginTop: 8 }]}
+            numberOfLines={3}
+          >
+            {text}
+          </Text>
+        </View>
+      </AnimatedPressable>
+    </Animated.View>
   );
 }
 
 // Task Preview Card
-function TaskPreviewCard({
-  task,
-  colors,
-}: {
-  task: CleaningTask;
-  colors: typeof Colors.light;
-}) {
+function TaskPreviewCard({ task, index }: { task: CleaningTask; index: number }) {
+  const colorScheme = useColorScheme() ?? 'dark';
+  const colors = Colors[colorScheme];
   const priorityColor = PriorityColors[task.priority];
 
   return (
-    <HStack spacing={12}>
-      <Text size={24}>{task.emoji}</Text>
-      <VStack spacing={2} alignment="leading">
-        <Text weight="medium">{task.title}</Text>
-        <HStack spacing={8}>
-          <Text size={12} modifiers={[foregroundStyle(colors.textSecondary)]}>
+    <Animated.View
+      entering={FadeInRight.delay(index * 50)}
+      style={styles.taskPreview}
+    >
+      <Text style={styles.taskEmoji}>{task.emoji}</Text>
+      <View style={styles.taskInfo}>
+        <Text style={[Typography.body, { color: colors.text }]} numberOfLines={1}>
+          {task.title}
+        </Text>
+        <View style={styles.taskMeta}>
+          <Text style={[Typography.caption1, { color: colors.textSecondary }]}>
             ~{task.estimatedMinutes} min
           </Text>
-          <View
-            style={{
-              paddingHorizontal: 6,
-              paddingVertical: 2,
-              borderRadius: 4,
-              backgroundColor: priorityColor + '20',
-            }}
-          >
-            <Text size={10} modifiers={[foregroundStyle(priorityColor)]}>
+          <View style={[styles.priorityBadge, { backgroundColor: priorityColor + '20' }]}>
+            <Text style={[Typography.caption2, { color: priorityColor }]}>
               {task.priority}
             </Text>
           </View>
           {task.difficulty === 'quick' && (
-            <Text size={11} modifiers={[foregroundStyle(colors.success)]}>
-              Quick Win!
-            </Text>
+            <Text style={[Typography.caption2, { color: '#22C55E' }]}>Quick!</Text>
           )}
-        </HStack>
-      </VStack>
-    </HStack>
+        </View>
+      </View>
+    </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    justifyContent: 'center',
   },
   scrollView: {
     flex: 1,
   },
   scrollContent: {
-    paddingBottom: 100,
+    paddingHorizontal: 20,
   },
-  // Loading State Styles
+  // Loading styles
   loadingImageContainer: {
     flex: 1,
-    position: 'relative',
   },
   loadingImage: {
     flex: 1,
     width: '100%',
   },
-  scanningOverlay: {
+  scanContainer: {
     ...StyleSheet.absoluteFillObject,
-    overflow: 'hidden',
+    margin: 24,
   },
   scanLine: {
     position: 'absolute',
-    left: 20,
-    right: 20,
-    height: 2,
-    backgroundColor: 'rgba(74, 144, 226, 0.8)',
-    shadowColor: '#4A90E2',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 1,
-    shadowRadius: 10,
-  },
-  scanCorner: {
-    position: 'absolute',
-    width: 30,
-    height: 30,
-    borderColor: 'rgba(255, 255, 255, 0.8)',
-  },
-  scanCornerTL: {
-    top: 20,
-    left: 20,
-    borderTopWidth: 3,
-    borderLeftWidth: 3,
-    borderTopLeftRadius: 8,
-  },
-  scanCornerTR: {
-    top: 20,
-    right: 20,
-    borderTopWidth: 3,
-    borderRightWidth: 3,
-    borderTopRightRadius: 8,
-  },
-  scanCornerBL: {
-    bottom: 20,
-    left: 20,
-    borderBottomWidth: 3,
-    borderLeftWidth: 3,
-    borderBottomLeftRadius: 8,
-  },
-  scanCornerBR: {
-    bottom: 20,
-    right: 20,
-    borderBottomWidth: 3,
-    borderRightWidth: 3,
-    borderBottomRightRadius: 8,
-  },
-  gradientOverlay: {
-    position: 'absolute',
-    bottom: 0,
     left: 0,
     right: 0,
-    height: 200,
-    backgroundColor: 'transparent',
-    // Using solid color as gradient fallback
-    opacity: 0.7,
+    height: 4,
+    borderRadius: 2,
+  },
+  corner: {
+    position: 'absolute',
+    width: 48,
+    height: 48,
+    borderColor: 'rgba(167, 139, 250, 0.8)',
+  },
+  cornerTL: { top: 0, left: 0, borderTopWidth: 3, borderLeftWidth: 3, borderTopLeftRadius: 16 },
+  cornerTR: { top: 0, right: 0, borderTopWidth: 3, borderRightWidth: 3, borderTopRightRadius: 16 },
+  cornerBL: { bottom: 0, left: 0, borderBottomWidth: 3, borderLeftWidth: 3, borderBottomLeftRadius: 16 },
+  cornerBR: { bottom: 0, right: 0, borderBottomWidth: 3, borderRightWidth: 3, borderBottomRightRadius: 16 },
+  scanGlow: {
+    ...StyleSheet.absoluteFillObject,
   },
   loadingCard: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 24,
-    paddingBottom: 48,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 10,
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    overflow: 'hidden',
+    paddingTop: 32,
+    paddingHorizontal: 24,
   },
-  loadingHeader: {
-    flexDirection: 'row',
+  loadingContent: {
     alignItems: 'center',
-    marginBottom: 20,
   },
-  loadingEmojiContainer: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: 'rgba(74, 144, 226, 0.15)',
+  stageEmojiContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 16,
-  },
-  loadingEmoji: {
-    fontSize: 28,
-  },
-  loadingTextContainer: {
-    flex: 1,
-  },
-  loadingTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    marginBottom: 4,
-  },
-  loadingSubtitle: {
-    fontSize: 15,
-  },
-  progressBarContainer: {
-    height: 6,
-    borderRadius: 3,
     overflow: 'hidden',
-    marginBottom: 16,
   },
-  progressBar: {
-    height: '100%',
-    borderRadius: 3,
+  stageEmojiGradient: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 40,
+  },
+  stageEmoji: {
+    fontSize: 36,
   },
   stageIndicators: {
     flexDirection: 'row',
-    justifyContent: 'center',
     gap: 8,
-    marginBottom: 20,
+    marginTop: 24,
   },
   stageIndicator: {
+    height: 4,
+    borderRadius: 2,
+  },
+  tipBadge: {
+    marginTop: 24,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+  },
+  backButton: {
+    position: 'absolute',
+    left: 16,
+    zIndex: 10,
+  },
+  glassButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  glassButtonDark: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    overflow: 'hidden',
+  },
+  // Error styles
+  errorContent: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 32,
+  },
+  errorEmoji: {
+    fontSize: 64,
+  },
+  errorButtons: {
+    marginTop: 32,
+    gap: 12,
+    width: '100%',
+    maxWidth: 280,
+  },
+  primaryButton: {
+    paddingVertical: 16,
+    borderRadius: 16,
+    overflow: 'hidden',
+    alignItems: 'center',
+  },
+  secondaryButton: {
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  // Progress results
+  progressHero: {
+    padding: 32,
+    alignItems: 'center',
+  },
+  heroEmoji: {
+    fontSize: 48,
+  },
+  progressRingContainer: {
+    marginTop: 24,
+    position: 'relative',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  progressRingCenter: {
+    position: 'absolute',
+    alignItems: 'center',
+  },
+  // Result styles
+  resultHero: {
+    height: 200,
+    borderRadius: 24,
+    overflow: 'hidden',
+    marginBottom: 20,
+  },
+  resultHeroImage: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  resultHeroGradient: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  resultHeroContent: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    padding: 20,
+    alignItems: 'center',
+  },
+  resultEmoji: {
+    fontSize: 36,
+  },
+  statsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginBottom: 24,
+  },
+  statItem: {
+    alignItems: 'center',
+    position: 'relative',
+  },
+  statCenter: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  statCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: 'rgba(139, 92, 246, 0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  statNumber: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#A78BFA',
+  },
+  statTime: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#A78BFA',
+  },
+  section: {
+    marginBottom: 24,
+  },
+  summaryCard: {
+    padding: 16,
+  },
+  quickWinsScroll: {
+    gap: 12,
+  },
+  quickWinCard: {
+    width: 140,
+    padding: 16,
+    borderRadius: 16,
+    alignItems: 'center',
+  },
+  tasksList: {
+    padding: 12,
+    gap: 8,
+  },
+  taskPreview: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  taskEmoji: {
+    fontSize: 28,
+    marginRight: 12,
+  },
+  taskInfo: {
+    flex: 1,
+  },
+  taskMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 4,
+  },
+  priorityBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  moreTasks: {
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  completedTask: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  taskCheckmark: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: 'rgba(34, 197, 94, 0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  remainingTask: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  taskBullet: {
     width: 8,
     height: 8,
     borderRadius: 4,
+    backgroundColor: 'rgba(255,255,255,0.3)',
+    marginRight: 12,
   },
-  tipContainer: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 12,
+  encouragementCard: {
+    padding: 24,
+    alignItems: 'center',
   },
-  tipText: {
-    fontSize: 14,
-    textAlign: 'center',
-    fontWeight: '500',
+  encouragementEmoji: {
+    fontSize: 40,
+  },
+  actionSection: {
+    marginTop: 8,
+    marginBottom: 20,
+  },
+  actionButton: {
+    paddingVertical: 18,
+    borderRadius: 16,
+    overflow: 'hidden',
+    alignItems: 'center',
+  },
+  fallbackContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fallbackButton: {
+    marginTop: 16,
+    padding: 12,
   },
 });

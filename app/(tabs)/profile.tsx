@@ -1,54 +1,62 @@
 /**
  * Declutterly - Profile Screen
- * User profile, settings, and app info
+ * iOS Settings style user profile and app settings
  */
 
-import { Colors } from '@/constants/Colors';
-import { useDeclutter, saveApiKey, loadApiKey } from '@/context/DeclutterContext';
-import { getGeminiApiKey } from '@/services/gemini';
-import {
-  Button,
-  Form,
-  Host,
-  HStack,
-  Section,
-  Spacer,
-  Switch,
-  Text,
-  TextField,
-  VStack,
-  Picker,
-  DisclosureGroup,
-} from '@expo/ui/swift-ui';
-import {
-  buttonStyle,
-  controlSize,
-  foregroundStyle,
-  frame,
-  glassEffect,
-} from '@expo/ui/swift-ui/modifiers';
-import { Image } from 'expo-image';
-import { router } from 'expo-router';
 import React, { useState, useEffect } from 'react';
 import {
-  useColorScheme,
+  View,
+  Text,
   StyleSheet,
   ScrollView,
+  Pressable,
+  useColorScheme,
   Alert,
+  TextInput,
+  Switch as RNSwitch,
 } from 'react-native';
+import Animated, {
+  FadeInDown,
+  FadeInRight,
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+} from 'react-native-reanimated';
+import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { router } from 'expo-router';
+import * as Haptics from 'expo-haptics';
+import * as Linking from 'expo-linking';
+
+import { Colors } from '@/constants/Colors';
+import { Typography } from '@/theme/typography';
+import { useDeclutter, saveApiKey, loadApiKey } from '@/context/DeclutterContext';
+import { GlassCard } from '@/components/ui/GlassCard';
+import { GlassButton } from '@/components/ui/GlassButton';
+import {
+  GroupedList,
+  GroupedListItem,
+  ToggleListItem,
+  AnimatedListItem,
+} from '@/components/ui/AnimatedListItem';
+import { StatCard } from '@/components/ui/StatCard';
+import { SingleRing } from '@/components/ui/ActivityRings';
+import { useCardPress } from '@/hooks/useAnimatedPress';
+
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 export default function ProfileScreen() {
-  const rawColorScheme = useColorScheme();
-  const colorScheme = rawColorScheme === 'dark' ? 'dark' : 'light';
+  const colorScheme = useColorScheme() ?? 'dark';
   const colors = Colors[colorScheme];
-  const { user, settings, updateSettings, stats, rooms } = useDeclutter();
+  const insets = useSafeAreaInsets();
+  const { user, settings, updateSettings, stats, rooms, clearAllData, mascot } = useDeclutter();
 
   const [apiKey, setApiKey] = useState('');
   const [showApiKey, setShowApiKey] = useState(false);
-  const [settingsExpanded, setSettingsExpanded] = useState(false);
+  const [isEditingApiKey, setIsEditingApiKey] = useState(false);
 
   useEffect(() => {
-    // Load current API key
     loadApiKey().then(key => {
       if (key) setApiKey(key);
     });
@@ -56,194 +64,416 @@ export default function ProfileScreen() {
 
   const handleSaveApiKey = async () => {
     await saveApiKey(apiKey);
+    setIsEditingApiKey(false);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     Alert.alert('Saved', 'API key has been saved successfully!');
   };
 
-  const encouragementOptions = ['minimal', 'moderate', 'maximum'];
-  const breakdownOptions = ['normal', 'detailed', 'ultra'];
-  const themeOptions = ['light', 'dark', 'auto'];
+  const handleResetData = () => {
+    Alert.alert(
+      'Reset All Data',
+      'This will delete all your rooms, progress, and settings. This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reset',
+          style: 'destructive',
+          onPress: async () => {
+            await clearAllData();
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+          },
+        },
+      ]
+    );
+  };
+
+  // Calculate XP progress
+  const xpProgress = (stats.xp % 100);
+  const xpForNextLevel = 100;
 
   return (
-    <Host style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
       <ScrollView
         style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 100 },
+        ]}
+        showsVerticalScrollIndicator={false}
       >
-        <Form>
-          {/* Profile Header */}
-          <Section title="">
-            <VStack spacing={16} alignment="center">
-              {/* Avatar */}
-              <VStack
-                alignment="center"
-                modifiers={[
-                  frame({ width: 100, height: 100 }),
-                  glassEffect({ glass: { variant: 'regular', interactive: true } }),
-                ]}
+        {/* Header */}
+        <Animated.View
+          entering={FadeInDown.delay(100).springify()}
+          style={styles.header}
+        >
+          <Text style={[Typography.largeTitle, { color: colors.text }]}>
+            Profile
+          </Text>
+        </Animated.View>
+
+        {/* Profile Card */}
+        <Animated.View
+          entering={FadeInDown.delay(200).springify()}
+          style={styles.profileSection}
+        >
+          <GlassCard variant="hero" style={styles.profileCard}>
+            {/* Avatar with Level Ring */}
+            <View style={styles.avatarContainer}>
+              <SingleRing
+                value={xpProgress}
+                maxValue={100}
+                size={100}
+                strokeWidth={6}
+                showValue={false}
+                gradientColors={[...colors.gradientPrimary]}
               >
-                <Text size={48}>👤</Text>
-              </VStack>
+                <View style={styles.avatarInner}>
+                  <Text style={styles.avatarEmoji}>
+                    {mascot?.personality ? (mascot.personality === 'spark' ? '⚡' : mascot.personality === 'bubbles' ? '🫧' : mascot.personality === 'dusty' ? '🧹' : '✨') : '👤'}
+                  </Text>
+                </View>
+              </SingleRing>
+              <View style={styles.levelBadge}>
+                <LinearGradient
+                  colors={[...colors.gradientPrimary]}
+                  style={styles.levelBadgeGradient}
+                >
+                  <Text style={styles.levelText}>{stats.level}</Text>
+                </LinearGradient>
+              </View>
+            </View>
 
-              <VStack spacing={4} alignment="center">
-                <Text size={24} weight="bold">{user?.name || 'User'}</Text>
-                <Text size={14} modifiers={[foregroundStyle(colors.textSecondary)]}>
-                  Level {stats.level} Declutterer
-                </Text>
-              </VStack>
-            </VStack>
-          </Section>
+            {/* User Info */}
+            <View style={styles.userInfo}>
+              <Text style={[Typography.title1, { color: colors.text }]}>
+                {user?.name || 'Declutterer'}
+              </Text>
+              <Text style={[Typography.subheadline, { color: colors.textSecondary, marginTop: 4 }]}>
+                Level {stats.level} • {xpProgress} / {xpForNextLevel} XP
+              </Text>
 
-          {/* Quick Stats */}
-          <Section title="Quick Stats">
-            <HStack spacing={8}>
-              <VStack spacing={2} alignment="center">
-                <Text size={20} weight="bold">{stats.totalTasksCompleted}</Text>
-                <Text size={11} modifiers={[foregroundStyle(colors.textSecondary)]}>
-                  Tasks
-                </Text>
-              </VStack>
-              <Spacer />
-              <VStack spacing={2} alignment="center">
-                <Text size={20} weight="bold">{rooms.length}</Text>
-                <Text size={11} modifiers={[foregroundStyle(colors.textSecondary)]}>
-                  Rooms
-                </Text>
-              </VStack>
-              <Spacer />
-              <VStack spacing={2} alignment="center">
-                <Text size={20} weight="bold">{stats.currentStreak}</Text>
-                <Text size={11} modifiers={[foregroundStyle(colors.textSecondary)]}>
-                  Streak
-                </Text>
-              </VStack>
-              <Spacer />
-              <VStack spacing={2} alignment="center">
-                <Text size={20} weight="bold">{stats.badges.length}</Text>
-                <Text size={11} modifiers={[foregroundStyle(colors.textSecondary)]}>
-                  Badges
-                </Text>
-              </VStack>
-            </HStack>
-          </Section>
+              {/* XP Bar */}
+              <View style={styles.xpBarContainer}>
+                <View style={[styles.xpBarBg, { backgroundColor: colors.surfaceSecondary }]}>
+                  <Animated.View style={[styles.xpBarFill, { width: `${xpProgress}%` }]}>
+                    <LinearGradient
+                      colors={[...colors.gradientPrimary]}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 0 }}
+                      style={StyleSheet.absoluteFill}
+                    />
+                  </Animated.View>
+                </View>
+              </View>
+            </View>
 
-          {/* Preferences */}
-          <Section title="Preferences">
-            <HStack spacing={8}>
-              <Text>Notifications</Text>
-              <Spacer />
-              <Switch
-                value={settings.notifications}
-                onValueChange={(value) => updateSettings({ notifications: value })}
+            {/* Quick Stats */}
+            <View style={styles.quickStats}>
+              <QuickStatItem
+                value={stats.totalTasksCompleted}
+                label="Tasks"
+                colors={colors}
               />
-            </HStack>
-
-            <HStack spacing={8}>
-              <Text>Haptic Feedback</Text>
-              <Spacer />
-              <Switch
-                value={settings.hapticFeedback}
-                onValueChange={(value) => updateSettings({ hapticFeedback: value })}
+              <View style={styles.statDivider} />
+              <QuickStatItem
+                value={rooms.length}
+                label="Rooms"
+                colors={colors}
               />
-            </HStack>
+              <View style={styles.statDivider} />
+              <QuickStatItem
+                value={stats.currentStreak}
+                label="Streak"
+                colors={colors}
+              />
+              <View style={styles.statDivider} />
+              <QuickStatItem
+                value={stats.badges.length}
+                label="Badges"
+                colors={colors}
+              />
+            </View>
+          </GlassCard>
+        </Animated.View>
 
-            <Picker
-              label="Theme"
-              selection={settings.theme}
-              onSelectionChange={(value) =>
-                updateSettings({ theme: value as 'light' | 'dark' | 'auto' })
-              }
+        {/* Preferences Section */}
+        <Animated.View
+          entering={FadeInDown.delay(300).springify()}
+          style={styles.section}
+        >
+          <GroupedList header="PREFERENCES">
+            <ToggleListItem
+              title="Notifications"
+              subtitle="Daily reminders to declutter"
+              leftIcon={<Text style={styles.listIcon}>🔔</Text>}
+              value={settings.notifications}
+              onValueChange={(value) => updateSettings({ notifications: value })}
             />
-
-            <Picker
-              label="Encouragement Level"
-              selection={settings.encouragementLevel}
-              onSelectionChange={(value) =>
-                updateSettings({
-                  encouragementLevel: value as 'minimal' | 'moderate' | 'maximum',
-                })
-              }
+            <ToggleListItem
+              title="Haptic Feedback"
+              subtitle="Vibration on interactions"
+              leftIcon={<Text style={styles.listIcon}>📳</Text>}
+              value={settings.hapticFeedback}
+              onValueChange={(value) => updateSettings({ hapticFeedback: value })}
             />
-
-            <Picker
-              label="Task Breakdown"
-              selection={settings.taskBreakdownLevel}
-              onSelectionChange={(value) =>
-                updateSettings({
-                  taskBreakdownLevel: value as 'normal' | 'detailed' | 'ultra',
-                })
-              }
-            />
-          </Section>
-
-          {/* AI Settings */}
-          <Section title="AI Settings">
-            <DisclosureGroup
-              isExpanded={settingsExpanded}
-              onStateChange={setSettingsExpanded}
-              label="Gemini API Key"
-            >
-              <VStack spacing={12}>
-                <TextField
-                  placeholder="Enter your Gemini API key"
-                  defaultValue={showApiKey ? apiKey : '•'.repeat(Math.min(apiKey.length, 20))}
-                  onChangeText={setApiKey}
-                />
-                <HStack spacing={8}>
-                  <Button
-                    label={showApiKey ? 'Hide' : 'Show'}
-                    onPress={() => setShowApiKey(!showApiKey)}
-                    modifiers={[buttonStyle('bordered'), controlSize('small')]}
-                  />
-                  <Button
-                    label="Save Key"
-                    onPress={handleSaveApiKey}
-                    modifiers={[buttonStyle('borderedProminent'), controlSize('small')]}
-                  />
-                </HStack>
-                <Text size={12} modifiers={[foregroundStyle(colors.textSecondary)]}>
-                  Get a free API key at ai.google.dev
+            <GroupedListItem
+              title="Theme"
+              leftIcon={<Text style={styles.listIcon}>🎨</Text>}
+              rightElement={
+                <Text style={[Typography.body, { color: colors.textSecondary }]}>
+                  {settings.theme === 'auto' ? 'System' : settings.theme === 'dark' ? 'Dark' : 'Light'}
                 </Text>
-              </VStack>
-            </DisclosureGroup>
-          </Section>
+              }
+              showChevron
+              onPress={() => {
+                const next = settings.theme === 'auto' ? 'light' : settings.theme === 'light' ? 'dark' : 'auto';
+                updateSettings({ theme: next });
+              }}
+            />
+          </GroupedList>
+        </Animated.View>
 
-          {/* About */}
-          <Section title="About">
-            <HStack>
-              <Text>Version</Text>
-              <Spacer />
-              <Text modifiers={[foregroundStyle(colors.textSecondary)]}>1.0.0</Text>
-            </HStack>
-            <HStack>
-              <Text>Made with</Text>
-              <Spacer />
-              <Text>❤️ for ADHD minds</Text>
-            </HStack>
-          </Section>
+        {/* AI Settings Section */}
+        <Animated.View
+          entering={FadeInDown.delay(400).springify()}
+          style={styles.section}
+        >
+          <GroupedList
+            header="AI ASSISTANT"
+            footer="Get a free API key at ai.google.dev"
+          >
+            <GroupedListItem
+              title="Encouragement Level"
+              leftIcon={<Text style={styles.listIcon}>💪</Text>}
+              rightElement={
+                <Text style={[Typography.body, { color: colors.textSecondary, textTransform: 'capitalize' }]}>
+                  {settings.encouragementLevel}
+                </Text>
+              }
+              showChevron
+              onPress={() => {
+                const levels = ['minimal', 'moderate', 'maximum'] as const;
+                const currentIndex = levels.indexOf(settings.encouragementLevel);
+                const next = levels[(currentIndex + 1) % levels.length];
+                updateSettings({ encouragementLevel: next });
+              }}
+            />
+            <GroupedListItem
+              title="Task Breakdown"
+              subtitle="How detailed the AI breaks down tasks"
+              leftIcon={<Text style={styles.listIcon}>📋</Text>}
+              rightElement={
+                <Text style={[Typography.body, { color: colors.textSecondary, textTransform: 'capitalize' }]}>
+                  {settings.taskBreakdownLevel}
+                </Text>
+              }
+              showChevron
+              onPress={() => {
+                const levels = ['normal', 'detailed', 'ultra'] as const;
+                const currentIndex = levels.indexOf(settings.taskBreakdownLevel);
+                const next = levels[(currentIndex + 1) % levels.length];
+                updateSettings({ taskBreakdownLevel: next });
+              }}
+            />
+          </GroupedList>
 
-          {/* Tips */}
-          <Section title="💡 Tips">
-            <VStack spacing={8} alignment="leading">
-              <Text size={14}>
-                • Start small - even 5 minutes counts!
-              </Text>
-              <Text size={14}>
-                • Focus on one area at a time
-              </Text>
-              <Text size={14}>
-                • Celebrate every completed task
-              </Text>
-              <Text size={14}>
-                • It's okay to take breaks
-              </Text>
-              <Text size={14}>
-                • Progress, not perfection
-              </Text>
-            </VStack>
-          </Section>
-        </Form>
+          {/* API Key Input */}
+          <View style={styles.apiKeySection}>
+            <GlassCard style={styles.apiKeyCard}>
+              <View style={styles.apiKeyHeader}>
+                <Text style={styles.apiKeyIcon}>🔑</Text>
+                <View style={styles.apiKeyInfo}>
+                  <Text style={[Typography.headline, { color: colors.text }]}>
+                    Gemini API Key
+                  </Text>
+                  <Text style={[Typography.caption1, { color: colors.textSecondary }]}>
+                    {apiKey ? 'Key configured' : 'Not configured'}
+                  </Text>
+                </View>
+                <View style={[styles.statusDot, { backgroundColor: apiKey ? colors.success : colors.warning }]} />
+              </View>
+
+              {isEditingApiKey ? (
+                <View style={styles.apiKeyInput}>
+                  <TextInput
+                    style={[
+                      styles.input,
+                      {
+                        backgroundColor: colors.surfaceSecondary,
+                        color: colors.text,
+                        borderColor: colors.primary,
+                      },
+                    ]}
+                    placeholder="Enter your API key"
+                    placeholderTextColor={colors.textTertiary}
+                    value={apiKey}
+                    onChangeText={setApiKey}
+                    secureTextEntry={!showApiKey}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
+                  <View style={styles.apiKeyButtons}>
+                    <Pressable
+                      style={[styles.apiKeyBtn, { backgroundColor: colors.surfaceSecondary }]}
+                      onPress={() => setShowApiKey(!showApiKey)}
+                    >
+                      <Text style={[Typography.caption1, { color: colors.text }]}>
+                        {showApiKey ? 'Hide' : 'Show'}
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      style={[styles.apiKeyBtn, { backgroundColor: colors.primary }]}
+                      onPress={handleSaveApiKey}
+                    >
+                      <Text style={[Typography.caption1, { color: '#FFFFFF' }]}>
+                        Save
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      style={[styles.apiKeyBtn, { backgroundColor: colors.surfaceSecondary }]}
+                      onPress={() => setIsEditingApiKey(false)}
+                    >
+                      <Text style={[Typography.caption1, { color: colors.text }]}>
+                        Cancel
+                      </Text>
+                    </Pressable>
+                  </View>
+                </View>
+              ) : (
+                <Pressable
+                  style={[styles.configureButton, { backgroundColor: colors.surfaceSecondary }]}
+                  onPress={() => setIsEditingApiKey(true)}
+                >
+                  <Text style={[Typography.subheadlineMedium, { color: colors.primary }]}>
+                    {apiKey ? 'Edit Key' : 'Configure'}
+                  </Text>
+                </Pressable>
+              )}
+            </GlassCard>
+          </View>
+        </Animated.View>
+
+        {/* About Section */}
+        <Animated.View
+          entering={FadeInDown.delay(500).springify()}
+          style={styles.section}
+        >
+          <GroupedList header="ABOUT">
+            <GroupedListItem
+              title="Version"
+              leftIcon={<Text style={styles.listIcon}>📱</Text>}
+              rightElement={
+                <Text style={[Typography.body, { color: colors.textSecondary }]}>
+                  1.0.0
+                </Text>
+              }
+            />
+            <GroupedListItem
+              title="Rate App"
+              leftIcon={<Text style={styles.listIcon}>⭐</Text>}
+              showChevron
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                // Would open app store link
+              }}
+            />
+            <GroupedListItem
+              title="Send Feedback"
+              leftIcon={<Text style={styles.listIcon}>💬</Text>}
+              showChevron
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                Linking.openURL('mailto:support@declutterly.app');
+              }}
+            />
+            <GroupedListItem
+              title="Privacy Policy"
+              leftIcon={<Text style={styles.listIcon}>🔒</Text>}
+              showChevron
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              }}
+            />
+          </GroupedList>
+        </Animated.View>
+
+        {/* Tips Section */}
+        <Animated.View
+          entering={FadeInDown.delay(600).springify()}
+          style={styles.section}
+        >
+          <GlassCard variant="subtle" style={styles.tipsCard}>
+            <Text style={styles.tipsEmoji}>💡</Text>
+            <Text style={[Typography.headline, { color: colors.text, marginBottom: 12 }]}>
+              Quick Tips
+            </Text>
+            <View style={styles.tipsList}>
+              <TipItem text="Start small - even 5 minutes counts!" colors={colors} />
+              <TipItem text="Focus on one area at a time" colors={colors} />
+              <TipItem text="Celebrate every completed task" colors={colors} />
+              <TipItem text="It's okay to take breaks" colors={colors} />
+              <TipItem text="Progress, not perfection" colors={colors} />
+            </View>
+          </GlassCard>
+        </Animated.View>
+
+        {/* Made with Love */}
+        <Animated.View
+          entering={FadeInDown.delay(700).springify()}
+          style={styles.footer}
+        >
+          <Text style={[Typography.caption1, { color: colors.textTertiary, textAlign: 'center' }]}>
+            Made with ❤️ for ADHD minds
+          </Text>
+        </Animated.View>
+
+        {/* Danger Zone */}
+        <Animated.View
+          entering={FadeInDown.delay(800).springify()}
+          style={styles.section}
+        >
+          <GroupedList header="DANGER ZONE">
+            <GroupedListItem
+              title="Reset All Data"
+              leftIcon={<Text style={styles.listIcon}>⚠️</Text>}
+              destructive
+              showChevron
+              onPress={handleResetData}
+            />
+          </GroupedList>
+        </Animated.View>
       </ScrollView>
-    </Host>
+    </View>
+  );
+}
+
+// Quick Stat Item
+function QuickStatItem({
+  value,
+  label,
+  colors,
+}: {
+  value: number;
+  label: string;
+  colors: typeof Colors.dark;
+}) {
+  return (
+    <View style={styles.quickStatItem}>
+      <Text style={[Typography.title2, { color: colors.text }]}>{value}</Text>
+      <Text style={[Typography.caption2, { color: colors.textSecondary }]}>{label}</Text>
+    </View>
+  );
+}
+
+// Tip Item
+function TipItem({ text, colors }: { text: string; colors: typeof Colors.dark }) {
+  return (
+    <View style={styles.tipItem}>
+      <Text style={[styles.tipBullet, { color: colors.primary }]}>•</Text>
+      <Text style={[Typography.subheadline, { color: colors.textSecondary, flex: 1 }]}>
+        {text}
+      </Text>
+    </View>
   );
 }
 
@@ -255,6 +485,168 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingBottom: 100,
+    paddingHorizontal: 0,
+  },
+  header: {
+    paddingHorizontal: 20,
+    marginBottom: 24,
+  },
+  profileSection: {
+    paddingHorizontal: 20,
+    marginBottom: 24,
+  },
+  profileCard: {
+    padding: 24,
+    alignItems: 'center',
+  },
+  avatarContainer: {
+    position: 'relative',
+    marginBottom: 16,
+  },
+  avatarInner: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarEmoji: {
+    fontSize: 36,
+  },
+  levelBadge: {
+    position: 'absolute',
+    bottom: -4,
+    right: -4,
+  },
+  levelBadgeGradient: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#000000',
+  },
+  levelText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+  },
+  userInfo: {
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  xpBarContainer: {
+    width: '80%',
+    marginTop: 12,
+  },
+  xpBarBg: {
+    height: 6,
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  xpBarFill: {
+    height: '100%',
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  quickStats: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+    paddingTop: 16,
+    borderTopWidth: 0.5,
+    borderTopColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  quickStatItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  statDivider: {
+    width: 0.5,
+    height: 24,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  section: {
+    marginBottom: 24,
+    paddingHorizontal: 20,
+  },
+  listIcon: {
+    fontSize: 20,
+  },
+  apiKeySection: {
+    marginTop: 12,
+  },
+  apiKeyCard: {
+    padding: 16,
+  },
+  apiKeyHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  apiKeyIcon: {
+    fontSize: 24,
+    marginRight: 12,
+  },
+  apiKeyInfo: {
+    flex: 1,
+  },
+  statusDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  apiKeyInput: {
+    gap: 12,
+  },
+  input: {
+    height: 44,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    fontSize: 16,
+    borderWidth: 1,
+  },
+  apiKeyButtons: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  apiKeyBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+  },
+  configureButton: {
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  tipsCard: {
+    padding: 20,
+    alignItems: 'center',
+  },
+  tipsEmoji: {
+    fontSize: 32,
+    marginBottom: 8,
+  },
+  tipsList: {
+    width: '100%',
+    gap: 8,
+  },
+  tipItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  tipBullet: {
+    fontSize: 16,
+    marginRight: 8,
+    marginTop: 1,
+  },
+  footer: {
+    paddingVertical: 16,
+    paddingHorizontal: 20,
   },
 });

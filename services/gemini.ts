@@ -5,9 +5,8 @@
 
 import { AIAnalysisResult, CleaningTask, Priority, TaskDifficulty, RoomType } from '@/types/declutter';
 
-// Gemini API configuration - Updated to Gemini 3.0 Flash (December 2025)
-// Gemini 3 Flash offers Pro-level intelligence at Flash speeds with 1M token context
-const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent';
+// Gemini API configuration - Using Gemini 2.0 Flash (latest stable)
+const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
 
 // You can set this via environment variable or app config
 let API_KEY = '';

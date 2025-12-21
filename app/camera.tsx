@@ -1,52 +1,60 @@
 /**
  * Declutterly - Camera Screen
- * Capture photos and videos of spaces for AI analysis
+ * Apple TV style camera with glass overlay controls
  */
 
-import { Colors } from '@/constants/Colors';
-import { useDeclutter } from '@/context/DeclutterContext';
-import { ROOM_TYPE_INFO, RoomType } from '@/types/declutter';
+import React, { useRef, useState, useEffect } from 'react';
 import {
-  Button,
-  Form,
-  Host,
-  HStack,
-  Section,
-  Spacer,
-  Text,
-  VStack,
-} from '@expo/ui/swift-ui';
-import {
-  buttonStyle,
-  controlSize,
-  foregroundStyle,
-  frame,
-  glassEffect,
-} from '@expo/ui/swift-ui/modifiers';
-import { CameraView, useCameraPermissions } from 'expo-camera';
-import * as ImagePicker from 'expo-image-picker';
-import * as FileSystem from 'expo-file-system';
-import { Image } from 'expo-image';
-import { router } from 'expo-router';
-import React, { useRef, useState } from 'react';
-import {
-  useColorScheme,
   View,
+  Text,
   StyleSheet,
   Dimensions,
-  ActivityIndicator,
   Pressable,
-  Text as RNText,
+  useColorScheme,
   Alert,
+  ScrollView,
 } from 'react-native';
+import Animated, {
+  FadeIn,
+  FadeInDown,
+  FadeInUp,
+  FadeOut,
+  ZoomIn,
+  ZoomOut,
+  SlideInUp,
+  SlideOutDown,
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  withTiming,
+  withSequence,
+  withDelay,
+  runOnJS,
+  Easing,
+} from 'react-native-reanimated';
+import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
+import { CameraView, useCameraPermissions } from 'expo-camera';
+import * as ImagePicker from 'expo-image-picker';
+import { Image } from 'expo-image';
+import { router } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 
-const { width, height } = Dimensions.get('window');
+import { Colors } from '@/constants/Colors';
+import { Typography } from '@/theme/typography';
+import { useDeclutter } from '@/context/DeclutterContext';
+import { ROOM_TYPE_INFO, RoomType } from '@/types/declutter';
+import { GlassCard } from '@/components/ui/GlassCard';
+import { useCardPress } from '@/hooks/useAnimatedPress';
+
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 export default function CameraScreen() {
-  const rawColorScheme = useColorScheme();
-  const colorScheme = rawColorScheme === 'dark' ? 'dark' : 'light';
+  const colorScheme = useColorScheme() ?? 'dark';
   const colors = Colors[colorScheme];
+  const insets = useSafeAreaInsets();
   const { activeRoomId, rooms, addRoom, addPhotoToRoom, setActiveRoom } = useDeclutter();
   const cameraRef = useRef<CameraView>(null);
 
@@ -55,50 +63,92 @@ export default function CameraScreen() {
   const [isCapturing, setIsCapturing] = useState(false);
   const [showRoomSelector, setShowRoomSelector] = useState(false);
   const [selectedRoomType, setSelectedRoomType] = useState<RoomType | null>(null);
-  const [captureMode, setCaptureMode] = useState<'photo' | 'video'>('photo');
+  const [showFlash, setShowFlash] = useState(false);
 
   const activeRoom = activeRoomId ? rooms.find(r => r.id === activeRoomId) : null;
 
-  // Handle permission
+  // Animations
+  const captureScale = useSharedValue(1);
+  const flashOpacity = useSharedValue(0);
+  const cornerScale = useSharedValue(1);
+
+  // Pulsing animation for capture button
+  useEffect(() => {
+    const pulse = () => {
+      cornerScale.value = withSequence(
+        withTiming(1.02, { duration: 1500 }),
+        withTiming(1, { duration: 1500 })
+      );
+    };
+    const interval = setInterval(pulse, 3000);
+    pulse();
+    return () => clearInterval(interval);
+  }, []);
+
+  const cornerAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: cornerScale.value }],
+  }));
+
+  const captureAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: captureScale.value }],
+  }));
+
+  // Handle permission states
   if (!permission) {
     return (
-      <Host style={styles.container}>
-        <VStack spacing={16} alignment="center">
-          <ActivityIndicator size="large" color={colors.primary} />
-          <Text>Loading camera...</Text>
-        </VStack>
-      </Host>
+      <View style={[styles.container, styles.permissionContainer]}>
+        <BlurView intensity={60} tint="dark" style={StyleSheet.absoluteFill} />
+        <Animated.View entering={ZoomIn.springify()} style={styles.permissionContent}>
+          <Text style={styles.permissionEmoji}>📸</Text>
+          <Text style={[Typography.title2, { color: '#FFFFFF', marginTop: 16 }]}>
+            Loading Camera...
+          </Text>
+        </Animated.View>
+      </View>
     );
   }
 
   if (!permission.granted) {
     return (
-      <Host style={styles.container}>
-        <Form>
-          <Section title="">
-            <VStack spacing={24} alignment="center">
-              <Text size={48}>📸</Text>
-              <Text size={20} weight="bold">Camera Access Needed</Text>
-              <Text
-                size={14}
-                modifiers={[foregroundStyle(colors.textSecondary)]}
-              >
-                We need camera access to capture photos of your spaces for AI analysis.
+      <View style={[styles.container, styles.permissionContainer]}>
+        <LinearGradient
+          colors={['#1a1a2e', '#16213e', '#0f3460']}
+          style={StyleSheet.absoluteFill}
+        />
+        <Animated.View entering={FadeInDown.springify()} style={styles.permissionContent}>
+          <Text style={styles.permissionEmoji}>📸</Text>
+          <Text style={[Typography.title1, { color: '#FFFFFF', marginTop: 20 }]}>
+            Camera Access Needed
+          </Text>
+          <Text style={[Typography.body, { color: 'rgba(255,255,255,0.7)', textAlign: 'center', marginTop: 12, maxWidth: 280 }]}>
+            We need camera access to capture photos of your spaces for AI analysis.
+          </Text>
+
+          <View style={styles.permissionButtons}>
+            <Pressable
+              onPress={requestPermission}
+              style={({ pressed }) => [styles.primaryButton, { opacity: pressed ? 0.8 : 1 }]}
+            >
+              <LinearGradient
+                colors={[...colors.gradientPrimary]}
+                style={StyleSheet.absoluteFill}
+              />
+              <Text style={[Typography.headline, { color: '#FFFFFF' }]}>
+                Grant Permission
               </Text>
-              <Button
-                label="Grant Permission"
-                onPress={requestPermission}
-                modifiers={[buttonStyle('borderedProminent'), controlSize('large')]}
-              />
-              <Button
-                label="Go Back"
-                onPress={() => router.back()}
-                modifiers={[buttonStyle('plain')]}
-              />
-            </VStack>
-          </Section>
-        </Form>
-      </Host>
+            </Pressable>
+
+            <Pressable
+              onPress={() => router.back()}
+              style={({ pressed }) => [styles.secondaryButton, { opacity: pressed ? 0.8 : 1 }]}
+            >
+              <Text style={[Typography.body, { color: 'rgba(255,255,255,0.7)' }]}>
+                Go Back
+              </Text>
+            </Pressable>
+          </View>
+        </Animated.View>
+      </View>
     );
   }
 
@@ -108,6 +158,18 @@ export default function CameraScreen() {
     try {
       setIsCapturing(true);
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+      // Flash animation
+      flashOpacity.value = withSequence(
+        withTiming(1, { duration: 50 }),
+        withTiming(0, { duration: 200 })
+      );
+
+      // Capture scale animation
+      captureScale.value = withSequence(
+        withSpring(0.9, { damping: 10, stiffness: 400 }),
+        withSpring(1, { damping: 12, stiffness: 300 })
+      );
 
       const photo = await cameraRef.current.takePictureAsync({
         quality: 0.85,
@@ -127,12 +189,13 @@ export default function CameraScreen() {
   };
 
   const pickMedia = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.All, // Allow both photos and videos
+        mediaTypes: ImagePicker.MediaTypeOptions.All,
         quality: 0.85,
         allowsEditing: true,
-        videoMaxDuration: 30, // 30 second max for videos
+        videoMaxDuration: 30,
       });
 
       if (!result.canceled && result.assets[0]) {
@@ -151,6 +214,7 @@ export default function CameraScreen() {
   };
 
   const handleRetake = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setCapturedMedia(null);
     setShowRoomSelector(false);
     setSelectedRoomType(null);
@@ -161,14 +225,12 @@ export default function CameraScreen() {
 
     let roomId = activeRoomId;
 
-    // If no active room, show room selector
     if (!roomId) {
       if (!selectedRoomType) {
         setShowRoomSelector(true);
         return;
       }
 
-      // Create new room
       const info = ROOM_TYPE_INFO[selectedRoomType];
       const newRoom = addRoom({
         name: info.label,
@@ -180,7 +242,6 @@ export default function CameraScreen() {
       setActiveRoom(roomId);
     }
 
-    // Add photo to room
     const photoType = activeRoom && activeRoom.photos.length > 0
       ? (activeRoom.currentProgress > 0 ? 'progress' : 'after')
       : 'before';
@@ -191,7 +252,6 @@ export default function CameraScreen() {
       type: photoType,
     });
 
-    // Navigate to analysis
     router.replace({
       pathname: '/analysis',
       params: {
@@ -203,43 +263,62 @@ export default function CameraScreen() {
   };
 
   const selectRoomType = (type: RoomType) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setSelectedRoomType(type);
     setShowRoomSelector(false);
-    // Immediately proceed with analysis
     setTimeout(() => handleAnalyze(), 100);
   };
 
-  // Room selector view
+  // Room selector modal
   if (showRoomSelector && capturedMedia) {
     return (
-      <Host style={styles.container}>
-        <Form>
-          <Section title="">
-            <Button
-              label="← Back"
-              onPress={() => setShowRoomSelector(false)}
-              modifiers={[buttonStyle('plain')]}
-            />
-          </Section>
+      <View style={styles.container}>
+        <Image
+          source={{ uri: capturedMedia.uri }}
+          style={StyleSheet.absoluteFill}
+          contentFit="cover"
+          blurRadius={20}
+        />
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.6)' }]} />
 
-          <Section title="What type of space is this?">
-            <VStack spacing={12}>
-              {(Object.keys(ROOM_TYPE_INFO) as RoomType[]).map(type => (
-                <Button
-                  key={type}
-                  label={`${ROOM_TYPE_INFO[type].emoji} ${ROOM_TYPE_INFO[type].label}`}
-                  onPress={() => selectRoomType(type)}
-                  modifiers={[
-                    buttonStyle('bordered'),
-                    controlSize('large'),
-                    frame({ maxWidth: 400 }),
-                  ]}
-                />
-              ))}
-            </VStack>
-          </Section>
-        </Form>
-      </Host>
+        <Animated.View
+          entering={SlideInUp.springify()}
+          style={[styles.roomSelectorContainer, { paddingTop: insets.top + 20 }]}
+        >
+          {/* Header */}
+          <Pressable
+            onPress={() => setShowRoomSelector(false)}
+            style={styles.selectorBackButton}
+          >
+            <BlurView intensity={60} tint="dark" style={StyleSheet.absoluteFill} />
+            <Text style={[Typography.body, { color: '#FFFFFF' }]}>← Back</Text>
+          </Pressable>
+
+          <Text style={[Typography.largeTitle, { color: '#FFFFFF', textAlign: 'center', marginTop: 24 }]}>
+            What type of space?
+          </Text>
+          <Text style={[Typography.body, { color: 'rgba(255,255,255,0.7)', textAlign: 'center', marginTop: 8 }]}>
+            Select the room type for better analysis
+          </Text>
+
+          {/* Room type grid */}
+          <ScrollView
+            style={styles.roomTypeScroll}
+            contentContainerStyle={styles.roomTypeGrid}
+            showsVerticalScrollIndicator={false}
+          >
+            {(Object.keys(ROOM_TYPE_INFO) as RoomType[]).map((type, index) => (
+              <RoomTypeCard
+                key={type}
+                type={type}
+                info={ROOM_TYPE_INFO[type]}
+                onPress={() => selectRoomType(type)}
+                delay={index * 50}
+              />
+            ))}
+          </ScrollView>
+        </Animated.View>
+      </View>
     );
   }
 
@@ -247,63 +326,101 @@ export default function CameraScreen() {
   if (capturedMedia) {
     return (
       <View style={styles.container}>
-        <View style={styles.preview}>
-          {/* Actual Image/Video Preview */}
-          <View style={styles.previewImage}>
-            <Image
-              source={{ uri: capturedMedia.uri }}
-              style={StyleSheet.absoluteFill}
-              contentFit="cover"
-            />
-            {/* Video indicator */}
-            {capturedMedia.type === 'video' && (
-              <View style={styles.videoIndicator}>
-                <RNText style={styles.videoIndicatorText}>Video</RNText>
+        {/* Full screen preview */}
+        <Image
+          source={{ uri: capturedMedia.uri }}
+          style={StyleSheet.absoluteFill}
+          contentFit="cover"
+        />
+
+        {/* Top gradient overlay */}
+        <LinearGradient
+          colors={['rgba(0,0,0,0.6)', 'transparent']}
+          style={styles.topGradient}
+        />
+
+        {/* Video indicator */}
+        {capturedMedia.type === 'video' && (
+          <Animated.View entering={FadeIn} style={styles.videoIndicator}>
+            <BlurView intensity={60} tint="dark" style={StyleSheet.absoluteFill} />
+            <Text style={styles.videoIndicatorText}>VIDEO</Text>
+          </Animated.View>
+        )}
+
+        {/* Bottom controls */}
+        <Animated.View
+          entering={SlideInUp.delay(200).springify()}
+          style={[styles.previewControls, { paddingBottom: insets.bottom + 20 }]}
+        >
+          <BlurView intensity={80} tint="dark" style={StyleSheet.absoluteFill} />
+
+          <View style={styles.previewContent}>
+            <Text style={styles.previewEmoji}>
+              {capturedMedia.type === 'video' ? '🎬' : '📸'}
+            </Text>
+            <Text style={[Typography.title2, { color: '#FFFFFF', marginTop: 8 }]}>
+              {capturedMedia.type === 'video' ? 'Video Ready' : 'Photo Ready'}
+            </Text>
+            <Text style={[Typography.subheadline, { color: 'rgba(255,255,255,0.7)', textAlign: 'center', marginTop: 4 }]}>
+              AI will analyze this for cleaning tasks
+            </Text>
+
+            {activeRoom && (
+              <View style={styles.roomTag}>
+                <Text style={[Typography.caption1Medium, { color: '#FFFFFF' }]}>
+                  {activeRoom.emoji} {activeRoom.name}
+                </Text>
               </View>
             )}
           </View>
 
-          {/* Controls */}
-          <View style={[styles.previewControls, { backgroundColor: colors.card }]}>
-            <View style={styles.previewInfo}>
-              <RNText style={[styles.previewTitle, { color: colors.text }]}>
-                {capturedMedia.type === 'video' ? '🎬 Video Ready' : '📸 Photo Ready'}
-              </RNText>
-              <RNText style={[styles.previewSubtitle, { color: colors.textSecondary }]}>
-                {capturedMedia.type === 'video'
-                  ? 'AI will analyze your video for cleaning tasks'
-                  : 'AI will analyze your photo for cleaning tasks'
-                }
-              </RNText>
-              {activeRoom && (
-                <View style={[styles.roomTag, { backgroundColor: colors.primary + '20' }]}>
-                  <RNText style={[styles.roomTagText, { color: colors.primary }]}>
-                    {activeRoom.emoji} {activeRoom.name}
-                  </RNText>
-                </View>
-              )}
-            </View>
+          <View style={styles.previewButtons}>
+            <Pressable
+              onPress={handleRetake}
+              style={({ pressed }) => [
+                styles.retakeButton,
+                { opacity: pressed ? 0.8 : 1 },
+              ]}
+            >
+              <Text style={[Typography.headline, { color: '#FFFFFF' }]}>Retake</Text>
+            </Pressable>
 
-            <View style={styles.previewButtons}>
-              <Pressable
-                style={[styles.previewButton, { backgroundColor: colors.border }]}
-                onPress={handleRetake}
-              >
-                <RNText style={[styles.previewButtonText, { color: colors.text }]}>
-                  Retake
-                </RNText>
-              </Pressable>
-              <Pressable
-                style={[styles.previewButton, styles.analyzeButton, { backgroundColor: colors.primary }]}
-                onPress={handleAnalyze}
-              >
-                <RNText style={styles.analyzeButtonText}>
-                  Analyze
-                </RNText>
-              </Pressable>
-            </View>
+            <Pressable
+              onPress={handleAnalyze}
+              style={({ pressed }) => [
+                styles.analyzeButton,
+                { opacity: pressed ? 0.8 : 1 },
+              ]}
+            >
+              <LinearGradient
+                colors={[...colors.gradientPrimary]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={StyleSheet.absoluteFill}
+              />
+              <Text style={[Typography.headline, { color: '#FFFFFF' }]}>
+                ✨ Analyze
+              </Text>
+            </Pressable>
           </View>
-        </View>
+        </Animated.View>
+
+        {/* Back button */}
+        <Animated.View
+          entering={FadeIn}
+          style={[styles.previewBackButton, { top: insets.top + 12 }]}
+        >
+          <Pressable
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              setCapturedMedia(null);
+            }}
+            style={styles.glassButton}
+          >
+            <BlurView intensity={60} tint="dark" style={StyleSheet.absoluteFill} />
+            <Text style={{ color: '#FFFFFF', fontSize: 18 }}>✕</Text>
+          </Pressable>
+        </Animated.View>
       </View>
     );
   }
@@ -311,69 +428,156 @@ export default function CameraScreen() {
   // Camera view
   return (
     <View style={styles.container}>
-      <CameraView
-        ref={cameraRef}
-        style={styles.camera}
-        facing="back"
-      >
+      <CameraView ref={cameraRef} style={styles.camera} facing="back">
+        {/* Flash overlay */}
+        <Animated.View
+          style={[
+            StyleSheet.absoluteFill,
+            { backgroundColor: '#FFFFFF' },
+            useAnimatedStyle(() => ({ opacity: flashOpacity.value })),
+          ]}
+          pointerEvents="none"
+        />
+
+        {/* Top gradient */}
+        <LinearGradient
+          colors={['rgba(0,0,0,0.5)', 'transparent']}
+          style={styles.topGradient}
+        />
+
         {/* Header */}
-        <View style={styles.header}>
-          <Pressable onPress={() => router.back()} style={styles.backButton}>
-            <RNText style={{ color: 'white', fontSize: 18 }}>✕</RNText>
+        <Animated.View
+          entering={FadeInDown.delay(100)}
+          style={[styles.header, { paddingTop: insets.top + 8 }]}
+        >
+          <Pressable
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              router.back();
+            }}
+            style={styles.glassButton}
+          >
+            <BlurView intensity={60} tint="dark" style={StyleSheet.absoluteFill} />
+            <Text style={{ color: '#FFFFFF', fontSize: 18 }}>✕</Text>
           </Pressable>
 
           {activeRoom && (
-            <View style={styles.roomBadge}>
-              <RNText style={{ color: 'white', fontSize: 14 }}>
+            <Animated.View entering={FadeIn.delay(200)} style={styles.roomBadge}>
+              <BlurView intensity={60} tint="dark" style={StyleSheet.absoluteFill} />
+              <Text style={[Typography.caption1Medium, { color: '#FFFFFF' }]}>
                 {activeRoom.emoji} {activeRoom.name}
-              </RNText>
-            </View>
+              </Text>
+            </Animated.View>
           )}
-        </View>
+
+          <View style={{ width: 44 }} />
+        </Animated.View>
 
         {/* Guide overlay */}
         <View style={styles.guideOverlay}>
-          <View style={[styles.cornerTL, styles.corner]} />
-          <View style={[styles.cornerTR, styles.corner]} />
-          <View style={[styles.cornerBL, styles.corner]} />
-          <View style={[styles.cornerBR, styles.corner]} />
+          <Animated.View style={[styles.corners, cornerAnimatedStyle]}>
+            <View style={[styles.corner, styles.cornerTL]} />
+            <View style={[styles.corner, styles.cornerTR]} />
+            <View style={[styles.corner, styles.cornerBL]} />
+            <View style={[styles.corner, styles.cornerBR]} />
+          </Animated.View>
 
-          <RNText style={styles.guideText}>
-            Position the room in frame
-          </RNText>
+          <Animated.View entering={FadeIn.delay(400)} style={styles.guideBadge}>
+            <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFill} />
+            <Text style={[Typography.caption1, { color: 'rgba(255,255,255,0.9)' }]}>
+              Position the room in frame
+            </Text>
+          </Animated.View>
         </View>
+
+        {/* Bottom gradient */}
+        <LinearGradient
+          colors={['transparent', 'rgba(0,0,0,0.7)']}
+          style={styles.bottomGradient}
+        />
 
         {/* Controls */}
-        <View style={styles.controls}>
-          {/* Gallery button */}
-          <Pressable onPress={pickMedia} style={styles.sideButton}>
-            <RNText style={{ fontSize: 24 }}>🖼️</RNText>
-          </Pressable>
+        <Animated.View
+          entering={FadeInUp.delay(200).springify()}
+          style={[styles.controls, { paddingBottom: insets.bottom + 20 }]}
+        >
+          {/* Tip */}
+          <View style={styles.tipContainer}>
+            <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFill} />
+            <Text style={[Typography.caption1, { color: 'rgba(255,255,255,0.9)' }]}>
+              💡 Capture the whole area for best results
+            </Text>
+          </View>
 
-          {/* Capture button */}
-          <Pressable
-            onPress={takePicture}
-            disabled={isCapturing}
-            style={[
-              styles.captureButton,
-              isCapturing && { opacity: 0.5 },
-            ]}
-          >
-            <View style={styles.captureButtonInner} />
-          </Pressable>
+          {/* Capture controls */}
+          <View style={styles.captureRow}>
+            {/* Gallery button */}
+            <Pressable
+              onPress={pickMedia}
+              style={({ pressed }) => [
+                styles.sideControlButton,
+                { transform: [{ scale: pressed ? 0.9 : 1 }] },
+              ]}
+            >
+              <BlurView intensity={60} tint="dark" style={StyleSheet.absoluteFill} />
+              <Text style={{ fontSize: 24 }}>🖼️</Text>
+            </Pressable>
 
-          {/* Placeholder for symmetry */}
-          <View style={styles.sideButton} />
-        </View>
+            {/* Capture button */}
+            <AnimatedPressable
+              onPress={takePicture}
+              disabled={isCapturing}
+              style={[styles.captureButton, captureAnimatedStyle, isCapturing && { opacity: 0.6 }]}
+            >
+              <View style={styles.captureButtonOuter}>
+                <View style={styles.captureButtonInner} />
+              </View>
+            </AnimatedPressable>
 
-        {/* Tips */}
-        <View style={styles.tips}>
-          <RNText style={styles.tipText}>
-            💡 Tip: Capture the whole area for best results
-          </RNText>
-        </View>
+            {/* Flip camera placeholder */}
+            <View style={styles.sideControlButton}>
+              <BlurView intensity={60} tint="dark" style={StyleSheet.absoluteFill} />
+              <Text style={{ fontSize: 24 }}>🔄</Text>
+            </View>
+          </View>
+        </Animated.View>
       </CameraView>
     </View>
+  );
+}
+
+// Room Type Card Component
+function RoomTypeCard({
+  type,
+  info,
+  onPress,
+  delay,
+}: {
+  type: RoomType;
+  info: { emoji: string; label: string };
+  onPress: () => void;
+  delay: number;
+}) {
+  const { animatedStyle, onPressIn, onPressOut } = useCardPress();
+
+  return (
+    <AnimatedPressable
+      onPress={onPress}
+      onPressIn={onPressIn}
+      onPressOut={onPressOut}
+      style={animatedStyle}
+    >
+      <Animated.View
+        entering={FadeInDown.delay(delay).springify()}
+        style={styles.roomTypeCard}
+      >
+        <BlurView intensity={60} tint="dark" style={StyleSheet.absoluteFill} />
+        <Text style={styles.roomTypeEmoji}>{info.emoji}</Text>
+        <Text style={[Typography.headline, { color: '#FFFFFF', marginTop: 8 }]}>
+          {info.label}
+        </Text>
+      </Animated.View>
+    </AnimatedPressable>
   );
 }
 
@@ -385,192 +589,273 @@ const styles = StyleSheet.create({
   camera: {
     flex: 1,
   },
+  permissionContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  permissionContent: {
+    alignItems: 'center',
+    padding: 32,
+  },
+  permissionEmoji: {
+    fontSize: 64,
+  },
+  permissionButtons: {
+    marginTop: 32,
+    gap: 12,
+    width: '100%',
+  },
+  primaryButton: {
+    paddingVertical: 16,
+    paddingHorizontal: 32,
+    borderRadius: 16,
+    overflow: 'hidden',
+    alignItems: 'center',
+  },
+  secondaryButton: {
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  topGradient: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 120,
+  },
+  bottomGradient: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 200,
+  },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingTop: 60,
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 10,
   },
-  backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+  glassButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
   },
   roomBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    overflow: 'hidden',
   },
   guideOverlay: {
     flex: 1,
-    margin: 40,
+    margin: 32,
     justifyContent: 'center',
     alignItems: 'center',
   },
+  corners: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
   corner: {
     position: 'absolute',
-    width: 40,
-    height: 40,
-    borderColor: 'rgba(255,255,255,0.5)',
+    width: 48,
+    height: 48,
+    borderColor: 'rgba(255,255,255,0.6)',
   },
   cornerTL: {
     top: 0,
     left: 0,
     borderTopWidth: 3,
     borderLeftWidth: 3,
-    borderTopLeftRadius: 12,
+    borderTopLeftRadius: 16,
   },
   cornerTR: {
     top: 0,
     right: 0,
     borderTopWidth: 3,
     borderRightWidth: 3,
-    borderTopRightRadius: 12,
+    borderTopRightRadius: 16,
   },
   cornerBL: {
     bottom: 0,
     left: 0,
     borderBottomWidth: 3,
     borderLeftWidth: 3,
-    borderBottomLeftRadius: 12,
+    borderBottomLeftRadius: 16,
   },
   cornerBR: {
     bottom: 0,
     right: 0,
     borderBottomWidth: 3,
     borderRightWidth: 3,
-    borderBottomRightRadius: 12,
+    borderBottomRightRadius: 16,
   },
-  guideText: {
-    color: 'rgba(255,255,255,0.7)',
-    fontSize: 16,
-    textAlign: 'center',
+  guideBadge: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 20,
+    overflow: 'hidden',
   },
   controls: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    alignItems: 'center',
-    paddingBottom: 40,
-    paddingHorizontal: 40,
-  },
-  sideButton: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  captureButton: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: 'rgba(255,255,255,0.3)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 4,
-    borderColor: 'white',
-  },
-  captureButtonInner: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: 'white',
-  },
-  tips: {
     position: 'absolute',
-    bottom: 120,
+    bottom: 0,
     left: 0,
     right: 0,
     alignItems: 'center',
+    paddingHorizontal: 20,
   },
-  tipText: {
-    color: 'rgba(255,255,255,0.8)',
-    fontSize: 14,
-    textAlign: 'center',
-    backgroundColor: 'rgba(0,0,0,0.3)',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+  tipContainer: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
     borderRadius: 20,
+    marginBottom: 24,
+    overflow: 'hidden',
   },
-  preview: {
-    flex: 1,
+  captureRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 40,
   },
-  previewImage: {
-    flex: 1,
+  sideControlButton: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  captureButton: {
+    width: 84,
+    height: 84,
+    borderRadius: 42,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  captureButtonOuter: {
+    width: 84,
+    height: 84,
+    borderRadius: 42,
+    borderWidth: 4,
+    borderColor: 'rgba(255,255,255,0.9)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.2)',
+  },
+  captureButtonInner: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    backgroundColor: '#FFFFFF',
+  },
+  // Preview styles
+  previewBackButton: {
+    position: 'absolute',
+    left: 16,
+    zIndex: 10,
+  },
+  videoIndicator: {
+    position: 'absolute',
+    top: 100,
+    right: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  videoIndicatorText: {
+    color: '#EF4444',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1,
   },
   previewControls: {
-    padding: 24,
-    paddingBottom: 48,
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    marginTop: -24,
+    overflow: 'hidden',
+    paddingTop: 24,
+    paddingHorizontal: 20,
   },
-  previewInfo: {
+  previewContent: {
     alignItems: 'center',
     marginBottom: 24,
   },
-  previewTitle: {
-    fontSize: 22,
-    fontWeight: '700',
-    marginBottom: 8,
-  },
-  previewSubtitle: {
-    fontSize: 14,
-    textAlign: 'center',
-    marginBottom: 12,
+  previewEmoji: {
+    fontSize: 40,
   },
   roomTag: {
+    marginTop: 12,
     paddingHorizontal: 16,
     paddingVertical: 8,
-    borderRadius: 20,
-    marginTop: 8,
-  },
-  roomTagText: {
-    fontSize: 14,
-    fontWeight: '600',
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.15)',
   },
   previewButtons: {
     flexDirection: 'row',
     gap: 12,
   },
-  previewButton: {
+  retakeButton: {
     flex: 1,
     paddingVertical: 16,
     borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.15)',
     alignItems: 'center',
-  },
-  previewButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
   },
   analyzeButton: {
     flex: 2,
+    paddingVertical: 16,
+    borderRadius: 16,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  analyzeButtonText: {
-    color: '#fff',
-    fontSize: 17,
-    fontWeight: '700',
+  // Room selector styles
+  roomSelectorContainer: {
+    flex: 1,
+    paddingHorizontal: 20,
   },
-  videoIndicator: {
-    position: 'absolute',
-    top: 60,
-    right: 16,
-    backgroundColor: 'rgba(239, 68, 68, 0.9)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
+  selectorBackButton: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    overflow: 'hidden',
   },
-  videoIndicatorText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 1,
+  roomTypeScroll: {
+    flex: 1,
+    marginTop: 32,
+  },
+  roomTypeGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    paddingBottom: 40,
+  },
+  roomTypeCard: {
+    width: (SCREEN_WIDTH - 52) / 2,
+    height: 120,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  roomTypeEmoji: {
+    fontSize: 36,
   },
 });

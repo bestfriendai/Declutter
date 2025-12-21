@@ -212,8 +212,8 @@ export default function FocusModeScreen() {
   const [showCompletion, setShowCompletion] = useState(false);
   const [isBreakMode, setIsBreakMode] = useState(false);
   const [breakTimeRemaining, setBreakTimeRemaining] = useState(0);
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
-  const breakTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const breakTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const appState = useRef(AppState.currentState);
 
   // Animation values
