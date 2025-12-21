@@ -15,7 +15,7 @@ import {
 import Animated, {
   FadeInRight,
 } from 'react-native-reanimated';
-import { useColorScheme } from 'react-native';
+import { useColorScheme } from '@/hooks/useColorScheme';
 import { Colors } from '@/constants/Colors';
 import { Typography } from '@/theme/typography';
 

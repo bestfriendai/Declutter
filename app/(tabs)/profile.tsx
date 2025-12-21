@@ -3,7 +3,7 @@
  * iOS Settings style user profile and app settings
  */
 
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import {
   View,
   Text,
@@ -12,8 +12,6 @@ import {
   Pressable,
   useColorScheme,
   Alert,
-  TextInput,
-  Switch as RNSwitch,
 } from 'react-native';
 import Animated, {
   FadeInDown,
@@ -31,18 +29,15 @@ import * as Linking from 'expo-linking';
 
 import { Colors } from '@/constants/Colors';
 import { Typography } from '@/theme/typography';
-import { useDeclutter, saveApiKey, loadApiKey } from '@/context/DeclutterContext';
+import { useDeclutter } from '@/context/DeclutterContext';
 import { GlassCard } from '@/components/ui/GlassCard';
-import { GlassButton } from '@/components/ui/GlassButton';
 import {
   GroupedList,
   GroupedListItem,
   ToggleListItem,
-  AnimatedListItem,
 } from '@/components/ui/AnimatedListItem';
-import { StatCard } from '@/components/ui/StatCard';
 import { SingleRing } from '@/components/ui/ActivityRings';
-import { useCardPress } from '@/hooks/useAnimatedPress';
+import { isApiKeyConfigured } from '@/services/gemini';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -52,22 +47,7 @@ export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const { user, settings, updateSettings, stats, rooms, clearAllData, mascot } = useDeclutter();
 
-  const [apiKey, setApiKey] = useState('');
-  const [showApiKey, setShowApiKey] = useState(false);
-  const [isEditingApiKey, setIsEditingApiKey] = useState(false);
-
-  useEffect(() => {
-    loadApiKey().then(key => {
-      if (key) setApiKey(key);
-    });
-  }, []);
-
-  const handleSaveApiKey = async () => {
-    await saveApiKey(apiKey);
-    setIsEditingApiKey(false);
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    Alert.alert('Saved', 'API key has been saved successfully!');
-  };
+  const apiKeyConfigured = isApiKeyConfigured();
 
   const handleResetData = () => {
     Alert.alert(
@@ -240,8 +220,17 @@ export default function ProfileScreen() {
         >
           <GroupedList
             header="AI ASSISTANT"
-            footer="Get a free API key at ai.google.dev"
+            footer={apiKeyConfigured ? "AI features are ready." : "Configure API key in .env file."}
           >
+            <GroupedListItem
+              title="Gemini AI"
+              leftIcon={<Text style={styles.listIcon}>{apiKeyConfigured ? '✅' : '🔑'}</Text>}
+              rightElement={
+                <Text style={[Typography.body, { color: apiKeyConfigured ? colors.success : colors.warning }]}>
+                  {apiKeyConfigured ? 'Ready' : 'Not configured'}
+                </Text>
+              }
+            />
             <GroupedListItem
               title="Encouragement Level"
               leftIcon={<Text style={styles.listIcon}>💪</Text>}
@@ -276,81 +265,6 @@ export default function ProfileScreen() {
               }}
             />
           </GroupedList>
-
-          {/* API Key Input */}
-          <View style={styles.apiKeySection}>
-            <GlassCard style={styles.apiKeyCard}>
-              <View style={styles.apiKeyHeader}>
-                <Text style={styles.apiKeyIcon}>🔑</Text>
-                <View style={styles.apiKeyInfo}>
-                  <Text style={[Typography.headline, { color: colors.text }]}>
-                    Gemini API Key
-                  </Text>
-                  <Text style={[Typography.caption1, { color: colors.textSecondary }]}>
-                    {apiKey ? 'Key configured' : 'Not configured'}
-                  </Text>
-                </View>
-                <View style={[styles.statusDot, { backgroundColor: apiKey ? colors.success : colors.warning }]} />
-              </View>
-
-              {isEditingApiKey ? (
-                <View style={styles.apiKeyInput}>
-                  <TextInput
-                    style={[
-                      styles.input,
-                      {
-                        backgroundColor: colors.surfaceSecondary,
-                        color: colors.text,
-                        borderColor: colors.primary,
-                      },
-                    ]}
-                    placeholder="Enter your API key"
-                    placeholderTextColor={colors.textTertiary}
-                    value={apiKey}
-                    onChangeText={setApiKey}
-                    secureTextEntry={!showApiKey}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                  />
-                  <View style={styles.apiKeyButtons}>
-                    <Pressable
-                      style={[styles.apiKeyBtn, { backgroundColor: colors.surfaceSecondary }]}
-                      onPress={() => setShowApiKey(!showApiKey)}
-                    >
-                      <Text style={[Typography.caption1, { color: colors.text }]}>
-                        {showApiKey ? 'Hide' : 'Show'}
-                      </Text>
-                    </Pressable>
-                    <Pressable
-                      style={[styles.apiKeyBtn, { backgroundColor: colors.primary }]}
-                      onPress={handleSaveApiKey}
-                    >
-                      <Text style={[Typography.caption1, { color: '#FFFFFF' }]}>
-                        Save
-                      </Text>
-                    </Pressable>
-                    <Pressable
-                      style={[styles.apiKeyBtn, { backgroundColor: colors.surfaceSecondary }]}
-                      onPress={() => setIsEditingApiKey(false)}
-                    >
-                      <Text style={[Typography.caption1, { color: colors.text }]}>
-                        Cancel
-                      </Text>
-                    </Pressable>
-                  </View>
-                </View>
-              ) : (
-                <Pressable
-                  style={[styles.configureButton, { backgroundColor: colors.surfaceSecondary }]}
-                  onPress={() => setIsEditingApiKey(true)}
-                >
-                  <Text style={[Typography.subheadlineMedium, { color: colors.primary }]}>
-                    {apiKey ? 'Edit Key' : 'Configure'}
-                  </Text>
-                </Pressable>
-              )}
-            </GlassCard>
-          </View>
         </Animated.View>
 
         {/* About Section */}
@@ -575,54 +489,6 @@ const styles = StyleSheet.create({
   },
   listIcon: {
     fontSize: 20,
-  },
-  apiKeySection: {
-    marginTop: 12,
-  },
-  apiKeyCard: {
-    padding: 16,
-  },
-  apiKeyHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  apiKeyIcon: {
-    fontSize: 24,
-    marginRight: 12,
-  },
-  apiKeyInfo: {
-    flex: 1,
-  },
-  statusDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-  },
-  apiKeyInput: {
-    gap: 12,
-  },
-  input: {
-    height: 44,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    fontSize: 16,
-    borderWidth: 1,
-  },
-  apiKeyButtons: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  apiKeyBtn: {
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-  },
-  configureButton: {
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 10,
-    alignItems: 'center',
   },
   tipsCard: {
     padding: 20,

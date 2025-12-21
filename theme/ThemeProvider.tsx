@@ -3,11 +3,12 @@
  * Centralized theme management with Apple TV 2025 design system
  */
 
-import React, { createContext, useContext, useMemo } from 'react';
+import React, { createContext, useContext, useMemo, useEffect } from 'react';
 import { useColorScheme as useRNColorScheme, ColorSchemeName } from 'react-native';
 import { Colors, Shadows, RoomColors, PriorityColors, RingColors, RarityColors } from '@/constants/Colors';
 import { Typography, FontSizes, FontWeights, LineHeights } from './typography';
 import { GlassCardStyles, BlurIntensity, getGlassBackground, getGlassBorder } from './glass';
+import { setForcedColorScheme } from '@/hooks/useColorScheme';
 
 // Spacing scale (based on 4pt grid)
 export const Spacing = {
@@ -103,6 +104,11 @@ interface ThemeProviderProps {
 export function ThemeProvider({ children, forcedColorScheme }: ThemeProviderProps) {
   const systemColorScheme = useRNColorScheme();
   const colorScheme = (forcedColorScheme ?? systemColorScheme ?? 'dark') as 'light' | 'dark';
+
+  // Sync the color scheme to the global hook so all components get the right value
+  useEffect(() => {
+    setForcedColorScheme(colorScheme);
+  }, [colorScheme]);
 
   const theme = useMemo<ThemeContextType>(() => ({
     colorScheme,

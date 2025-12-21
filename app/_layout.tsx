@@ -4,16 +4,24 @@
  */
 
 import { DeclutterProvider, useDeclutter } from '@/context/DeclutterContext';
+import { ThemeProvider } from '@/theme/ThemeProvider';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import React from 'react';
+import { useColorScheme as useRNColorScheme } from 'react-native';
 
 function RootLayoutNav() {
-  const { user } = useDeclutter();
+  const { user, settings } = useDeclutter();
+  const systemScheme = useRNColorScheme();
+
+  // Determine effective color scheme based on user preference
+  const effectiveScheme = settings.theme === 'auto'
+    ? systemScheme ?? 'dark'
+    : settings.theme;
 
   return (
-    <>
-      <StatusBar style="auto" />
+    <ThemeProvider forcedColorScheme={effectiveScheme}>
+      <StatusBar style={effectiveScheme === 'dark' ? 'light' : 'dark'} />
       <Stack screenOptions={{ headerShown: false }}>
         {!user?.onboardingComplete ? (
           <Stack.Screen name="onboarding" options={{ headerShown: false }} />
@@ -51,7 +59,7 @@ function RootLayoutNav() {
           </>
         )}
       </Stack>
-    </>
+    </ThemeProvider>
   );
 }
 

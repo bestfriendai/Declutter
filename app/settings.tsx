@@ -3,7 +3,7 @@
  * Apple TV style with iOS Settings grouped lists
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -12,7 +12,6 @@ import {
   Pressable,
   Alert,
   Linking,
-  TextInput,
   useColorScheme,
   Switch,
 } from 'react-native';
@@ -38,6 +37,7 @@ import { Colors } from '@/constants/Colors';
 import { Typography } from '@/theme/typography';
 import { useDeclutter, saveApiKey, loadApiKey } from '@/context/DeclutterContext';
 import { useCardPress } from '@/hooks/useAnimatedPress';
+import { isApiKeyConfigured, getGeminiApiKey, setGeminiApiKey } from '@/services/gemini';
 
 // =============================================================================
 // Types
@@ -393,80 +393,17 @@ export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const { settings, updateSettings, rooms, stats, clearAllData } = useDeclutter();
 
-  const [apiKey, setApiKey] = useState('');
-  const [showApiKey, setShowApiKey] = useState(false);
-  const [isValidating, setIsValidating] = useState(false);
-  const [apiKeyExpanded, setApiKeyExpanded] = useState(false);
+  const [apiKeyConfigured, setApiKeyConfigured] = useState(isApiKeyConfigured());
 
   const scrollY = useSharedValue(0);
 
   useEffect(() => {
-    loadApiKey().then((key) => {
-      if (key) setApiKey(key);
-    });
+    setApiKeyConfigured(isApiKeyConfigured());
   }, []);
 
-  const validateApiKey = async (key: string): Promise<boolean> => {
-    if (!key || key.length < 20) {
-      return false;
-    }
-
-    try {
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: 'Hello' }] }],
-            generationConfig: { maxOutputTokens: 10 },
-          }),
-        }
-      );
-      return response.ok;
-    } catch {
-      return false;
-    }
-  };
-
-  const handleSaveApiKey = async () => {
-    if (!apiKey.trim()) {
-      Alert.alert('Error', 'Please enter an API key.');
-      return;
-    }
-
-    if (apiKey.length < 20) {
-      Alert.alert('Error', 'API key appears to be too short. Please check your key.');
-      return;
-    }
-
-    setIsValidating(true);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-
-    const isValid = await validateApiKey(apiKey);
-    setIsValidating(false);
-
-    if (isValid) {
-      await saveApiKey(apiKey);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      Alert.alert('Success', 'Your API key has been validated and saved!');
-    } else {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-      Alert.alert(
-        'Invalid API Key',
-        'The API key could not be validated. Please check that you have a valid Gemini API key.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Save Anyway',
-            onPress: async () => {
-              await saveApiKey(apiKey);
-              Alert.alert('Saved', 'API key saved without validation.');
-            },
-          },
-        ]
-      );
-    }
+  const openGeminiSetup = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    Linking.openURL('https://aistudio.google.com/app/apikey');
   };
 
   const handleClearData = () => {
@@ -497,10 +434,6 @@ export default function SettingsScreen() {
     );
   };
 
-  const openGeminiDocs = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    Linking.openURL('https://ai.google.dev/');
-  };
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -561,84 +494,33 @@ export default function SettingsScreen() {
         <SettingsSection
           title="AI Configuration"
           index={0}
-          footer="Your API key is stored locally and never shared. Get a free key from Google AI Studio."
+          footer={apiKeyConfigured
+            ? "AI features are ready to use."
+            : "Configure your Gemini API key in the .env file to enable AI features."}
         >
           <SettingsItem
             icon={
-              <IconBackground color="#34C759">
-                <Ionicons name="key" size={18} color="#FFFFFF" />
+              <IconBackground color={apiKeyConfigured ? "#34C759" : "#FF9500"}>
+                <Ionicons name={apiKeyConfigured ? "checkmark-circle" : "key"} size={18} color="#FFFFFF" />
               </IconBackground>
             }
-            title="Gemini API Key"
-            subtitle={apiKey ? (showApiKey ? apiKey.substring(0, 20) + '...' : '••••••••••••••••') : 'Not configured'}
-            onPress={() => setApiKeyExpanded(!apiKeyExpanded)}
-            showChevron
-            index={0}
-          />
-
-          {apiKeyExpanded && (
-            <Animated.View
-              entering={FadeInDown.duration(200)}
-              style={styles.apiKeySection}
-            >
-              <View
-                style={[
-                  styles.apiKeyInput,
-                  {
-                    backgroundColor:
-                      colorScheme === 'dark'
-                        ? 'rgba(255, 255, 255, 0.08)'
-                        : 'rgba(0, 0, 0, 0.05)',
-                    borderColor:
-                      colorScheme === 'dark'
-                        ? 'rgba(255, 255, 255, 0.1)'
-                        : 'rgba(0, 0, 0, 0.1)',
-                  },
-                ]}
-              >
-                <TextInput
-                  style={[Typography.body, { color: colors.text, flex: 1 }]}
-                  placeholder="Enter your API key"
-                  placeholderTextColor={colors.textTertiary}
-                  value={showApiKey ? apiKey : apiKey ? '•'.repeat(Math.min(apiKey.length, 30)) : ''}
-                  onChangeText={setApiKey}
-                  secureTextEntry={!showApiKey}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                />
+            title="Gemini AI"
+            subtitle={apiKeyConfigured ? "Configured and ready" : "Not configured"}
+            rightElement={
+              !apiKeyConfigured ? (
                 <Pressable
-                  onPress={() => setShowApiKey(!showApiKey)}
-                  style={styles.eyeButton}
-                >
-                  <Ionicons
-                    name={showApiKey ? 'eye-off' : 'eye'}
-                    size={20}
-                    color={colors.textSecondary}
-                  />
-                </Pressable>
-              </View>
-
-              <View style={styles.apiKeyButtons}>
-                <Pressable
-                  onPress={handleSaveApiKey}
-                  style={[styles.saveButton, { backgroundColor: colors.primary }]}
-                >
-                  <Text style={[Typography.callout, { color: '#FFFFFF' }]}>
-                    {isValidating ? 'Validating...' : 'Save & Validate'}
-                  </Text>
-                </Pressable>
-                <Pressable
-                  onPress={openGeminiDocs}
-                  style={styles.linkButton}
+                  onPress={openGeminiSetup}
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
                 >
                   <Text style={[Typography.callout, { color: colors.primary }]}>
-                    Get Free Key
+                    Get Key
                   </Text>
-                  <Ionicons name="open-outline" size={16} color={colors.primary} />
+                  <Ionicons name="open-outline" size={14} color={colors.primary} />
                 </Pressable>
-              </View>
-            </Animated.View>
-          )}
+              ) : undefined
+            }
+            index={0}
+          />
         </SettingsSection>
 
         {/* Appearance */}
@@ -1095,40 +977,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-  },
-  apiKeySection: {
-    paddingHorizontal: 16,
-    paddingBottom: 16,
-    gap: 12,
-  },
-  apiKeyInput: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: 10,
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  eyeButton: {
-    padding: 4,
-  },
-  apiKeyButtons: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  saveButton: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  linkButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
     paddingVertical: 12,
     paddingHorizontal: 16,
   },

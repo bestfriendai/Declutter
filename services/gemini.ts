@@ -8,15 +8,26 @@ import { AIAnalysisResult, CleaningTask, Priority, TaskDifficulty, RoomType } fr
 // Gemini API configuration - Using Gemini 2.0 Flash (latest stable)
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
 
-// You can set this via environment variable or app config
-let API_KEY = '';
+// API Key from environment variable (preferred) or runtime override
+const ENV_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY || '';
+let runtimeApiKey = '';
 
 export function setGeminiApiKey(key: string) {
-  API_KEY = key;
+  runtimeApiKey = key;
 }
 
 export function getGeminiApiKey(): string {
-  return API_KEY;
+  return runtimeApiKey || ENV_API_KEY;
+}
+
+// Check if API key is configured
+export function isApiKeyConfigured(): boolean {
+  return !!(runtimeApiKey || ENV_API_KEY);
+}
+
+// Get the active API key (prefers runtime override, then env)
+function getActiveApiKey(): string {
+  return runtimeApiKey || ENV_API_KEY;
 }
 
 // System prompt for declutter analysis - ADHD-friendly with detailed cleaning instructions
@@ -293,8 +304,9 @@ export async function analyzeRoomImage(
   base64Image: string,
   additionalContext?: string
 ): Promise<AIAnalysisResult> {
-  if (!API_KEY) {
-    throw new Error('Gemini API key not set. Please set your API key in settings.');
+  const apiKey = getActiveApiKey();
+  if (!apiKey) {
+    throw new Error('Gemini API key not configured. Please add EXPO_PUBLIC_GEMINI_API_KEY to your .env file.');
   }
 
   const userPrompt = additionalContext
@@ -320,7 +332,7 @@ export async function analyzeRoomImage(
   };
 
   try {
-    const response = await fetch(`${GEMINI_API_URL}?key=${API_KEY}`, {
+    const response = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -357,8 +369,9 @@ export async function analyzeProgress(
   remainingTasks: string[];
   encouragement: string;
 }> {
-  if (!API_KEY) {
-    throw new Error('Gemini API key not set');
+  const apiKey = getActiveApiKey();
+  if (!apiKey) {
+    throw new Error('Gemini API key not configured. Please add EXPO_PUBLIC_GEMINI_API_KEY to your .env file.');
   }
 
   const progressPrompt = `Compare these two images of the same room. The first image is "before" and the second is "after" cleaning.
@@ -392,7 +405,7 @@ Be very encouraging! Focus on what WAS accomplished, not what wasn't.`;
   };
 
   try {
-    const response = await fetch(`${GEMINI_API_URL}?key=${API_KEY}`, {
+    const response = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -435,7 +448,8 @@ Be very encouraging! Focus on what WAS accomplished, not what wasn't.`;
 
 // Get a motivational message
 export async function getMotivation(context: string): Promise<string> {
-  if (!API_KEY) {
+  const apiKey = getActiveApiKey();
+  if (!apiKey) {
     return getRandomMotivation();
   }
 
@@ -454,7 +468,7 @@ export async function getMotivation(context: string): Promise<string> {
       },
     };
 
-    const response = await fetch(`${GEMINI_API_URL}?key=${API_KEY}`, {
+    const response = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(requestBody),
