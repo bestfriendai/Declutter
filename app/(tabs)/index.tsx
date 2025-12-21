@@ -5,7 +5,8 @@
 
 import { Colors, RoomColors } from '@/constants/Colors';
 import { useDeclutter } from '@/context/DeclutterContext';
-import { Room, ROOM_TYPE_INFO, RoomType, MASCOT_PERSONALITIES } from '@/types/declutter';
+import { Room, ROOM_TYPE_INFO, RoomType, MASCOT_PERSONALITIES, FOCUS_QUOTES } from '@/types/declutter';
+import { getMotivation } from '@/services/gemini';
 import {
   Button,
   Form,
@@ -27,7 +28,7 @@ import {
 } from '@expo/ui/swift-ui/modifiers';
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   useColorScheme,
   View,
@@ -58,6 +59,37 @@ export default function HomeScreen() {
   } = useDeclutter();
   const [refreshing, setRefreshing] = useState(false);
   const [showAddRoom, setShowAddRoom] = useState(false);
+  const [motivationQuote, setMotivationQuote] = useState<string>(
+    FOCUS_QUOTES[Math.floor(Math.random() * FOCUS_QUOTES.length)]
+  );
+
+  // Rotate motivation quote periodically
+  useEffect(() => {
+    const loadMotivation = async () => {
+      try {
+        // Try to get AI-generated motivation, fallback to predefined quotes
+        const context = rooms.length > 0
+          ? `User has ${rooms.length} rooms and ${stats.totalTasksCompleted} tasks completed`
+          : 'New user just getting started';
+        const aiMotivation = await getMotivation(context);
+        if (aiMotivation) {
+          setMotivationQuote(aiMotivation);
+        }
+      } catch {
+        // Fallback to random quote from list
+        setMotivationQuote(FOCUS_QUOTES[Math.floor(Math.random() * FOCUS_QUOTES.length)]);
+      }
+    };
+
+    loadMotivation();
+
+    // Rotate quote every 5 minutes
+    const interval = setInterval(() => {
+      setMotivationQuote(FOCUS_QUOTES[Math.floor(Math.random() * FOCUS_QUOTES.length)]);
+    }, 300000);
+
+    return () => clearInterval(interval);
+  }, [rooms.length, stats.totalTasksCompleted]);
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -236,22 +268,59 @@ export default function HomeScreen() {
               />
             </Section>
           ) : (
-            <Section title="🏠 Your Spaces">
-              <VStack spacing={16} alignment="center">
-                <Text size={48}>🏠</Text>
-                <Text size={18} weight="semibold">No rooms yet</Text>
-                <Text
-                  size={14}
-                  modifiers={[foregroundStyle(colors.textSecondary)]}
+            <Section title="">
+              <View style={[styles.emptyStateCard, { backgroundColor: colors.card }]}>
+                <View style={styles.emptyStateIllustration}>
+                  <RNText style={styles.emptyStateEmoji}>🏠</RNText>
+                  <View style={styles.emptyStateSparkles}>
+                    <RNText style={styles.sparkle1}>✨</RNText>
+                    <RNText style={styles.sparkle2}>⭐</RNText>
+                    <RNText style={styles.sparkle3}>✨</RNText>
+                  </View>
+                </View>
+                <RNText style={[styles.emptyStateTitle, { color: colors.text }]}>
+                  Ready to start decluttering?
+                </RNText>
+                <RNText style={[styles.emptyStateSubtitle, { color: colors.textSecondary }]}>
+                  Snap a photo of any room and our AI will create a personalized cleaning plan just for you.
+                </RNText>
+                <View style={styles.emptyStateFeatures}>
+                  <View style={styles.featureItem}>
+                    <RNText style={styles.featureEmoji}>📸</RNText>
+                    <RNText style={[styles.featureText, { color: colors.textSecondary }]}>
+                      Take a photo
+                    </RNText>
+                  </View>
+                  <View style={[styles.featureArrow, { backgroundColor: colors.border }]} />
+                  <View style={styles.featureItem}>
+                    <RNText style={styles.featureEmoji}>🤖</RNText>
+                    <RNText style={[styles.featureText, { color: colors.textSecondary }]}>
+                      AI analyzes
+                    </RNText>
+                  </View>
+                  <View style={[styles.featureArrow, { backgroundColor: colors.border }]} />
+                  <View style={styles.featureItem}>
+                    <RNText style={styles.featureEmoji}>✅</RNText>
+                    <RNText style={[styles.featureText, { color: colors.textSecondary }]}>
+                      Get tasks
+                    </RNText>
+                  </View>
+                </View>
+                <Pressable
+                  style={[styles.emptyStateCTA, { backgroundColor: colors.primary }]}
+                  onPress={() => router.push('/camera')}
                 >
-                  Take a photo to add your first space!
-                </Text>
-                <Button
-                  label="Add a Room"
+                  <RNText style={styles.emptyStateCTAText}>📸 Capture Your First Room</RNText>
+                </Pressable>
+                <Pressable
+                  style={styles.emptyStateSecondary}
                   onPress={() => setShowAddRoom(true)}
-                  modifiers={[buttonStyle('bordered')]}
-                />
-              </VStack>
+                >
+                  <RNText style={[styles.emptyStateSecondaryText, { color: colors.primary }]}>
+                    Or add a room manually
+                  </RNText>
+                </Pressable>
+              </View>
             </Section>
           )}
 
@@ -329,7 +398,7 @@ export default function HomeScreen() {
                   Today's motivation
                 </Text>
                 <Text size={16} weight="medium">
-                  "Progress, not perfection. Every small step counts!" ✨
+                  "{motivationQuote}" ✨
                 </Text>
               </VStack>
             </Group>
@@ -448,5 +517,98 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     marginTop: 4,
+  },
+  // Empty State Styles
+  emptyStateCard: {
+    borderRadius: 20,
+    padding: 24,
+    alignItems: 'center',
+  },
+  emptyStateIllustration: {
+    position: 'relative',
+    marginBottom: 16,
+  },
+  emptyStateEmoji: {
+    fontSize: 64,
+  },
+  emptyStateSparkles: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  sparkle1: {
+    position: 'absolute',
+    top: -10,
+    right: -15,
+    fontSize: 20,
+  },
+  sparkle2: {
+    position: 'absolute',
+    top: 10,
+    left: -20,
+    fontSize: 16,
+  },
+  sparkle3: {
+    position: 'absolute',
+    bottom: -5,
+    right: -20,
+    fontSize: 18,
+  },
+  emptyStateTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  emptyStateSubtitle: {
+    fontSize: 14,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 24,
+    paddingHorizontal: 16,
+  },
+  emptyStateFeatures: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  featureItem: {
+    alignItems: 'center',
+    paddingHorizontal: 8,
+  },
+  featureEmoji: {
+    fontSize: 24,
+    marginBottom: 4,
+  },
+  featureText: {
+    fontSize: 11,
+    textAlign: 'center',
+  },
+  featureArrow: {
+    width: 24,
+    height: 2,
+    borderRadius: 1,
+  },
+  emptyStateCTA: {
+    paddingHorizontal: 24,
+    paddingVertical: 14,
+    borderRadius: 14,
+    width: '100%',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  emptyStateCTAText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  emptyStateSecondary: {
+    padding: 8,
+  },
+  emptyStateSecondaryText: {
+    fontSize: 14,
+    fontWeight: '500',
   },
 });
