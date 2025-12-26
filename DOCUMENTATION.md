@@ -464,29 +464,66 @@ eas build --platform android
 
 ## Video Support
 
-### Current Implementation
-- Videos can be selected from gallery (up to 30 seconds)
-- Video indicator badge shown during preview
-- For AI analysis, the first frame is extracted
-- Same analysis flow as photos
+### Full Video Recording & Analysis
+The app now supports comprehensive video capture and analysis with multi-frame AI processing.
+
+### Features
+- **Live Video Recording**: Record videos directly in the app (up to 30 seconds)
+- **Gallery Selection**: Select existing videos from your photo library
+- **Video Playback**: Full video playback in preview and results screens
+- **Multi-Frame Analysis**: AI analyzes 4 key frames from your video for comprehensive room assessment
 
 ### How It Works
-1. User selects video via ImagePicker
-2. `mediaType: 'video'` is detected
-3. Video URI passed to analysis
-4. Analysis screen shows video preview
-5. For Gemini API, first frame is used
+1. **Capture**: Switch to video mode using the mode toggle button
+2. **Record**: Press the red record button to start, press again to stop
+3. **Preview**: Video plays automatically in preview with loop playback
+4. **Analyze**: AI extracts 4 frames at regular intervals across the video
+5. **Results**: Video plays in the results hero section with "MULTI-FRAME" badge
 
-### Limitations
-- Live video recording not yet supported
-- Only gallery video selection available
-- Maximum duration: 30 seconds
-- Frame extraction uses video thumbnail
+### Technical Details
 
-### Future Improvements
-- Add live video recording
-- Multi-frame analysis for better accuracy
-- Video playback in preview
+#### Video Recording
+```typescript
+// Recording configuration
+const MAX_VIDEO_DURATION = 30; // Maximum 30 seconds
+// Microphone permission requested for audio (optional)
+// Recording indicator shows elapsed time
+```
+
+#### Multi-Frame Extraction
+```typescript
+// Frame extraction configuration
+const DEFAULT_FRAME_COUNT = 4; // 4 frames per video
+const MIN_FRAME_INTERVAL = 2000; // Minimum 2 seconds between frames
+
+// Frames are extracted at even intervals across the video
+// Each frame is converted to base64 and sent to Gemini
+```
+
+#### AI Analysis
+- Videos use `analyzeVideoMultiFrame()` for comprehensive analysis
+- All 4 frames are analyzed together for complete room understanding
+- AI identifies clutter visible from different angles and positions
+- Falls back to single-frame if multi-frame extraction fails
+
+### Video UI Components
+
+#### Camera Screen (`/camera`)
+- Mode toggle: Photo/Video switch at bottom
+- Record button: Red circle that becomes a stop square when recording
+- Recording indicator: Shows elapsed time and max duration
+- Video playback in preview with loop
+
+#### Analysis Screen (`/analysis`)
+- Video-specific loading stages:
+  1. Processing (extracting frames)
+  2. Scanning (analyzing angles)
+  3. Thinking (combining insights)
+  4. Planning (creating plan)
+  5. Finishing
+- Video plays in background during loading
+- "MULTI-FRAME" badge on results hero
+- Video continues playing in results view
 
 ---
 
