@@ -24,9 +24,6 @@ import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withSpring,
-  withTiming,
-  interpolate,
-  Extrapolate,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -35,9 +32,8 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 
 import { Colors } from '@/constants/Colors';
 import { Typography } from '@/theme/typography';
-import { useDeclutter, saveApiKey, loadApiKey } from '@/context/DeclutterContext';
-import { useCardPress } from '@/hooks/useAnimatedPress';
-import { isApiKeyConfigured, getGeminiApiKey, setGeminiApiKey } from '@/services/gemini';
+import { useDeclutter } from '@/context/DeclutterContext';
+import { isApiKeyConfigured } from '@/services/gemini';
 
 // =============================================================================
 // Types
@@ -395,8 +391,6 @@ export default function SettingsScreen() {
 
   const [apiKeyConfigured, setApiKeyConfigured] = useState(isApiKeyConfigured());
 
-  const scrollY = useSharedValue(0);
-
   useEffect(() => {
     setApiKeyConfigured(isApiKeyConfigured());
   }, []);
@@ -425,7 +419,7 @@ export default function SettingsScreen() {
                 'All data has been cleared successfully. The app will restart fresh.',
                 [{ text: 'OK', onPress: () => router.replace('/onboarding') }]
               );
-            } catch (error) {
+            } catch {
               Alert.alert('Error', 'Failed to clear data. Please try again.');
             }
           },

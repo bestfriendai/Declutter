@@ -3,7 +3,7 @@
  * Clean, minimal Apple-style design
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -11,7 +11,6 @@ import {
   ScrollView,
   Pressable,
   Dimensions,
-  Image,
   RefreshControl,
 } from 'react-native';
 import { useColorScheme } from '@/hooks/useColorScheme';
@@ -27,12 +26,9 @@ import Animated, {
 import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Colors, RoomColors } from '@/constants/Colors';
+import { Colors } from '@/constants/Colors';
 import { useDeclutter } from '@/context/DeclutterContext';
 import { Room, ROOM_TYPE_INFO, RoomType, FOCUS_QUOTES } from '@/types/declutter';
-import { isApiKeyConfigured } from '@/services/gemini';
-
-import { GlassCard } from '@/components/ui/GlassCard';
 import { GlassButton } from '@/components/ui/GlassButton';
 import { SingleRing } from '@/components/ui/ActivityRings';
 import { CollectibleSpawn } from '@/components/features/CollectibleSpawn';
@@ -254,7 +250,7 @@ export default function HomeScreen() {
           <Animated.View entering={FadeInDown.duration(500).delay(500)} style={styles.section}>
             <View style={[styles.quoteCard, { backgroundColor: colorScheme === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)' }]}>
               <Text style={[styles.quoteText, { color: colors.textSecondary }]}>
-                "{motivationQuote}"
+                {`"${motivationQuote}"`}
               </Text>
             </View>
           </Animated.View>

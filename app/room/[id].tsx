@@ -3,7 +3,7 @@
  * Apple TV style room progress, tasks, and photos
  */
 
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -12,20 +12,13 @@ import {
   Pressable,
   Alert,
   useColorScheme,
-  Dimensions,
-  Switch,
 } from 'react-native';
 import Animated, {
   FadeInDown,
-  FadeInRight,
-  FadeOut,
   useSharedValue,
   useAnimatedStyle,
   withSpring,
   withTiming,
-  withDelay,
-  runOnJS,
-  Easing,
   ZoomIn,
   SlideInRight,
 } from 'react-native-reanimated';
@@ -39,13 +32,12 @@ import * as Haptics from 'expo-haptics';
 import { Colors, PriorityColors } from '@/constants/Colors';
 import { Typography } from '@/theme/typography';
 import { useDeclutter } from '@/context/DeclutterContext';
-import { CleaningTask, Priority } from '@/types/declutter';
+import { CleaningTask } from '@/types/declutter';
 import { GlassCard } from '@/components/ui/GlassCard';
-import { GlassButton, IconButton } from '@/components/ui/GlassButton';
+import { GlassButton } from '@/components/ui/GlassButton';
 import { SingleRing } from '@/components/ui/ActivityRings';
-import { useCardPress, useFABPress } from '@/hooks/useAnimatedPress';
+import { useCardPress } from '@/hooks/useAnimatedPress';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 export default function RoomDetailScreen() {
@@ -65,7 +57,7 @@ export default function RoomDetailScreen() {
   const [filter, setFilter] = useState<'all' | 'pending' | 'completed'>('all');
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
   const [celebratingTask, setCelebratingTask] = useState<string | null>(null);
-  const [selectedPhotoIndex, setSelectedPhotoIndex] = useState<number | null>(null);
+  const [_selectedPhotoIndex, setSelectedPhotoIndex] = useState<number | null>(null);
 
   const celebrationOpacity = useSharedValue(0);
   const celebrationScale = useSharedValue(0.5);
@@ -90,6 +82,39 @@ export default function RoomDetailScreen() {
     transform: [{ scale: celebrationScale.value }],
   }));
 
+  // Filter tasks - hooks must be before early return
+  const filteredTasks = useMemo(() => {
+    if (!room) return [];
+    switch (filter) {
+      case 'pending':
+        return room.tasks.filter(t => !t.completed);
+      case 'completed':
+        return room.tasks.filter(t => t.completed);
+      default:
+        return room.tasks;
+    }
+  }, [room, filter]);
+
+  // Group tasks by priority
+  const tasksByPriority = useMemo(() => {
+    const high = filteredTasks.filter(t => t.priority === 'high');
+    const medium = filteredTasks.filter(t => t.priority === 'medium');
+    const low = filteredTasks.filter(t => t.priority === 'low');
+    return { high, medium, low };
+  }, [filteredTasks]);
+
+  // Quick wins
+  const quickWins = useMemo(() => {
+    if (!room) return [];
+    return room.tasks.filter(t => t.difficulty === 'quick' && !t.completed).slice(0, 3);
+  }, [room]);
+
+  // Calculate stats
+  const completedCount = room?.tasks.filter(t => t.completed).length ?? 0;
+  const remainingTime = room?.tasks
+    .filter(t => !t.completed)
+    .reduce((acc, t) => acc + t.estimatedMinutes, 0) ?? 0;
+
   if (!room) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -107,38 +132,6 @@ export default function RoomDetailScreen() {
       </View>
     );
   }
-
-  // Filter tasks
-  const filteredTasks = useMemo(() => {
-    switch (filter) {
-      case 'pending':
-        return room.tasks.filter(t => !t.completed);
-      case 'completed':
-        return room.tasks.filter(t => t.completed);
-      default:
-        return room.tasks;
-    }
-  }, [room.tasks, filter]);
-
-  // Group tasks by priority
-  const tasksByPriority = useMemo(() => {
-    const high = filteredTasks.filter(t => t.priority === 'high');
-    const medium = filteredTasks.filter(t => t.priority === 'medium');
-    const low = filteredTasks.filter(t => t.priority === 'low');
-    return { high, medium, low };
-  }, [filteredTasks]);
-
-  // Quick wins
-  const quickWins = useMemo(() => {
-    return room.tasks.filter(t => t.difficulty === 'quick' && !t.completed).slice(0, 3);
-  }, [room.tasks]);
-
-  // Calculate stats
-  const completedCount = room.tasks.filter(t => t.completed).length;
-  const totalTime = room.tasks.reduce((acc, t) => acc + t.estimatedMinutes, 0);
-  const remainingTime = room.tasks
-    .filter(t => !t.completed)
-    .reduce((acc, t) => acc + t.estimatedMinutes, 0);
 
   const handleTaskToggle = (taskId: string) => {
     const task = room.tasks.find(t => t.id === taskId);

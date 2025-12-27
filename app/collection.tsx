@@ -3,20 +3,6 @@
  * View all collected items with rarity, stats, and animations
  */
 
-import {
-  Host,
-  VStack,
-  HStack,
-  Text,
-  Section,
-  Button,
-} from '@expo/ui/swift-ui';
-import {
-  frame,
-  foregroundStyle,
-  padding,
-  cornerRadius,
-} from '@expo/ui/swift-ui/modifiers';
 import { router } from 'expo-router';
 import React, { useState, useMemo } from 'react';
 import {

@@ -3,7 +3,7 @@
  * Cinematic AI analysis with Apple TV style results reveal
  */
 
-import React, { useEffect, useState, useRef, useMemo } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -11,27 +11,21 @@ import {
   ScrollView,
   Pressable,
   useColorScheme,
-  Dimensions,
 } from 'react-native';
 import Animated, {
   FadeIn,
   FadeInDown,
   FadeInUp,
   FadeInRight,
-  FadeOut,
   SlideInUp,
-  SlideOutDown,
   ZoomIn,
   useSharedValue,
   useAnimatedStyle,
-  withSpring,
   withTiming,
   withSequence,
-  withDelay,
   withRepeat,
   Easing,
   interpolate,
-  runOnJS,
 } from 'react-native-reanimated';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -44,23 +38,24 @@ import * as Haptics from 'expo-haptics';
 import { Colors, PriorityColors } from '@/constants/Colors';
 import { Typography } from '@/theme/typography';
 import { useDeclutter } from '@/context/DeclutterContext';
-import { analyzeRoomImage, analyzeProgress, getMotivation } from '@/services/gemini';
+import { analyzeRoomImage, analyzeProgress, getMotivation, analyzeMedia } from '@/services/gemini';
 import { AIAnalysisResult, CleaningTask } from '@/types/declutter';
 import { GlassCard } from '@/components/ui/GlassCard';
 import { SingleRing } from '@/components/ui/ActivityRings';
 import { useCardPress } from '@/hooks/useAnimatedPress';
+import { useVideoPlayer, VideoView } from 'expo-video';
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 export default function AnalysisScreen() {
   const colorScheme = useColorScheme() ?? 'dark';
   const colors = Colors[colorScheme];
   const insets = useSafeAreaInsets();
-  const { roomId, imageUri, mode } = useLocalSearchParams<{
+  const { roomId, imageUri, mode, mediaType } = useLocalSearchParams<{
     roomId: string;
     imageUri?: string;
     mode?: 'compare';
+    mediaType?: 'photo' | 'video';
   }>();
   const {
     rooms,
@@ -81,23 +76,37 @@ export default function AnalysisScreen() {
   } | null>(null);
   const [motivation, setMotivation] = useState<string>('');
   const [loadingStage, setLoadingStage] = useState(0);
-  const [showResults, setShowResults] = useState(false);
 
   const room = rooms.find(r => r.id === roomId);
+  const isVideo = mediaType === 'video';
+
+  // Video player for video preview
+  const videoPlayer = useVideoPlayer(isVideo && imageUri ? imageUri : null, player => {
+    player.loop = true;
+    player.muted = true;
+  });
 
   // Animations
   const scanProgress = useSharedValue(0);
   const pulseScale = useSharedValue(1);
   const glowOpacity = useSharedValue(0.3);
 
-  // Loading stages with emojis and descriptions
-  const loadingStages = [
-    { emoji: '📷', title: 'Capturing', subtitle: 'Processing your photo...' },
-    { emoji: '🔍', title: 'Scanning', subtitle: 'Analyzing room layout...' },
-    { emoji: '🧠', title: 'Thinking', subtitle: 'AI identifying clutter...' },
-    { emoji: '📋', title: 'Planning', subtitle: 'Creating your tasks...' },
-    { emoji: '✨', title: 'Finishing', subtitle: 'Almost ready!' },
-  ];
+  // Loading stages with emojis and descriptions (different for video vs photo)
+  const loadingStages = isVideo
+    ? [
+        { emoji: '🎬', title: 'Processing', subtitle: 'Extracting key frames from video...' },
+        { emoji: '🔍', title: 'Scanning', subtitle: 'Analyzing multiple angles...' },
+        { emoji: '🧠', title: 'Thinking', subtitle: 'AI combining insights from all frames...' },
+        { emoji: '📋', title: 'Planning', subtitle: 'Creating comprehensive plan...' },
+        { emoji: '✨', title: 'Finishing', subtitle: 'Almost ready!' },
+      ]
+    : [
+        { emoji: '📷', title: 'Capturing', subtitle: 'Processing your photo...' },
+        { emoji: '🔍', title: 'Scanning', subtitle: 'Analyzing room layout...' },
+        { emoji: '🧠', title: 'Thinking', subtitle: 'AI identifying clutter...' },
+        { emoji: '📋', title: 'Planning', subtitle: 'Creating your tasks...' },
+        { emoji: '✨', title: 'Finishing', subtitle: 'Almost ready!' },
+      ];
 
   // Animate loading
   useEffect(() => {
@@ -172,11 +181,20 @@ export default function AnalysisScreen() {
     setLoadingStage(0);
 
     try {
-      const base64 = await FileSystem.readAsStringAsync(imageUri, {
-        encoding: 'base64',
-      });
+      let analysisResult: AIAnalysisResult;
 
-      const analysisResult = await analyzeRoomImage(base64);
+      if (isVideo) {
+        // Use multi-frame analysis for videos
+        console.log('Running multi-frame video analysis...');
+        analysisResult = await analyzeMedia(imageUri, 'video');
+      } else {
+        // Use single image analysis for photos
+        const base64 = await FileSystem.readAsStringAsync(imageUri, {
+          encoding: 'base64',
+        });
+        analysisResult = await analyzeRoomImage(base64);
+      }
+
       setResult(analysisResult);
 
       updateRoom(roomId, {
@@ -189,21 +207,20 @@ export default function AnalysisScreen() {
       setTasksForRoom(roomId, analysisResult.tasks);
 
       const motivationalMessage = await getMotivation(
-        `User just analyzed their ${room?.type || 'room'}. Mess level: ${analysisResult.messLevel}%`
+        `User just analyzed their ${room?.type || 'room'}${isVideo ? ' using video walkthrough' : ''}. Mess level: ${analysisResult.messLevel}%`
       );
       setMotivation(motivationalMessage);
 
-      // Show results with animation delay
+      // Show success haptic feedback
       setTimeout(() => {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        setShowResults(true);
       }, 500);
     } catch (error) {
       console.error('Analysis error:', error);
       setAnalysisError(
         error instanceof Error
           ? error.message
-          : 'Failed to analyze image. Please try again.'
+          : `Failed to analyze ${isVideo ? 'video' : 'image'}. Please try again.`
       );
     } finally {
       setAnalyzing(false);
@@ -265,14 +282,23 @@ export default function AnalysisScreen() {
 
     return (
       <View style={styles.container}>
-        {/* Full screen image with effects */}
+        {/* Full screen media with effects - Video or Photo */}
         {imageUri && (
           <View style={styles.loadingImageContainer}>
-            <Image
-              source={{ uri: imageUri }}
-              style={styles.loadingImage}
-              contentFit="cover"
-            />
+            {isVideo ? (
+              <VideoView
+                player={videoPlayer}
+                style={styles.loadingImage}
+                contentFit="cover"
+                nativeControls={false}
+              />
+            ) : (
+              <Image
+                source={{ uri: imageUri }}
+                style={styles.loadingImage}
+                contentFit="cover"
+              />
+            )}
 
             {/* Dark overlay with gradient */}
             <LinearGradient
@@ -355,7 +381,9 @@ export default function AnalysisScreen() {
             {/* Tip */}
             <View style={styles.tipBadge}>
               <Text style={[Typography.caption1, { color: 'rgba(255,255,255,0.8)' }]}>
-                💡 The more visible your room, the better the analysis!
+                {isVideo
+                  ? '🎬 Video analysis captures multiple angles for better accuracy!'
+                  : '💡 The more visible your room, the better the analysis!'}
               </Text>
             </View>
           </View>
@@ -573,26 +601,41 @@ export default function AnalysisScreen() {
           ]}
           showsVerticalScrollIndicator={false}
         >
-          {/* Hero with image preview */}
+          {/* Hero with media preview - Video or Photo */}
           <Animated.View entering={FadeInDown.delay(100).springify()}>
             <View style={styles.resultHero}>
               {imageUri && (
-                <Image
-                  source={{ uri: imageUri }}
-                  style={styles.resultHeroImage}
-                  contentFit="cover"
-                />
+                isVideo ? (
+                  <VideoView
+                    player={videoPlayer}
+                    style={styles.resultHeroImage}
+                    contentFit="cover"
+                    nativeControls={false}
+                  />
+                ) : (
+                  <Image
+                    source={{ uri: imageUri }}
+                    style={styles.resultHeroImage}
+                    contentFit="cover"
+                  />
+                )
               )}
               <LinearGradient
                 colors={['transparent', 'rgba(0,0,0,0.8)']}
                 style={styles.resultHeroGradient}
               />
               <View style={styles.resultHeroContent}>
-                <Text style={styles.resultEmoji}>✨</Text>
+                <Text style={styles.resultEmoji}>{isVideo ? '🎬' : '✨'}</Text>
                 <Text style={[Typography.largeTitle, { color: '#FFFFFF' }]}>
-                  Analysis Complete!
+                  {isVideo ? 'Video Analysis Complete!' : 'Analysis Complete!'}
                 </Text>
               </View>
+              {isVideo && (
+                <View style={styles.videoIndicatorBadge}>
+                  <BlurView intensity={60} tint="dark" style={StyleSheet.absoluteFill} />
+                  <Text style={styles.videoIndicatorText}>MULTI-FRAME</Text>
+                </View>
+              )}
             </View>
           </Animated.View>
 
@@ -743,7 +786,6 @@ export default function AnalysisScreen() {
 // Quick Win Card
 function QuickWinCard({ text, delay }: { text: string; delay: number }) {
   const colorScheme = useColorScheme() ?? 'dark';
-  const colors = Colors[colorScheme];
   const { animatedStyle, onPressIn, onPressOut } = useCardPress();
 
   return (
@@ -983,6 +1025,21 @@ const styles = StyleSheet.create({
   },
   resultEmoji: {
     fontSize: 36,
+  },
+  videoIndicatorBadge: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  videoIndicatorText: {
+    color: '#A78BFA',
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1,
   },
   statsRow: {
     flexDirection: 'row',

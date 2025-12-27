@@ -21,9 +21,7 @@ import Animated, {
   withRepeat,
   runOnJS,
   Easing,
-  interpolate,
   FadeIn,
-  FadeOut,
   ZoomIn,
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
@@ -90,7 +88,7 @@ function Particle({ delay, color }: { delay: number; color: string }) {
 export function CollectibleSpawn({ spawn, onCollect, onDismiss }: CollectibleSpawnProps) {
   const rawColorScheme = useColorScheme();
   const colorScheme = rawColorScheme === 'dark' ? 'dark' : 'light';
-  const colors = Colors[colorScheme];
+  const _colors = Colors[colorScheme]; // Reserved for future use
 
   const { collectItem } = useDeclutter();
 

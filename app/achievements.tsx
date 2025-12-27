@@ -23,17 +23,9 @@ import Animated, {
   FadeOut,
   SlideInUp,
   SlideOutDown,
-  ZoomIn,
-  ZoomOut,
   useSharedValue,
   useAnimatedStyle,
   withSpring,
-  withTiming,
-  withDelay,
-  withSequence,
-  Easing,
-  interpolate,
-  runOnJS,
 } from 'react-native-reanimated';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -46,11 +38,10 @@ import { Typography } from '@/theme/typography';
 import { useDeclutter } from '@/context/DeclutterContext';
 import { BADGES, Badge } from '@/types/declutter';
 import { GlassCard } from '@/components/ui/GlassCard';
-import { ContentRow } from '@/components/ui/ContentRow';
 import { useCardPress } from '@/hooks/useAnimatedPress';
 import { SingleRing } from '@/components/ui/ActivityRings';
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 type BadgeCategory = 'all' | 'tasks' | 'rooms' | 'streak' | 'time';

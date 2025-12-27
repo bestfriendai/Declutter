@@ -28,7 +28,6 @@ import Animated, {
   withSequence,
   withSpring,
   Easing,
-  interpolate,
   FadeIn,
   FadeOut,
   SlideInDown,
@@ -136,10 +135,6 @@ function ProgressRing({ progress, isPaused }: { progress: number; isPaused: bool
   const glowStyle = useAnimatedStyle(() => ({
     opacity: glowOpacity.value,
   }));
-
-  // Calculate the stroke dasharray for progress
-  const circumference = TIMER_SIZE * Math.PI;
-  const strokeDashoffset = circumference * (1 - progress);
 
   return (
     <View style={styles.progressRingContainer}>
@@ -462,7 +457,7 @@ export default function FocusModeScreen() {
             <RNText style={styles.breakEmoji}>☕</RNText>
             <RNText style={styles.breakTitle}>Break Time!</RNText>
             <RNText style={styles.breakSubtitle}>
-              You've earned a rest. Take a breather!
+              {`You've earned a rest. Take a breather!`}
             </RNText>
 
             <View style={styles.breakTimerContainer}>
@@ -516,10 +511,10 @@ export default function FocusModeScreen() {
           >
             <RNText style={styles.warningEmoji}>💪</RNText>
             <RNText style={[styles.warningTitle, { color: colors.text }]}>
-              You're doing great!
+              {`You're doing great!`}
             </RNText>
             <RNText style={[styles.warningText, { color: colors.textSecondary }]}>
-              Are you sure you want to exit? You've already completed{' '}
+              {`Are you sure you want to exit? You've already completed `}
               <RNText style={{ fontWeight: '700', color: colors.text }}>
                 {focusSession?.tasksCompletedDuringSession || 0} tasks
               </RNText>
@@ -598,7 +593,7 @@ export default function FocusModeScreen() {
         {/* Quote */}
         {settings.focusMode.showMotivationalQuotes && (
           <Animated.View entering={FadeIn.delay(300)} style={styles.quoteContainer}>
-            <RNText style={styles.quoteText}>"{quote}"</RNText>
+            <RNText style={styles.quoteText}>{`"${quote}"`}</RNText>
           </Animated.View>
         )}
 

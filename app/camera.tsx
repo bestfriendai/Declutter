@@ -1,9 +1,10 @@
 /**
  * Declutterly - Camera Screen
  * Apple TV style camera with glass overlay controls
+ * Supports both photo capture and live video recording
  */
 
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -18,25 +19,21 @@ import Animated, {
   FadeIn,
   FadeInDown,
   FadeInUp,
-  FadeOut,
   ZoomIn,
-  ZoomOut,
   SlideInUp,
-  SlideOutDown,
   useSharedValue,
   useAnimatedStyle,
   withSpring,
   withTiming,
   withSequence,
-  withDelay,
-  runOnJS,
-  Easing,
+  withRepeat,
 } from 'react-native-reanimated';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
-import { CameraView, useCameraPermissions } from 'expo-camera';
+import { CameraView, useCameraPermissions, useMicrophonePermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
+import { useVideoPlayer, VideoView } from 'expo-video';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
@@ -45,10 +42,11 @@ import { Colors } from '@/constants/Colors';
 import { Typography } from '@/theme/typography';
 import { useDeclutter } from '@/context/DeclutterContext';
 import { ROOM_TYPE_INFO, RoomType } from '@/types/declutter';
-import { GlassCard } from '@/components/ui/GlassCard';
 import { useCardPress } from '@/hooks/useAnimatedPress';
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const MAX_VIDEO_DURATION = 30; // Maximum video duration in seconds
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 export default function CameraScreen() {
@@ -59,18 +57,29 @@ export default function CameraScreen() {
   const cameraRef = useRef<CameraView>(null);
 
   const [permission, requestPermission] = useCameraPermissions();
+  const [micPermission, requestMicPermission] = useMicrophonePermissions();
   const [capturedMedia, setCapturedMedia] = useState<{ uri: string; type: 'photo' | 'video' } | null>(null);
   const [isCapturing, setIsCapturing] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingDuration, setRecordingDuration] = useState(0);
   const [showRoomSelector, setShowRoomSelector] = useState(false);
   const [selectedRoomType, setSelectedRoomType] = useState<RoomType | null>(null);
-  const [showFlash, setShowFlash] = useState(false);
+  const [cameraMode, setCameraMode] = useState<'photo' | 'video'>('photo');
+  const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const activeRoom = activeRoomId ? rooms.find(r => r.id === activeRoomId) : null;
+
+  // Video player for preview
+  const videoPlayer = useVideoPlayer(capturedMedia?.type === 'video' ? capturedMedia.uri : null, player => {
+    player.loop = true;
+    player.muted = true;
+  });
 
   // Animations
   const captureScale = useSharedValue(1);
   const flashOpacity = useSharedValue(0);
   const cornerScale = useSharedValue(1);
+  const recordingPulse = useSharedValue(1);
 
   // Pulsing animation for capture button
   useEffect(() => {
@@ -85,6 +94,30 @@ export default function CameraScreen() {
     return () => clearInterval(interval);
   }, []);
 
+  // Recording pulse animation
+  useEffect(() => {
+    if (isRecording) {
+      recordingPulse.value = withRepeat(
+        withSequence(
+          withTiming(1.2, { duration: 500 }),
+          withTiming(1, { duration: 500 })
+        ),
+        -1
+      );
+    } else {
+      recordingPulse.value = withTiming(1, { duration: 200 });
+    }
+  }, [isRecording]);
+
+  // Cleanup recording timer on unmount
+  useEffect(() => {
+    return () => {
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current);
+      }
+    };
+  }, []);
+
   const cornerAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: cornerScale.value }],
   }));
@@ -92,6 +125,31 @@ export default function CameraScreen() {
   const captureAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: captureScale.value }],
   }));
+
+  const recordingPulseStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: recordingPulse.value }],
+  }));
+
+  const flashAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: flashOpacity.value,
+  }));
+
+  // All functions defined after hooks but before early returns
+  const stopRecording = useCallback(() => {
+    if (!cameraRef.current) return;
+
+    try {
+      cameraRef.current.stopRecording();
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    } catch (error) {
+      console.error('Error stopping recording:', error);
+    }
+
+    if (recordingTimerRef.current) {
+      clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = null;
+    }
+  }, []);
 
   // Handle permission states
   if (!permission) {
@@ -153,7 +211,7 @@ export default function CameraScreen() {
   }
 
   const takePicture = async () => {
-    if (!cameraRef.current || isCapturing) return;
+    if (!cameraRef.current || isCapturing || isRecording) return;
 
     try {
       setIsCapturing(true);
@@ -186,6 +244,78 @@ export default function CameraScreen() {
     } finally {
       setIsCapturing(false);
     }
+  };
+
+  const startRecording = async () => {
+    if (!cameraRef.current || isRecording || isCapturing) return;
+
+    // Request microphone permission if not granted
+    if (!micPermission?.granted) {
+      const result = await requestMicPermission();
+      if (!result.granted) {
+        Alert.alert(
+          'Microphone Access',
+          'Microphone access is optional but recommended for video recording.',
+          [{ text: 'OK' }]
+        );
+      }
+    }
+
+    try {
+      setIsRecording(true);
+      setRecordingDuration(0);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+
+      // Start recording timer
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingDuration(prev => {
+          if (prev >= MAX_VIDEO_DURATION - 1) {
+            stopRecording();
+            return prev;
+          }
+          return prev + 1;
+        });
+      }, 1000);
+
+      const video = await cameraRef.current.recordAsync({
+        maxDuration: MAX_VIDEO_DURATION,
+      });
+
+      if (video?.uri) {
+        setCapturedMedia({ uri: video.uri, type: 'video' });
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
+    } catch (error) {
+      console.error('Error recording video:', error);
+      Alert.alert('Error', 'Failed to record video. Please try again.');
+    } finally {
+      setIsRecording(false);
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current);
+        recordingTimerRef.current = null;
+      }
+    }
+  };
+
+  const toggleCameraMode = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setCameraMode(prev => prev === 'photo' ? 'video' : 'photo');
+  };
+
+  const handleCapturePress = () => {
+    if (cameraMode === 'photo') {
+      takePicture();
+    } else if (isRecording) {
+      stopRecording();
+    } else {
+      startRecording();
+    }
+  };
+
+  const formatDuration = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
   const pickMedia = async () => {
@@ -326,12 +456,21 @@ export default function CameraScreen() {
   if (capturedMedia) {
     return (
       <View style={styles.container}>
-        {/* Full screen preview */}
-        <Image
-          source={{ uri: capturedMedia.uri }}
-          style={StyleSheet.absoluteFill}
-          contentFit="cover"
-        />
+        {/* Full screen preview - Video or Photo */}
+        {capturedMedia.type === 'video' ? (
+          <VideoView
+            player={videoPlayer}
+            style={StyleSheet.absoluteFill}
+            contentFit="cover"
+            nativeControls={false}
+          />
+        ) : (
+          <Image
+            source={{ uri: capturedMedia.uri }}
+            style={StyleSheet.absoluteFill}
+            contentFit="cover"
+          />
+        )}
 
         {/* Top gradient overlay */}
         <LinearGradient
@@ -339,11 +478,14 @@ export default function CameraScreen() {
           style={styles.topGradient}
         />
 
-        {/* Video indicator */}
+        {/* Video indicator with playback controls */}
         {capturedMedia.type === 'video' && (
           <Animated.View entering={FadeIn} style={styles.videoIndicator}>
             <BlurView intensity={60} tint="dark" style={StyleSheet.absoluteFill} />
-            <Text style={styles.videoIndicatorText}>VIDEO</Text>
+            <View style={styles.videoIndicatorContent}>
+              <View style={styles.recordingDot} />
+              <Text style={styles.videoIndicatorText}>VIDEO</Text>
+            </View>
           </Animated.View>
         )}
 
@@ -428,13 +570,13 @@ export default function CameraScreen() {
   // Camera view
   return (
     <View style={styles.container}>
-      <CameraView ref={cameraRef} style={styles.camera} facing="back">
+      <CameraView ref={cameraRef} style={styles.camera} facing="back" mode={cameraMode === 'video' ? 'video' : 'picture'}>
         {/* Flash overlay */}
         <Animated.View
           style={[
             StyleSheet.absoluteFill,
             { backgroundColor: '#FFFFFF' },
-            useAnimatedStyle(() => ({ opacity: flashOpacity.value })),
+            flashAnimatedStyle,
           ]}
           pointerEvents="none"
         />
@@ -496,16 +638,62 @@ export default function CameraScreen() {
           style={styles.bottomGradient}
         />
 
+        {/* Recording indicator */}
+        {isRecording && (
+          <Animated.View entering={FadeIn} style={styles.recordingIndicator}>
+            <BlurView intensity={60} tint="dark" style={StyleSheet.absoluteFill} />
+            <Animated.View style={[styles.recordingDot, recordingPulseStyle]} />
+            <Text style={styles.recordingText}>
+              {formatDuration(recordingDuration)} / {formatDuration(MAX_VIDEO_DURATION)}
+            </Text>
+          </Animated.View>
+        )}
+
         {/* Controls */}
         <Animated.View
           entering={FadeInUp.delay(200).springify()}
           style={[styles.controls, { paddingBottom: insets.bottom + 20 }]}
         >
+          {/* Mode toggle */}
+          <View style={styles.modeToggleContainer}>
+            <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFill} />
+            <Pressable
+              onPress={() => setCameraMode('photo')}
+              style={[
+                styles.modeButton,
+                cameraMode === 'photo' && styles.modeButtonActive,
+              ]}
+            >
+              <Text style={[
+                Typography.caption1Medium,
+                { color: cameraMode === 'photo' ? '#FFFFFF' : 'rgba(255,255,255,0.6)' }
+              ]}>
+                📷 Photo
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => setCameraMode('video')}
+              style={[
+                styles.modeButton,
+                cameraMode === 'video' && styles.modeButtonActive,
+              ]}
+            >
+              <Text style={[
+                Typography.caption1Medium,
+                { color: cameraMode === 'video' ? '#FFFFFF' : 'rgba(255,255,255,0.6)' }
+              ]}>
+                🎬 Video
+              </Text>
+            </Pressable>
+          </View>
+
           {/* Tip */}
           <View style={styles.tipContainer}>
             <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFill} />
             <Text style={[Typography.caption1, { color: 'rgba(255,255,255,0.9)' }]}>
-              💡 Capture the whole area for best results
+              {cameraMode === 'photo'
+                ? '💡 Capture the whole area for best results'
+                : '🎬 Record up to 30 seconds for AI analysis'}
             </Text>
           </View>
 
@@ -514,31 +702,52 @@ export default function CameraScreen() {
             {/* Gallery button */}
             <Pressable
               onPress={pickMedia}
+              disabled={isRecording}
               style={({ pressed }) => [
                 styles.sideControlButton,
                 { transform: [{ scale: pressed ? 0.9 : 1 }] },
+                isRecording && { opacity: 0.4 },
               ]}
             >
               <BlurView intensity={60} tint="dark" style={StyleSheet.absoluteFill} />
               <Text style={{ fontSize: 24 }}>🖼️</Text>
             </Pressable>
 
-            {/* Capture button */}
+            {/* Capture/Record button */}
             <AnimatedPressable
-              onPress={takePicture}
+              onPress={handleCapturePress}
               disabled={isCapturing}
               style={[styles.captureButton, captureAnimatedStyle, isCapturing && { opacity: 0.6 }]}
             >
-              <View style={styles.captureButtonOuter}>
-                <View style={styles.captureButtonInner} />
-              </View>
+              {cameraMode === 'photo' ? (
+                <View style={styles.captureButtonOuter}>
+                  <View style={styles.captureButtonInner} />
+                </View>
+              ) : (
+                <View style={[styles.captureButtonOuter, styles.captureButtonOuterVideo]}>
+                  <Animated.View
+                    style={[
+                      isRecording ? styles.recordButtonStop : styles.recordButtonRecord,
+                      isRecording && recordingPulseStyle,
+                    ]}
+                  />
+                </View>
+              )}
             </AnimatedPressable>
 
-            {/* Flip camera placeholder */}
-            <View style={styles.sideControlButton}>
+            {/* Mode toggle button */}
+            <Pressable
+              onPress={toggleCameraMode}
+              disabled={isRecording}
+              style={({ pressed }) => [
+                styles.sideControlButton,
+                { transform: [{ scale: pressed ? 0.9 : 1 }] },
+                isRecording && { opacity: 0.4 },
+              ]}
+            >
               <BlurView intensity={60} tint="dark" style={StyleSheet.absoluteFill} />
-              <Text style={{ fontSize: 24 }}>🔄</Text>
-            </View>
+              <Text style={{ fontSize: 24 }}>{cameraMode === 'photo' ? '🎬' : '📷'}</Text>
+            </Pressable>
           </View>
         </Animated.View>
       </CameraView>
@@ -775,11 +984,68 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     overflow: 'hidden',
   },
+  videoIndicatorContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
   videoIndicatorText: {
     color: '#EF4444',
     fontSize: 11,
     fontWeight: '700',
     letterSpacing: 1,
+  },
+  recordingIndicator: {
+    position: 'absolute',
+    top: 100,
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    overflow: 'hidden',
+    gap: 8,
+  },
+  recordingDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#EF4444',
+  },
+  recordingText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+    fontVariant: ['tabular-nums'],
+  },
+  modeToggleContainer: {
+    flexDirection: 'row',
+    borderRadius: 20,
+    overflow: 'hidden',
+    marginBottom: 12,
+  },
+  modeButton: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+  },
+  modeButtonActive: {
+    backgroundColor: 'rgba(255,255,255,0.2)',
+  },
+  captureButtonOuterVideo: {
+    borderColor: '#EF4444',
+  },
+  recordButtonRecord: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    backgroundColor: '#EF4444',
+  },
+  recordButtonStop: {
+    width: 32,
+    height: 32,
+    borderRadius: 6,
+    backgroundColor: '#EF4444',
   },
   previewControls: {
     position: 'absolute',
