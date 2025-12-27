@@ -19,20 +19,14 @@ import Animated, {
   FadeIn,
   FadeInDown,
   FadeInUp,
-  FadeOut,
   ZoomIn,
-  ZoomOut,
   SlideInUp,
-  SlideOutDown,
   useSharedValue,
   useAnimatedStyle,
   withSpring,
   withTiming,
   withSequence,
-  withDelay,
   withRepeat,
-  runOnJS,
-  Easing,
 } from 'react-native-reanimated';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -48,12 +42,11 @@ import { Colors } from '@/constants/Colors';
 import { Typography } from '@/theme/typography';
 import { useDeclutter } from '@/context/DeclutterContext';
 import { ROOM_TYPE_INFO, RoomType } from '@/types/declutter';
-import { GlassCard } from '@/components/ui/GlassCard';
 import { useCardPress } from '@/hooks/useAnimatedPress';
 
 const MAX_VIDEO_DURATION = 30; // Maximum video duration in seconds
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 export default function CameraScreen() {
@@ -71,7 +64,6 @@ export default function CameraScreen() {
   const [recordingDuration, setRecordingDuration] = useState(0);
   const [showRoomSelector, setShowRoomSelector] = useState(false);
   const [selectedRoomType, setSelectedRoomType] = useState<RoomType | null>(null);
-  const [showFlash, setShowFlash] = useState(false);
   const [cameraMode, setCameraMode] = useState<'photo' | 'video'>('photo');
   const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -137,6 +129,27 @@ export default function CameraScreen() {
   const recordingPulseStyle = useAnimatedStyle(() => ({
     transform: [{ scale: recordingPulse.value }],
   }));
+
+  const flashAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: flashOpacity.value,
+  }));
+
+  // All functions defined after hooks but before early returns
+  const stopRecording = useCallback(() => {
+    if (!cameraRef.current) return;
+
+    try {
+      cameraRef.current.stopRecording();
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    } catch (error) {
+      console.error('Error stopping recording:', error);
+    }
+
+    if (recordingTimerRef.current) {
+      clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = null;
+    }
+  }, []);
 
   // Handle permission states
   if (!permission) {
@@ -283,22 +296,6 @@ export default function CameraScreen() {
       }
     }
   };
-
-  const stopRecording = useCallback(() => {
-    if (!cameraRef.current || !isRecording) return;
-
-    try {
-      cameraRef.current.stopRecording();
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    } catch (error) {
-      console.error('Error stopping recording:', error);
-    }
-
-    if (recordingTimerRef.current) {
-      clearInterval(recordingTimerRef.current);
-      recordingTimerRef.current = null;
-    }
-  }, [isRecording]);
 
   const toggleCameraMode = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -573,13 +570,13 @@ export default function CameraScreen() {
   // Camera view
   return (
     <View style={styles.container}>
-      <CameraView ref={cameraRef} style={styles.camera} facing="back">
+      <CameraView ref={cameraRef} style={styles.camera} facing="back" mode={cameraMode === 'video' ? 'video' : 'picture'}>
         {/* Flash overlay */}
         <Animated.View
           style={[
             StyleSheet.absoluteFill,
             { backgroundColor: '#FFFFFF' },
-            useAnimatedStyle(() => ({ opacity: flashOpacity.value })),
+            flashAnimatedStyle,
           ]}
           pointerEvents="none"
         />

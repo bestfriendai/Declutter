@@ -3,7 +3,7 @@
  * Cinematic AI analysis with Apple TV style results reveal
  */
 
-import React, { useEffect, useState, useRef, useMemo } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -18,20 +18,15 @@ import Animated, {
   FadeInDown,
   FadeInUp,
   FadeInRight,
-  FadeOut,
   SlideInUp,
-  SlideOutDown,
   ZoomIn,
   useSharedValue,
   useAnimatedStyle,
-  withSpring,
   withTiming,
   withSequence,
-  withDelay,
   withRepeat,
   Easing,
   interpolate,
-  runOnJS,
 } from 'react-native-reanimated';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -51,7 +46,6 @@ import { SingleRing } from '@/components/ui/ActivityRings';
 import { useCardPress } from '@/hooks/useAnimatedPress';
 import { useVideoPlayer, VideoView } from 'expo-video';
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 export default function AnalysisScreen() {
@@ -83,7 +77,6 @@ export default function AnalysisScreen() {
   } | null>(null);
   const [motivation, setMotivation] = useState<string>('');
   const [loadingStage, setLoadingStage] = useState(0);
-  const [showResults, setShowResults] = useState(false);
 
   const room = rooms.find(r => r.id === roomId);
   const isVideo = mediaType === 'video';
@@ -219,10 +212,9 @@ export default function AnalysisScreen() {
       );
       setMotivation(motivationalMessage);
 
-      // Show results with animation delay
+      // Show success haptic feedback
       setTimeout(() => {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        setShowResults(true);
       }, 500);
     } catch (error) {
       console.error('Analysis error:', error);
@@ -795,7 +787,6 @@ export default function AnalysisScreen() {
 // Quick Win Card
 function QuickWinCard({ text, delay }: { text: string; delay: number }) {
   const colorScheme = useColorScheme() ?? 'dark';
-  const colors = Colors[colorScheme];
   const { animatedStyle, onPressIn, onPressOut } = useCardPress();
 
   return (
