@@ -11,7 +11,6 @@ import {
   ScrollView,
   Pressable,
   useColorScheme,
-  Dimensions,
 } from 'react-native';
 import Animated, {
   FadeIn,

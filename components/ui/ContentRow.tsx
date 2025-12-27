@@ -10,7 +10,6 @@ import {
   StyleSheet,
   Pressable,
   ScrollView,
-  Dimensions,
 } from 'react-native';
 import Animated, {
   FadeInRight,
@@ -18,8 +17,6 @@ import Animated, {
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { Colors } from '@/constants/Colors';
 import { Typography } from '@/theme/typography';
-
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 interface ContentRowProps {
   title: string;

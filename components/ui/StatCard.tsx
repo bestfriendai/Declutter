@@ -18,9 +18,6 @@ import Animated, {
   withTiming,
   withSpring,
   withDelay,
-  Easing,
-  interpolate,
-  runOnJS,
 } from 'react-native-reanimated';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';

@@ -9,21 +9,14 @@ import {
   Text,
   StyleSheet,
   ScrollView,
-  Pressable,
   useColorScheme,
   Alert,
 } from 'react-native';
 import Animated, {
   FadeInDown,
-  FadeInRight,
-  useSharedValue,
-  useAnimatedStyle,
-  withSpring,
 } from 'react-native-reanimated';
-import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import * as Linking from 'expo-linking';
 
@@ -38,8 +31,6 @@ import {
 } from '@/components/ui/AnimatedListItem';
 import { SingleRing } from '@/components/ui/ActivityRings';
 import { isApiKeyConfigured } from '@/services/gemini';
-
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 export default function ProfileScreen() {
   const colorScheme = useColorScheme() ?? 'dark';

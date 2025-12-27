@@ -21,8 +21,6 @@ import Animated, {
   withDelay,
   Easing,
   interpolate,
-  FadeIn,
-  FadeOut,
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import { useDeclutter } from '@/context/DeclutterContext';

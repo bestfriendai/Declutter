@@ -11,19 +11,15 @@ import {
   ScrollView,
   Pressable,
   useColorScheme,
-  Dimensions,
 } from 'react-native';
 import Animated, {
   FadeInDown,
   FadeInRight,
   useSharedValue,
   useAnimatedStyle,
-  withTiming,
   withDelay,
   withSpring,
-  Easing,
 } from 'react-native-reanimated';
-import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -33,13 +29,11 @@ import { Colors, RingColors } from '@/constants/Colors';
 import { Typography } from '@/theme/typography';
 import { useDeclutter } from '@/context/DeclutterContext';
 import { BADGES, Badge } from '@/types/declutter';
-import { DeclutterRings, SingleRing } from '@/components/ui/ActivityRings';
-import { StatCard, BentoGrid, HeroStatCard } from '@/components/ui/StatCard';
+import { DeclutterRings } from '@/components/ui/ActivityRings';
+import { StatCard } from '@/components/ui/StatCard';
 import { GlassCard } from '@/components/ui/GlassCard';
 import { ContentRow } from '@/components/ui/ContentRow';
-import { useCardPress, useFABPress } from '@/hooks/useAnimatedPress';
-
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+import { useCardPress } from '@/hooks/useAnimatedPress';
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 export default function ProgressScreen() {
@@ -49,7 +43,6 @@ export default function ProgressScreen() {
   const { stats, rooms } = useDeclutter();
 
   // Calculate progress metrics
-  const xpForNextLevel = stats.level * 100;
   const xpProgress = (stats.xp % 100);
 
   // Ring calculations (0-100)

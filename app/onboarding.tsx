@@ -4,7 +4,7 @@
  */
 
 import { Colors } from '@/constants/Colors';
-import { useDeclutter, saveApiKey } from '@/context/DeclutterContext';
+import { useDeclutter } from '@/context/DeclutterContext';
 import { router } from 'expo-router';
 import React, { useState, useRef } from 'react';
 import {
@@ -22,7 +22,7 @@ import {
 import * as Haptics from 'expo-haptics';
 import { MASCOT_PERSONALITIES, MascotPersonality } from '@/types/declutter';
 
-const { width, height } = Dimensions.get('window');
+const { width } = Dimensions.get('window');
 
 // Short tutorial slides - just 3 quick steps
 const tutorialSlides = [
@@ -203,7 +203,7 @@ export default function OnboardingScreen() {
               style={[styles.primaryButton, { backgroundColor: colors.primary }]}
               onPress={handleTutorialComplete}
             >
-              <RNText style={styles.primaryButtonText}>Let's Go! 🚀</RNText>
+              <RNText style={styles.primaryButtonText}>{`Let's Go! 🚀`}</RNText>
             </Pressable>
           ) : (
             <Pressable
@@ -234,7 +234,7 @@ export default function OnboardingScreen() {
               Quick Setup
             </RNText>
             <RNText style={[styles.setupSubtitle, { color: colors.textSecondary }]}>
-              Just two things and you're ready!
+              {`Just two things and you're ready!`}
             </RNText>
           </View>
 
