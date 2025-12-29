@@ -395,9 +395,18 @@ export default function SettingsScreen() {
     setApiKeyConfigured(isApiKeyConfigured());
   }, []);
 
-  const openGeminiSetup = () => {
+  const openGeminiSetup = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    Linking.openURL('https://aistudio.google.com/app/apikey');
+    try {
+      const canOpen = await Linking.canOpenURL('https://aistudio.google.com/app/apikey');
+      if (canOpen) {
+        await Linking.openURL('https://aistudio.google.com/app/apikey');
+      } else {
+        Alert.alert('Error', 'Unable to open link. Please visit aistudio.google.com manually.');
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Failed to open link. Please try again.');
+    }
   };
 
   const handleClearData = () => {

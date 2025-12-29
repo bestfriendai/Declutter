@@ -1,48 +1,47 @@
-/**
- * Declutterly - Progress Screen
- * Apple Fitness + Apple TV style progress tracking
- */
-
+import * as Haptics from 'expo-haptics';
+import { router } from 'expo-router';
 import React, { useMemo } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
+  Dimensions,
   Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
   useColorScheme,
 } from 'react-native';
 import Animated, {
   FadeInDown,
   FadeInRight,
-  useSharedValue,
   useAnimatedStyle,
+  useSharedValue,
   withDelay,
-  withSpring,
+  withSpring
 } from 'react-native-reanimated';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
-import * as Haptics from 'expo-haptics';
 
-import { Colors, RingColors } from '@/constants/Colors';
-import { Typography } from '@/theme/typography';
-import { useDeclutter } from '@/context/DeclutterContext';
-import { BADGES, Badge } from '@/types/declutter';
 import { DeclutterRings } from '@/components/ui/ActivityRings';
-import { StatCard } from '@/components/ui/StatCard';
-import { GlassCard } from '@/components/ui/GlassCard';
 import { ContentRow } from '@/components/ui/ContentRow';
+import { ModernCard } from '@/components/ui/ModernCard';
+import { ScreenLayout } from '@/components/ui/ScreenLayout';
+import { StatCard } from '@/components/ui/StatCard';
+import { Colors, RingColors } from '@/constants/Colors';
+import { useDeclutter } from '@/context/DeclutterContext';
 import { useCardPress } from '@/hooks/useAnimatedPress';
+import { Typography } from '@/theme/typography';
+import { BADGES, Badge, UserStats, Room } from '@/types/declutter';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 export default function ProgressScreen() {
-  const colorScheme = useColorScheme() ?? 'dark';
+  const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
   const insets = useSafeAreaInsets();
   const { stats, rooms } = useDeclutter();
 
   // Calculate progress metrics
+  const xpForNextLevel = stats.level * 100;
   const xpProgress = (stats.xp % 100);
 
   // Ring calculations (0-100)
@@ -86,12 +85,12 @@ export default function ProgressScreen() {
   const maxWeeklyValue = Math.max(...weeklyData.map(d => d.value), 1);
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <ScreenLayout>
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={[
           styles.scrollContent,
-          { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 100 },
+          { paddingTop: 20, paddingBottom: 100 },
         ]}
         showsVerticalScrollIndicator={false}
       >
@@ -113,7 +112,7 @@ export default function ProgressScreen() {
           entering={FadeInDown.delay(200).springify()}
           style={styles.ringsSection}
         >
-          <GlassCard variant="hero" style={styles.ringsCard}>
+          <ModernCard style={styles.ringsCard}>
             <View style={styles.ringsContent}>
               <DeclutterRings
                 tasksProgress={tasksProgress}
@@ -143,7 +142,7 @@ export default function ProgressScreen() {
                 />
               </View>
             </View>
-          </GlassCard>
+          </ModernCard>
         </Animated.View>
 
         {/* Level Progress */}
@@ -151,15 +150,12 @@ export default function ProgressScreen() {
           entering={FadeInDown.delay(300).springify()}
           style={styles.levelSection}
         >
-          <GlassCard style={styles.levelCard}>
+          <ModernCard style={styles.levelCard}>
             <View style={styles.levelContent}>
               <View style={styles.levelBadge}>
-                <LinearGradient
-                  colors={[...colors.gradientPrimary]}
-                  style={styles.levelBadgeGradient}
-                >
+                <View style={[styles.levelBadgeCircle, { backgroundColor: colors.primary }]}>
                   <Text style={styles.levelNumber}>{stats.level}</Text>
-                </LinearGradient>
+                </View>
               </View>
               <View style={styles.levelInfo}>
                 <Text style={[Typography.headline, { color: colors.text }]}>
@@ -173,21 +169,14 @@ export default function ProgressScreen() {
                     <Animated.View
                       style={[
                         styles.xpBarFill,
-                        { width: `${xpProgress}%` },
+                        { width: `${xpProgress}%`, backgroundColor: colors.primary },
                       ]}
-                    >
-                      <LinearGradient
-                        colors={[...colors.gradientPrimary]}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 0 }}
-                        style={StyleSheet.absoluteFill}
-                      />
-                    </Animated.View>
+                    />
                   </View>
                 </View>
               </View>
             </View>
-          </GlassCard>
+          </ModernCard>
         </Animated.View>
 
         {/* Weekly Activity Chart */}
@@ -198,7 +187,7 @@ export default function ProgressScreen() {
           <Text style={[Typography.title3, { color: colors.text, marginBottom: 12, paddingHorizontal: 20 }]}>
             This Week
           </Text>
-          <GlassCard style={styles.weeklyCard}>
+          <ModernCard style={styles.weeklyCard}>
             <View style={styles.weeklyChart}>
               {weeklyData.map((item, index) => (
                 <WeeklyBarItem
@@ -220,7 +209,7 @@ export default function ProgressScreen() {
                 </Text>
               </View>
             )}
-          </GlassCard>
+          </ModernCard>
         </Animated.View>
 
         {/* Statistics Bento Grid */}
@@ -237,7 +226,7 @@ export default function ProgressScreen() {
                 value={stats.totalTasksCompleted}
                 label="Tasks Done"
                 icon={<Text style={{ fontSize: 24 }}>✅</Text>}
-                variant="glass"
+                variant="default"
                 size="medium"
                 style={styles.bentoItem}
                 animationDelay={100}
@@ -246,7 +235,7 @@ export default function ProgressScreen() {
                 value={stats.totalRoomsCleaned}
                 label="Rooms Cleaned"
                 icon={<Text style={{ fontSize: 24 }}>🏠</Text>}
-                variant="glass"
+                variant="default"
                 size="medium"
                 style={styles.bentoItem}
                 animationDelay={150}
@@ -258,7 +247,7 @@ export default function ProgressScreen() {
                 label="Best Streak"
                 icon={<Text style={{ fontSize: 24 }}>🏆</Text>}
                 trend={stats.currentStreak >= stats.longestStreak ? { direction: 'up', value: 'Record!' } : undefined}
-                variant="glass"
+                variant="default"
                 size="medium"
                 style={styles.bentoItem}
                 animationDelay={200}
@@ -267,7 +256,7 @@ export default function ProgressScreen() {
                 value={unlockedBadges.length}
                 label="Badges"
                 icon={<Text style={{ fontSize: 24 }}>🎖️</Text>}
-                variant="glass"
+                variant="default"
                 size="medium"
                 style={styles.bentoItem}
                 animationDelay={250}
@@ -351,25 +340,25 @@ export default function ProgressScreen() {
           entering={FadeInDown.delay(900).springify()}
           style={styles.motivationSection}
         >
-          <GlassCard variant="elevated" style={styles.motivationCard}>
+          <ModernCard style={styles.motivationCard}>
             <Text style={styles.motivationEmoji}>
               {stats.totalTasksCompleted === 0 ? '💪' :
-               stats.totalTasksCompleted < 10 ? '🚀' :
-               stats.totalTasksCompleted < 50 ? '🌟' : '👑'}
+                stats.totalTasksCompleted < 10 ? '🚀' :
+                  stats.totalTasksCompleted < 50 ? '🌟' : '👑'}
             </Text>
             <Text style={[Typography.body, { color: colors.text, textAlign: 'center', marginTop: 8 }]}>
               {stats.totalTasksCompleted === 0
                 ? "Your journey begins with a single task. You've got this!"
                 : stats.totalTasksCompleted < 10
-                ? "Great start! Keep the momentum going!"
-                : stats.totalTasksCompleted < 50
-                ? "You're making amazing progress!"
-                : "You're a decluttering superstar!"}
+                  ? "Great start! Keep the momentum going!"
+                  : stats.totalTasksCompleted < 50
+                    ? "You're making amazing progress!"
+                    : "You're a decluttering superstar!"}
             </Text>
-          </GlassCard>
+          </ModernCard>
         </Animated.View>
       </ScrollView>
-    </View>
+    </ScreenLayout>
   );
 }
 
@@ -438,9 +427,8 @@ function WeeklyBarItem({
     <View style={styles.barItem}>
       <View style={styles.barContainer}>
         <Animated.View style={[styles.bar, animatedStyle]}>
-          <LinearGradient
-            colors={isToday ? ['#A78BFA', '#818CF8'] : ['rgba(255,255,255,0.3)', 'rgba(255,255,255,0.1)']}
-            style={StyleSheet.absoluteFill}
+          <View
+            style={[StyleSheet.absoluteFill, { backgroundColor: isToday ? '#818CF8' : 'rgba(255,255,255,0.2)' }]}
           />
         </Animated.View>
       </View>
@@ -516,7 +504,7 @@ function LockedBadgeRow({
   colors,
 }: {
   badge: Badge;
-  stats: any;
+  stats: UserStats;
   index: number;
   colors: typeof Colors.dark;
 }) {
@@ -587,7 +575,7 @@ function RoomProgressItem({
   colors,
   onPress,
 }: {
-  room: any;
+  room: Room;
   index: number;
   colors: typeof Colors.dark;
   onPress: () => void;
@@ -626,11 +614,8 @@ function RoomProgressItem({
                 { width: `${room.currentProgress}%` },
               ]}
             >
-              <LinearGradient
-                colors={[...colors.gradientPrimary]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={StyleSheet.absoluteFill}
+              <View
+                style={[StyleSheet.absoluteFill, { backgroundColor: colors.primary }]}
               />
             </View>
           </View>
@@ -715,6 +700,13 @@ const styles = StyleSheet.create({
   },
   levelBadge: {
     marginRight: 16,
+  },
+  levelBadgeCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   levelBadgeGradient: {
     width: 56,

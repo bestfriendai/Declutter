@@ -1,13 +1,8 @@
-/**
- * Declutterly - Tab Layout
- * iOS 26 Native Liquid Glass Tab Bar
- */
-
-import { Platform, DynamicColorIOS } from 'react-native';
-import { NativeTabs, Icon, Label } from 'expo-router/unstable-native-tabs';
+import { Icon, Label, NativeTabs } from 'expo-router/unstable-native-tabs';
+import { DynamicColorIOS, Platform } from 'react-native';
 
 export default function TabLayout() {
-  // Dynamic colors for Liquid Glass - adapts to glass background
+  // Dynamic colors for native tabs
   const tintColor = Platform.OS === 'ios'
     ? DynamicColorIOS({ dark: '#FFFFFF', light: '#000000' })
     : '#6366F1';

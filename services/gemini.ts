@@ -1,22 +1,46 @@
 /**
  * Declutterly - Gemini AI Service
  * Handles image/video analysis for room decluttering
- * Supports multi-frame analysis for better accuracy with videos
  */
 
 import { AIAnalysisResult, CleaningTask, Priority, TaskDifficulty, RoomType } from '@/types/declutter';
-import * as VideoThumbnails from 'expo-video-thumbnails';
+import { apiRateLimiter } from '@/services/secureStorage';
 
 // Gemini API configuration - Using Gemini 2.0 Flash (latest stable)
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
 
+/**
+ * Sanitizes error messages to prevent leaking sensitive information
+ */
+function sanitizeErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    const message = error.message.toLowerCase();
+    // Check for common API error patterns and return generic messages
+    if (message.includes('api key') || message.includes('apikey')) {
+      return 'API configuration error. Please check your settings.';
+    }
+    if (message.includes('quota') || message.includes('rate limit')) {
+      return 'Too many requests. Please try again in a moment.';
+    }
+    if (message.includes('network') || message.includes('fetch')) {
+      return 'Network error. Please check your connection.';
+    }
+    if (message.includes('timeout')) {
+      return 'Request timed out. Please try again.';
+    }
+    // For other errors, return a generic message in production
+    if (!__DEV__) {
+      return 'An error occurred. Please try again.';
+    }
+    // In dev, return the actual message but without sensitive data
+    return error.message.replace(/key=[^&\s]+/gi, 'key=[REDACTED]');
+  }
+  return 'An unexpected error occurred.';
+}
+
 // API Key from environment variable (preferred) or runtime override
 const ENV_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY || '';
 let runtimeApiKey = '';
-
-// Multi-frame analysis configuration
-const DEFAULT_FRAME_COUNT = 4; // Number of frames to extract for video analysis
-const MIN_FRAME_INTERVAL = 2000; // Minimum interval between frames in ms
 
 export function setGeminiApiKey(key: string) {
   runtimeApiKey = key;
@@ -312,11 +336,22 @@ export async function analyzeRoomImage(
 ): Promise<AIAnalysisResult> {
   const apiKey = getActiveApiKey();
   if (!apiKey) {
-    throw new Error('Gemini API key not configured. Please add EXPO_PUBLIC_GEMINI_API_KEY to your .env file.');
+    throw new Error('Gemini API key not configured. Please add your API key in Settings.');
   }
 
-  const userPrompt = additionalContext
-    ? `Analyze this room and create a decluttering plan. Additional context: ${additionalContext}`
+  // Check rate limit
+  if (!apiRateLimiter.canMakeRequest()) {
+    const waitTime = Math.ceil(apiRateLimiter.getTimeUntilReset() / 1000);
+    throw new Error(`Too many requests. Please wait ${waitTime} seconds before trying again.`);
+  }
+
+  // Sanitize additional context to prevent injection
+  const sanitizedContext = additionalContext
+    ? additionalContext.slice(0, 500).replace(/[<>{}]/g, '')
+    : undefined;
+
+  const userPrompt = sanitizedContext
+    ? `Analyze this room and create a decluttering plan. Additional context: ${sanitizedContext}`
     : 'Analyze this room and create a decluttering plan. Be encouraging and break tasks into small, manageable steps.';
 
   const requestBody = {
@@ -348,20 +383,25 @@ export async function analyzeRoomImage(
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.error?.message || `API request failed with status ${response.status}`);
+      const rawMessage = errorData.error?.message || `API request failed with status ${response.status}`;
+      throw new Error(sanitizeErrorMessage(new Error(rawMessage)));
     }
 
     const data = await response.json();
     const responseText = data.candidates?.[0]?.content?.parts?.[0]?.text;
 
     if (!responseText) {
-      throw new Error('No response from AI');
+      throw new Error('No response from AI. Please try again.');
     }
 
     return parseAIResponse(responseText);
   } catch (error) {
-    console.error('Gemini API error:', error);
-    throw error;
+    // Log sanitized error in dev only
+    if (__DEV__) {
+      console.error('Gemini API error:', sanitizeErrorMessage(error));
+    }
+    // Re-throw with sanitized message
+    throw new Error(sanitizeErrorMessage(error));
   }
 }
 
@@ -377,7 +417,17 @@ export async function analyzeProgress(
 }> {
   const apiKey = getActiveApiKey();
   if (!apiKey) {
-    throw new Error('Gemini API key not configured. Please add EXPO_PUBLIC_GEMINI_API_KEY to your .env file.');
+    throw new Error('Gemini API key not configured. Please add your API key in Settings.');
+  }
+
+  // Check rate limit
+  if (!apiRateLimiter.canMakeRequest()) {
+    return {
+      progressPercentage: 50,
+      completedTasks: ['Made visible progress'],
+      remainingTasks: ['Continue with remaining tasks'],
+      encouragement: "You're doing great! Every bit of progress counts!",
+    };
   }
 
   const progressPrompt = `Compare these two images of the same room. The first image is "before" and the second is "after" cleaning.
@@ -420,7 +470,7 @@ Be very encouraging! Focus on what WAS accomplished, not what wasn't.`;
     });
 
     if (!response.ok) {
-      throw new Error(`API request failed with status ${response.status}`);
+      throw new Error(sanitizeErrorMessage(new Error(`API request failed with status ${response.status}`)));
     }
 
     const data = await response.json();
@@ -442,7 +492,9 @@ Be very encouraging! Focus on what WAS accomplished, not what wasn't.`;
       encouragement: parsed.encouragement || 'Great progress! Keep going!',
     };
   } catch (error) {
-    console.error('Progress analysis error:', error);
+    if (__DEV__) {
+      console.error('Progress analysis error:', sanitizeErrorMessage(error));
+    }
     return {
       progressPercentage: 50,
       completedTasks: ['Made visible progress'],
@@ -459,12 +511,20 @@ export async function getMotivation(context: string): Promise<string> {
     return getRandomMotivation();
   }
 
+  // Check rate limit - use fallback if limited
+  if (!apiRateLimiter.canMakeRequest()) {
+    return getRandomMotivation();
+  }
+
+  // Sanitize context to prevent injection
+  const sanitizedContext = context.slice(0, 200).replace(/[<>{}]/g, '');
+
   try {
     const requestBody = {
       contents: [
         {
           parts: [
-            { text: `You are a supportive friend helping someone clean their space. They might be feeling overwhelmed or unmotivated. Give them a short (1-2 sentences), warm, encouraging message. Context: ${context}. Be genuine, not cheesy.` },
+            { text: `You are a supportive friend helping someone clean their space. They might be feeling overwhelmed or unmotivated. Give them a short (1-2 sentences), warm, encouraging message. Context: ${sanitizedContext}. Be genuine, not cheesy.` },
           ],
         },
       ],
@@ -502,213 +562,4 @@ function getRandomMotivation(): string {
     "Your space doesn't define you, but improving it can help you feel better.",
   ];
   return messages[Math.floor(Math.random() * messages.length)];
-}
-
-// =====================
-// MULTI-FRAME VIDEO ANALYSIS
-// =====================
-
-/**
- * Extract frames from a video at regular intervals
- * @param videoUri - The URI of the video file
- * @param frameCount - Number of frames to extract
- * @param videoDuration - Duration of the video in seconds
- * @returns Array of base64 encoded frames
- */
-export async function extractVideoFrames(
-  videoUri: string,
-  frameCount: number = DEFAULT_FRAME_COUNT,
-  videoDuration?: number
-): Promise<string[]> {
-  try {
-    const frames: string[] = [];
-
-    // Calculate frame intervals
-    // If no duration provided, estimate based on frame count with MIN_FRAME_INTERVAL
-    const estimatedDuration = videoDuration ? videoDuration * 1000 : frameCount * MIN_FRAME_INTERVAL;
-    const interval = Math.max(MIN_FRAME_INTERVAL, estimatedDuration / (frameCount + 1));
-
-    for (let i = 0; i < frameCount; i++) {
-      const timeMs = Math.floor(interval * (i + 1));
-
-      try {
-        const thumbnail = await VideoThumbnails.getThumbnailAsync(videoUri, {
-          time: timeMs,
-          quality: 0.8,
-        });
-
-        if (thumbnail?.uri) {
-          // Read the thumbnail as base64
-          const response = await fetch(thumbnail.uri);
-          const blob = await response.blob();
-          const base64 = await blobToBase64(blob);
-          frames.push(base64);
-        }
-      } catch (frameError) {
-        console.warn(`Failed to extract frame at ${timeMs}ms:`, frameError);
-        // Continue with other frames
-      }
-    }
-
-    if (frames.length === 0) {
-      throw new Error('Failed to extract any frames from video');
-    }
-
-    return frames;
-  } catch (error) {
-    console.error('Error extracting video frames:', error);
-    throw error;
-  }
-}
-
-/**
- * Convert a Blob to base64 string
- */
-async function blobToBase64(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const base64 = reader.result as string;
-      // Remove the data URL prefix
-      const base64Data = base64.split('base64,')[1] || base64;
-      resolve(base64Data);
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
-  });
-}
-
-/**
- * Analyze a video using multiple frames for more comprehensive room analysis
- * @param videoUri - The URI of the video file
- * @param videoDuration - Optional duration of the video in seconds
- * @param additionalContext - Optional context for the analysis
- */
-export async function analyzeVideoMultiFrame(
-  videoUri: string,
-  videoDuration?: number,
-  additionalContext?: string
-): Promise<AIAnalysisResult> {
-  const apiKey = getActiveApiKey();
-  if (!apiKey) {
-    throw new Error('Gemini API key not configured. Please add EXPO_PUBLIC_GEMINI_API_KEY to your .env file.');
-  }
-
-  try {
-    // Extract frames from the video
-    const frames = await extractVideoFrames(videoUri, DEFAULT_FRAME_COUNT, videoDuration);
-
-    if (frames.length === 0) {
-      throw new Error('No frames could be extracted from the video');
-    }
-
-    console.log(`Extracted ${frames.length} frames for multi-frame analysis`);
-
-    // Build the multi-frame prompt
-    const multiFramePrompt = `You are analyzing ${frames.length} frames extracted from a video walkthrough of a room.
-These frames show different angles and areas of the space, giving you a more comprehensive view than a single image.
-
-Analyze ALL frames together to create a complete picture of the room and its clutter.
-Pay attention to:
-- Different areas shown across frames
-- Items that appear in multiple frames (they're likely significant)
-- The overall flow and organization of the space
-- Areas that may be hidden in some frames but visible in others
-
-${additionalContext ? `Additional context: ${additionalContext}` : ''}
-
-Create a comprehensive decluttering plan based on everything you observe across all frames.`;
-
-    // Build the request with multiple images
-    const imageParts = frames.map((frame, index) => [
-      { text: `Frame ${index + 1} of ${frames.length}:` },
-      createImagePart(frame),
-    ]).flat();
-
-    const requestBody = {
-      contents: [
-        {
-          parts: [
-            { text: DECLUTTER_SYSTEM_PROMPT },
-            { text: multiFramePrompt },
-            ...imageParts,
-          ],
-        },
-      ],
-      generationConfig: {
-        temperature: 0.7,
-        topK: 40,
-        topP: 0.95,
-        maxOutputTokens: 4096,
-      },
-    };
-
-    const response = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(requestBody),
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.error?.message || `API request failed with status ${response.status}`);
-    }
-
-    const data = await response.json();
-    const responseText = data.candidates?.[0]?.content?.parts?.[0]?.text;
-
-    if (!responseText) {
-      throw new Error('No response from AI');
-    }
-
-    return parseAIResponse(responseText);
-  } catch (error) {
-    console.error('Multi-frame video analysis error:', error);
-
-    // Fall back to single-frame analysis
-    console.log('Falling back to single-frame analysis...');
-    try {
-      const singleFrame = await extractVideoFrames(videoUri, 1);
-      if (singleFrame.length > 0) {
-        return analyzeRoomImage(singleFrame[0], additionalContext);
-      }
-    } catch (fallbackError) {
-      console.error('Fallback analysis also failed:', fallbackError);
-    }
-
-    throw error;
-  }
-}
-
-/**
- * Smart analysis that automatically chooses the best method based on media type
- * @param mediaUri - The URI of the image or video
- * @param mediaType - 'photo' or 'video'
- * @param videoDuration - Optional duration for videos
- * @param additionalContext - Optional context for the analysis
- */
-export async function analyzeMedia(
-  mediaUri: string,
-  mediaType: 'photo' | 'video',
-  videoDuration?: number,
-  additionalContext?: string
-): Promise<AIAnalysisResult> {
-  if (mediaType === 'video') {
-    try {
-      // Try multi-frame analysis first for videos
-      return await analyzeVideoMultiFrame(mediaUri, videoDuration, additionalContext);
-    } catch (error) {
-      console.warn('Multi-frame analysis failed, falling back to single image:', error);
-      // Fall through to single image analysis
-    }
-  }
-
-  // For photos or as fallback for videos
-  const FileSystem = await import('expo-file-system');
-  const base64 = await FileSystem.readAsStringAsync(mediaUri, {
-    encoding: 'base64',
-  });
-  return analyzeRoomImage(base64, additionalContext);
 }

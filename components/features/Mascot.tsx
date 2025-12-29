@@ -21,6 +21,9 @@ import Animated, {
   withDelay,
   Easing,
   interpolate,
+  FadeIn,
+  FadeOut,
+  cancelAnimation,
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import { useDeclutter } from '@/context/DeclutterContext';
@@ -78,7 +81,14 @@ function Sparkle({ delay, x, y }: { delay: number; x: number; y: number }) {
         false
       )
     );
-  }, []);
+
+    // Cleanup animations on unmount
+    return () => {
+      cancelAnimation(opacity);
+      cancelAnimation(scale);
+      cancelAnimation(rotation);
+    };
+  }, [delay, opacity, scale, rotation]);
 
   const animatedStyle = useAnimatedStyle(() => ({
     opacity: opacity.value,
@@ -383,7 +393,17 @@ export function Mascot({
         rotation.value = withTiming(5, { duration: 500 });
         break;
     }
-  }, [mascot?.activity]);
+
+    // Cleanup animations on unmount or activity change
+    return () => {
+      cancelAnimation(bounceY);
+      cancelAnimation(rotation);
+      cancelAnimation(scale);
+      cancelAnimation(glowScale);
+      cancelAnimation(glowOpacity);
+      cancelAnimation(eyeScale);
+    };
+  }, [mascot?.activity, bounceY, rotation, scale, glowScale, glowOpacity, eyeScale]);
 
   // Show speech bubble on mood change
   useEffect(() => {
@@ -394,7 +414,12 @@ export function Mascot({
         withTiming(0, { duration: 200 })
       );
     }
-  }, [mascot?.mood, mascot?.activity]);
+
+    // Cleanup speech animation
+    return () => {
+      cancelAnimation(speechOpacity);
+    };
+  }, [mascot?.mood, mascot?.activity, speechOpacity]);
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [

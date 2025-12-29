@@ -10,18 +10,19 @@ import { Typography, FontSizes, FontWeights, LineHeights } from './typography';
 import { GlassCardStyles, BlurIntensity, getGlassBackground, getGlassBorder } from './glass';
 import { setForcedColorScheme } from '@/hooks/useColorScheme';
 
-// Spacing scale (based on 4pt grid)
+// Spacing scale (strict 8px grid system)
 export const Spacing = {
-  xxs: 2,
-  xs: 4,
-  sm: 8,
-  md: 12,
-  lg: 16,
-  xl: 20,
-  xxl: 24,
-  xxxl: 32,
-  huge: 48,
-  massive: 64,
+  none: 0,
+  xxs: 4,
+  xs: 8,
+  sm: 12,
+  md: 16,
+  lg: 24,
+  xl: 32,
+  xxl: 40,
+  xxxl: 48,
+  huge: 64,
+  massive: 80,
 } as const;
 
 // Border radius scale
@@ -66,6 +67,7 @@ export const AnimationConfig = {
 // Theme context type
 interface ThemeContextType {
   colorScheme: 'light' | 'dark';
+  isDark: boolean;
   colors: typeof Colors.light | typeof Colors.dark;
   typography: typeof Typography;
   spacing: typeof Spacing;
@@ -112,6 +114,7 @@ export function ThemeProvider({ children, forcedColorScheme }: ThemeProviderProp
 
   const theme = useMemo<ThemeContextType>(() => ({
     colorScheme,
+    isDark: colorScheme === 'dark',
     colors: Colors[colorScheme],
     typography: Typography,
     spacing: Spacing,
@@ -154,6 +157,10 @@ export function useTheme(): ThemeContextType {
 }
 
 // Convenience hooks
+export function useIsDark() {
+  return useTheme().isDark;
+}
+
 export function useColors() {
   return useTheme().colors;
 }

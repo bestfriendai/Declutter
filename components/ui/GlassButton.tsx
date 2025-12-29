@@ -33,8 +33,12 @@ interface GlassButtonProps {
   iconPosition?: 'left' | 'right';
   disabled?: boolean;
   fullWidth?: boolean;
+  loading?: boolean;
   style?: StyleProp<ViewStyle>;
   textStyle?: StyleProp<TextStyle>;
+  accessibilityLabel?: string;
+  accessibilityHint?: string;
+  testID?: string;
 }
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -48,8 +52,12 @@ export function GlassButton({
   iconPosition = 'left',
   disabled = false,
   fullWidth = false,
+  loading = false,
   style,
   textStyle,
+  accessibilityLabel,
+  accessibilityHint,
+  testID,
 }: GlassButtonProps) {
   const colorScheme = useColorScheme() ?? 'dark';
   const colors = Colors[colorScheme];
@@ -221,13 +229,23 @@ export function GlassButton({
     </View>
   );
 
+  const isDisabled = disabled || loading;
+
   return (
     <AnimatedPressable
       onPress={onPress}
       onPressIn={onPressIn}
       onPressOut={onPressOut}
-      disabled={disabled}
-      style={[animatedStyle, fullWidth && styles.fullWidth]}
+      disabled={isDisabled}
+      style={[animatedStyle, fullWidth && styles.fullWidth, styles.touchTarget]}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel || title}
+      accessibilityHint={accessibilityHint}
+      accessibilityState={{
+        disabled: isDisabled,
+        busy: loading,
+      }}
+      testID={testID}
     >
       {buttonContent}
     </AnimatedPressable>
@@ -249,6 +267,10 @@ const styles = StyleSheet.create({
   fullWidth: {
     width: '100%',
   },
+  touchTarget: {
+    minHeight: 44, // Apple HIG minimum touch target
+    minWidth: 44,
+  },
   iconLeft: {
     marginRight: 8,
   },
@@ -264,22 +286,33 @@ const styles = StyleSheet.create({
 });
 
 // Icon button variant
+interface IconButtonProps {
+  icon: React.ReactNode;
+  onPress: () => void;
+  variant?: 'glass' | 'ghost' | 'primary';
+  size?: number;
+  disabled?: boolean;
+  accessibilityLabel: string; // Required for icon-only buttons
+  accessibilityHint?: string;
+  testID?: string;
+}
+
 export function IconButton({
   icon,
   onPress,
   variant = 'glass',
   size = 44,
   disabled = false,
-}: {
-  icon: React.ReactNode;
-  onPress: () => void;
-  variant?: 'glass' | 'ghost' | 'primary';
-  size?: number;
-  disabled?: boolean;
-}) {
+  accessibilityLabel,
+  accessibilityHint,
+  testID,
+}: IconButtonProps) {
   const colorScheme = useColorScheme() ?? 'dark';
   const colors = Colors[colorScheme];
   const { animatedStyle, onPressIn, onPressOut } = useButtonPress();
+
+  // Ensure minimum touch target size per Apple HIG
+  const effectiveSize = Math.max(size, 44);
 
   const getBackground = () => {
     switch (variant) {
@@ -300,12 +333,17 @@ export function IconButton({
       onPressIn={onPressIn}
       onPressOut={onPressOut}
       disabled={disabled}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      accessibilityHint={accessibilityHint}
+      accessibilityState={{ disabled }}
+      testID={testID}
       style={[
         animatedStyle,
         {
-          width: size,
-          height: size,
-          borderRadius: size / 2,
+          width: effectiveSize,
+          height: effectiveSize,
+          borderRadius: effectiveSize / 2,
           backgroundColor: getBackground(),
           alignItems: 'center',
           justifyContent: 'center',

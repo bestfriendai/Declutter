@@ -15,11 +15,22 @@ import {
   AppStateStatus,
   Text as RNText,
   Vibration,
+  ScrollView,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { useDeclutter } from '@/context/DeclutterContext';
 import { Colors } from '@/constants/Colors';
-import { FOCUS_QUOTES, MASCOT_PERSONALITIES } from '@/types/declutter';
+import { FOCUS_QUOTES, MASCOT_PERSONALITIES, FocusModeSettings } from '@/types/declutter';
+import {
+  playAmbientSound,
+  stopAmbientSound,
+  pauseAmbientSound,
+  resumeAmbientSound,
+  playTimerCompleteSound,
+  playBreakSound,
+  setVolume,
+  SOUND_INFO,
+} from '@/services/audio';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -28,6 +39,7 @@ import Animated, {
   withSequence,
   withSpring,
   Easing,
+  interpolate,
   FadeIn,
   FadeOut,
   SlideInDown,
@@ -136,6 +148,10 @@ function ProgressRing({ progress, isPaused }: { progress: number; isPaused: bool
     opacity: glowOpacity.value,
   }));
 
+  // Calculate the stroke dasharray for progress
+  const circumference = TIMER_SIZE * Math.PI;
+  const strokeDashoffset = circumference * (1 - progress);
+
   return (
     <View style={styles.progressRingContainer}>
       {/* Background ring */}
@@ -207,6 +223,11 @@ export default function FocusModeScreen() {
   const [showCompletion, setShowCompletion] = useState(false);
   const [isBreakMode, setIsBreakMode] = useState(false);
   const [breakTimeRemaining, setBreakTimeRemaining] = useState(0);
+  const [showSoundPicker, setShowSoundPicker] = useState(false);
+  const [currentSound, setCurrentSound] = useState<FocusModeSettings['whiteNoiseType']>(
+    settings.focusMode.whiteNoiseType
+  );
+  const [soundVolume, setSoundVolume] = useState(0.5);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const breakTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const appState = useRef(AppState.currentState);
@@ -220,6 +241,11 @@ export default function FocusModeScreen() {
   useEffect(() => {
     if (!focusSession) {
       startFocusSession(duration, roomId);
+    }
+
+    // Start ambient sound if enabled
+    if (settings.focusMode.playWhiteNoise && currentSound !== 'none') {
+      playAmbientSound(currentSound);
     }
 
     // Rotate quote every 30 seconds
@@ -253,6 +279,8 @@ export default function FocusModeScreen() {
       if (timerRef.current) {
         clearInterval(timerRef.current);
       }
+      // Stop ambient sound on unmount
+      stopAmbientSound();
     };
   }, []);
 
@@ -300,11 +328,13 @@ export default function FocusModeScreen() {
 
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     Vibration.vibrate([0, 200, 100, 200, 100, 200]);
+    playTimerCompleteSound();
 
     // Check if we should auto-start a break
     if (settings.focusMode.autoStartBreak && !isBreakMode) {
       startBreak();
     } else {
+      stopAmbientSound();
       setShowCompletion(true);
       setTimeout(() => {
         endFocusSession();
@@ -318,6 +348,7 @@ export default function FocusModeScreen() {
     setBreakTimeRemaining(settings.focusMode.breakDuration * 60);
 
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    playBreakSound();
 
     // Start break timer
     breakTimerRef.current = setInterval(() => {
@@ -339,6 +370,8 @@ export default function FocusModeScreen() {
     setShowCompletion(true);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     Vibration.vibrate([0, 300, 150, 300]);
+    playTimerCompleteSound();
+    stopAmbientSound();
 
     setTimeout(() => {
       endFocusSession();
@@ -351,6 +384,7 @@ export default function FocusModeScreen() {
       clearInterval(breakTimerRef.current);
     }
     setIsBreakMode(false);
+    stopAmbientSound();
     endFocusSession();
     router.back();
   }
@@ -367,13 +401,33 @@ export default function FocusModeScreen() {
   function handlePauseResume() {
     if (focusSession?.isPaused) {
       resumeFocusSession();
+      resumeAmbientSound();
       timerScale.value = withSpring(1, { damping: 10 });
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     } else {
       pauseFocusSession();
+      pauseAmbientSound();
       timerScale.value = withSpring(0.95, { damping: 10 });
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
+  }
+
+  async function handleSoundChange(soundType: FocusModeSettings['whiteNoiseType']) {
+    setCurrentSound(soundType);
+    setShowSoundPicker(false);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
+    if (soundType === 'none') {
+      await stopAmbientSound();
+    } else {
+      await playAmbientSound(soundType);
+      await setVolume(soundVolume);
+    }
+  }
+
+  async function handleVolumeChange(newVolume: number) {
+    setSoundVolume(newVolume);
+    await setVolume(newVolume);
   }
 
   function handleExit() {
@@ -386,6 +440,7 @@ export default function FocusModeScreen() {
   }
 
   function confirmExit() {
+    stopAmbientSound();
     endFocusSession();
     router.back();
   }
@@ -457,7 +512,7 @@ export default function FocusModeScreen() {
             <RNText style={styles.breakEmoji}>☕</RNText>
             <RNText style={styles.breakTitle}>Break Time!</RNText>
             <RNText style={styles.breakSubtitle}>
-              {`You've earned a rest. Take a breather!`}
+              {"You've earned a rest. Take a breather!"}
             </RNText>
 
             <View style={styles.breakTimerContainer}>
@@ -511,10 +566,10 @@ export default function FocusModeScreen() {
           >
             <RNText style={styles.warningEmoji}>💪</RNText>
             <RNText style={[styles.warningTitle, { color: colors.text }]}>
-              {`You're doing great!`}
+              {"You're doing great!"}
             </RNText>
             <RNText style={[styles.warningText, { color: colors.textSecondary }]}>
-              {`Are you sure you want to exit? You've already completed `}
+              {"Are you sure you want to exit? You've already completed "}
               <RNText style={{ fontWeight: '700', color: colors.text }}>
                 {focusSession?.tasksCompletedDuringSession || 0} tasks
               </RNText>
@@ -538,6 +593,93 @@ export default function FocusModeScreen() {
         </Animated.View>
       )}
 
+      {/* Sound Picker Modal */}
+      {showSoundPicker && (
+        <Animated.View
+          entering={FadeIn}
+          exiting={FadeOut}
+          style={styles.warningOverlay}
+        >
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={() => setShowSoundPicker(false)}
+          />
+          <Animated.View
+            entering={SlideInDown.springify()}
+            style={[styles.soundModal, { backgroundColor: colors.card }]}
+          >
+            <RNText style={[styles.soundModalTitle, { color: colors.text }]}>
+              Ambient Sound
+            </RNText>
+            <RNText style={[styles.soundModalSubtitle, { color: colors.textSecondary }]}>
+              Choose background audio for focus
+            </RNText>
+
+            <View style={styles.soundOptions}>
+              {(Object.keys(SOUND_INFO) as Array<keyof typeof SOUND_INFO>).map((key) => {
+                const sound = SOUND_INFO[key];
+                const isSelected = currentSound === key;
+                return (
+                  <Pressable
+                    key={key}
+                    style={[
+                      styles.soundOption,
+                      isSelected && styles.soundOptionSelected,
+                      { borderColor: isSelected ? '#6366F1' : 'rgba(255,255,255,0.1)' },
+                    ]}
+                    onPress={() => handleSoundChange(key as FocusModeSettings['whiteNoiseType'])}
+                  >
+                    <RNText style={styles.soundOptionEmoji}>{sound.emoji}</RNText>
+                    <RNText style={[styles.soundOptionLabel, { color: colors.text }]}>
+                      {sound.label}
+                    </RNText>
+                    <RNText style={[styles.soundOptionDesc, { color: colors.textSecondary }]}>
+                      {sound.description}
+                    </RNText>
+                    {isSelected && (
+                      <View style={styles.soundCheckmark}>
+                        <RNText style={styles.soundCheckmarkText}>✓</RNText>
+                      </View>
+                    )}
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            {currentSound !== 'none' && (
+              <View style={styles.volumeContainer}>
+                <RNText style={[styles.volumeLabel, { color: colors.textSecondary }]}>
+                  Volume: {Math.round(soundVolume * 100)}%
+                </RNText>
+                <View style={styles.volumeSlider}>
+                  {[0.25, 0.5, 0.75, 1].map((vol) => (
+                    <Pressable
+                      key={vol}
+                      style={[
+                        styles.volumeButton,
+                        soundVolume === vol && styles.volumeButtonActive,
+                      ]}
+                      onPress={() => handleVolumeChange(vol)}
+                    >
+                      <RNText style={styles.volumeButtonText}>
+                        {vol === 0.25 ? '🔈' : vol === 0.5 ? '🔉' : vol === 0.75 ? '🔊' : '📢'}
+                      </RNText>
+                    </Pressable>
+                  ))}
+                </View>
+              </View>
+            )}
+
+            <Pressable
+              style={styles.soundCloseButton}
+              onPress={() => setShowSoundPicker(false)}
+            >
+              <RNText style={styles.soundCloseText}>Done</RNText>
+            </Pressable>
+          </Animated.View>
+        </Animated.View>
+      )}
+
       {/* Main Content */}
       <View style={styles.content}>
         {/* Header */}
@@ -548,13 +690,26 @@ export default function FocusModeScreen() {
               <RNText style={styles.exitText}>Exit</RNText>
             </View>
           </Pressable>
-          <View style={styles.modeContainer}>
-            <RNText style={styles.modeEmoji}>
-              {settings.focusMode.strictMode ? '🔒' : '🧘'}
-            </RNText>
-            <RNText style={styles.modeText}>
-              {settings.focusMode.strictMode ? 'Strict' : 'Focus'}
-            </RNText>
+          <View style={styles.headerRight}>
+            <Pressable
+              style={styles.soundButton}
+              onPress={() => {
+                setShowSoundPicker(true);
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              }}
+            >
+              <RNText style={styles.soundButtonEmoji}>
+                {currentSound === 'none' ? '🔇' : SOUND_INFO[currentSound]?.emoji || '🎵'}
+              </RNText>
+            </Pressable>
+            <View style={styles.modeContainer}>
+              <RNText style={styles.modeEmoji}>
+                {settings.focusMode.strictMode ? '🔒' : '🧘'}
+              </RNText>
+              <RNText style={styles.modeText}>
+                {settings.focusMode.strictMode ? 'Strict' : 'Focus'}
+              </RNText>
+            </View>
           </View>
         </View>
 
@@ -593,7 +748,7 @@ export default function FocusModeScreen() {
         {/* Quote */}
         {settings.focusMode.showMotivationalQuotes && (
           <Animated.View entering={FadeIn.delay(300)} style={styles.quoteContainer}>
-            <RNText style={styles.quoteText}>{`"${quote}"`}</RNText>
+            <RNText style={styles.quoteText}>&ldquo;{quote}&rdquo;</RNText>
           </Animated.View>
         )}
 
@@ -1055,6 +1210,122 @@ const styles = StyleSheet.create({
   skipBreakText: {
     color: '#fff',
     fontSize: 15,
+    fontWeight: '600',
+  },
+  // Sound picker styles
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  soundButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  soundButtonEmoji: {
+    fontSize: 20,
+  },
+  soundModal: {
+    width: width * 0.9,
+    padding: 24,
+    borderRadius: 24,
+  },
+  soundModalTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  soundModalSubtitle: {
+    fontSize: 14,
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  soundOptions: {
+    gap: 12,
+  },
+  soundOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 2,
+  },
+  soundOptionSelected: {
+    backgroundColor: 'rgba(99, 102, 241, 0.1)',
+  },
+  soundOptionEmoji: {
+    fontSize: 28,
+    marginRight: 14,
+  },
+  soundOptionLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  soundOptionDesc: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  soundCheckmark: {
+    marginLeft: 'auto',
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#6366F1',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  soundCheckmarkText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  volumeContainer: {
+    marginTop: 24,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.1)',
+  },
+  volumeLabel: {
+    fontSize: 14,
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  volumeSlider: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 12,
+  },
+  volumeButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  volumeButtonActive: {
+    backgroundColor: 'rgba(99, 102, 241, 0.3)',
+    borderWidth: 2,
+    borderColor: '#6366F1',
+  },
+  volumeButtonText: {
+    fontSize: 20,
+  },
+  soundCloseButton: {
+    marginTop: 20,
+    paddingVertical: 14,
+    backgroundColor: '#6366F1',
+    borderRadius: 14,
+    alignItems: 'center',
+  },
+  soundCloseText: {
+    color: '#fff',
+    fontSize: 16,
     fontWeight: '600',
   },
 });

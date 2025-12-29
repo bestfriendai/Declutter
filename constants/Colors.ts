@@ -22,121 +22,90 @@ const dangerDark = '#F87171';
 
 export const Colors = {
   light: {
-    // Text hierarchy
     text: '#000000',
-    textSecondary: '#3C3C43',
-    textTertiary: '#8E8E93',
+    textSecondary: '#666666',
+    textTertiary: '#999999',
+    background: '#FFFFFF',
 
-    // Backgrounds - Apple TV light style
-    background: '#F2F2F7',
-    backgroundElevated: '#FFFFFF',
-    backgroundSecondary: '#E5E5EA',
-
-    // Cards and surfaces
+    // Surface colors - Clean & Flat
+    surface: '#FFFFFF',
+    surfaceSecondary: '#F5F5F7', // Off-white for contrast
+    surfaceTertiary: '#E5E5EA',
     card: '#FFFFFF',
-    cardElevated: '#FFFFFF',
-    cardPressed: '#F2F2F7',
-    surfaceSecondary: '#E5E5EA',
 
-    // Primary colors
-    tint: primaryLight,
-    primary: primaryLight,
-    primaryMuted: 'rgba(124, 58, 237, 0.15)',
+    primary: '#000000',
+    primaryMuted: 'rgba(0, 0, 0, 0.05)',
 
-    // Semantic colors
-    success: successLight,
-    successMuted: 'rgba(16, 185, 129, 0.15)',
-    warning: warningLight,
-    warningMuted: 'rgba(245, 158, 11, 0.15)',
-    danger: dangerLight,
-    dangerMuted: 'rgba(239, 68, 68, 0.15)',
+    border: '#E5E5EA',
+    icon: '#000000',
+    tabIconDefault: '#999999',
+    tabIconSelected: '#000000',
 
-    // Icons
-    icon: '#3C3C43',
-    iconSecondary: '#8E8E93',
-    tabIconDefault: '#8E8E93',
-    tabIconSelected: primaryLight,
+    // Semantic - Clean, standard iOS colors
+    success: '#34C759',
+    successMuted: 'rgba(52, 199, 89, 0.12)',
+    warning: '#FF9500',
+    warningMuted: 'rgba(255, 149, 0, 0.12)',
+    error: '#FF3B30',
+    errorMuted: 'rgba(255, 59, 48, 0.12)',
+    danger: '#FF3B30',
+    dangerMuted: 'rgba(255, 59, 48, 0.12)',
+    info: '#007AFF',
+    infoMuted: 'rgba(0, 122, 255, 0.12)',
 
-    // Borders and separators
-    border: 'rgba(60, 60, 67, 0.12)',
-    separator: 'rgba(60, 60, 67, 0.08)',
+    // Legacy Gradient support (mapped to solids/subtle gradients for compatibility)
+    gradientPrimary: ['#000000', '#333333'] as GradientTuple,
+    gradientSuccess: ['#34C759', '#34C759'] as GradientTuple,
+    gradientAccent: ['#000000', '#333333'] as GradientTuple,
+    gradientWarm: ['#FF9500', '#FF9500'] as GradientTuple,
+    gradientCool: ['#007AFF', '#007AFF'] as GradientTuple,
+    gradientPremium: ['#000000', '#000000'] as GradientTuple,
+    gradientAction: ['#007AFF', '#007AFF'] as GradientTuple,
 
-    // Glass materials
-    glassBg: 'rgba(255, 255, 255, 0.8)',
-    glassUltraThin: 'rgba(255, 255, 255, 0.4)',
-    glassThin: 'rgba(255, 255, 255, 0.6)',
-    glassRegular: 'rgba(255, 255, 255, 0.75)',
-    glassThick: 'rgba(255, 255, 255, 0.9)',
-
-    // Overlays
-    overlay: 'rgba(0, 0, 0, 0.3)',
-    overlayLight: 'rgba(0, 0, 0, 0.1)',
-
-    // Gradients (as tuples for LinearGradient)
-    gradientPrimary: ['#7C3AED', '#6366F1'] as GradientTuple,
-    gradientSuccess: ['#10B981', '#059669'] as GradientTuple,
-    gradientAccent: ['#EC4899', '#8B5CF6'] as GradientTuple,
-    gradientWarm: ['#F59E0B', '#EF4444'] as GradientTuple,
-    gradientCool: ['#06B6D4', '#3B82F6'] as GradientTuple,
+    chart: ['#000000', '#666666', '#999999', '#D1D1D6'],
   },
-
   dark: {
-    // Text hierarchy - Apple TV style
     text: '#FFFFFF',
-    textSecondary: 'rgba(255, 255, 255, 0.7)',
-    textTertiary: 'rgba(255, 255, 255, 0.5)',
-
-    // Backgrounds - Cinematic black
+    textSecondary: '#999999', // Higher contrast for dark mode
+    textTertiary: '#666666',
     background: '#000000',
-    backgroundElevated: '#1C1C1E',
-    backgroundSecondary: '#2C2C2E',
 
-    // Cards and surfaces - Apple TV elevated style
+    // Surface colors - Dark Mode
+    surface: '#1C1C1E', // System Gray 6
+    surfaceSecondary: '#2C2C2E', // System Gray 5
+    surfaceTertiary: '#3A3A3C',
+
+    primary: '#FFFFFF',
+    primaryMuted: 'rgba(255, 255, 255, 0.1)',
+
+    border: '#38383A',
+    icon: '#FFFFFF',
+    tabIconDefault: '#666666',
+    tabIconSelected: '#FFFFFF',
+
+    // Semantic
+    success: '#30D158',
+    successMuted: 'rgba(48, 209, 88, 0.15)',
+    warning: '#FF9F0A',
+    warningMuted: 'rgba(255, 159, 10, 0.15)',
+    error: '#FF453A',
+    errorMuted: 'rgba(255, 69, 58, 0.15)',
+    danger: '#FF453A',
+    dangerMuted: 'rgba(255, 69, 58, 0.15)',
+    info: '#0A84FF',
+    infoMuted: 'rgba(10, 132, 255, 0.15)',
     card: '#1C1C1E',
-    cardElevated: '#2C2C2E',
-    cardPressed: '#3A3A3C',
-    surfaceSecondary: '#2C2C2E',
 
-    // Primary colors
-    tint: primaryDark,
-    primary: primaryDark,
-    primaryMuted: 'rgba(167, 139, 250, 0.2)',
+    // Legacy Gradient support
+    gradientPrimary: ['#FFFFFF', '#E5E5EA'] as GradientTuple,
+    gradientSuccess: ['#30D158', '#30D158'] as GradientTuple,
+    gradientAccent: ['#FFFFFF', '#E5E5EA'] as GradientTuple,
+    gradientWarm: ['#FF9F0A', '#FF9F0A'] as GradientTuple,
+    gradientCool: ['#0A84FF', '#0A84FF'] as GradientTuple,
+    gradientPremium: ['#FFFFFF', '#E5E5EA'] as GradientTuple,
+    gradientAction: ['#0A84FF', '#0A84FF'] as GradientTuple,
 
-    // Semantic colors
-    success: successDark,
-    successMuted: 'rgba(52, 211, 153, 0.2)',
-    warning: warningDark,
-    warningMuted: 'rgba(251, 191, 36, 0.2)',
-    danger: dangerDark,
-    dangerMuted: 'rgba(248, 113, 113, 0.2)',
-
-    // Icons
-    icon: 'rgba(255, 255, 255, 0.85)',
-    iconSecondary: 'rgba(255, 255, 255, 0.55)',
-    tabIconDefault: 'rgba(255, 255, 255, 0.5)',
-    tabIconSelected: primaryDark,
-
-    // Borders and separators
-    border: 'rgba(255, 255, 255, 0.1)',
-    separator: 'rgba(255, 255, 255, 0.06)',
-
-    // Glass materials - Apple TV style
-    glassBg: 'rgba(30, 30, 30, 0.8)',
-    glassUltraThin: 'rgba(30, 30, 30, 0.4)',
-    glassThin: 'rgba(30, 30, 30, 0.6)',
-    glassRegular: 'rgba(40, 40, 40, 0.75)',
-    glassThick: 'rgba(50, 50, 50, 0.9)',
-
-    // Overlays
-    overlay: 'rgba(0, 0, 0, 0.6)',
-    overlayLight: 'rgba(0, 0, 0, 0.3)',
-
-    // Gradients (as tuples for LinearGradient)
-    gradientPrimary: ['#A78BFA', '#818CF8'] as GradientTuple,
-    gradientSuccess: ['#34D399', '#10B981'] as GradientTuple,
-    gradientAccent: ['#F472B6', '#A78BFA'] as GradientTuple,
-    gradientWarm: ['#FBBF24', '#F87171'] as GradientTuple,
-    gradientCool: ['#22D3EE', '#60A5FA'] as GradientTuple,
+    chart: ['#FFFFFF', '#D1D1D6', '#8E8E93', '#48484A'],
   },
 };
 

@@ -3,7 +3,7 @@
  * Apple TV style room progress, tasks, and photos
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -12,13 +12,20 @@ import {
   Pressable,
   Alert,
   useColorScheme,
+  Dimensions,
+  Switch,
 } from 'react-native';
 import Animated, {
   FadeInDown,
+  FadeInRight,
+  FadeOut,
   useSharedValue,
   useAnimatedStyle,
   withSpring,
   withTiming,
+  withDelay,
+  runOnJS,
+  Easing,
   ZoomIn,
   SlideInRight,
 } from 'react-native-reanimated';
@@ -32,12 +39,13 @@ import * as Haptics from 'expo-haptics';
 import { Colors, PriorityColors } from '@/constants/Colors';
 import { Typography } from '@/theme/typography';
 import { useDeclutter } from '@/context/DeclutterContext';
-import { CleaningTask } from '@/types/declutter';
+import { CleaningTask, Priority } from '@/types/declutter';
 import { GlassCard } from '@/components/ui/GlassCard';
-import { GlassButton } from '@/components/ui/GlassButton';
+import { GlassButton, IconButton } from '@/components/ui/GlassButton';
 import { SingleRing } from '@/components/ui/ActivityRings';
-import { useCardPress } from '@/hooks/useAnimatedPress';
+import { useCardPress, useFABPress } from '@/hooks/useAnimatedPress';
 
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 export default function RoomDetailScreen() {
@@ -57,7 +65,7 @@ export default function RoomDetailScreen() {
   const [filter, setFilter] = useState<'all' | 'pending' | 'completed'>('all');
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
   const [celebratingTask, setCelebratingTask] = useState<string | null>(null);
-  const [_selectedPhotoIndex, setSelectedPhotoIndex] = useState<number | null>(null);
+  const [selectedPhotoIndex, setSelectedPhotoIndex] = useState<number | null>(null);
 
   const celebrationOpacity = useSharedValue(0);
   const celebrationScale = useSharedValue(0.5);
@@ -82,7 +90,7 @@ export default function RoomDetailScreen() {
     transform: [{ scale: celebrationScale.value }],
   }));
 
-  // Filter tasks - hooks must be before early return
+  // Filter tasks - moved before early return to comply with hooks rules
   const filteredTasks = useMemo(() => {
     if (!room) return [];
     switch (filter) {
@@ -109,12 +117,6 @@ export default function RoomDetailScreen() {
     return room.tasks.filter(t => t.difficulty === 'quick' && !t.completed).slice(0, 3);
   }, [room]);
 
-  // Calculate stats
-  const completedCount = room?.tasks.filter(t => t.completed).length ?? 0;
-  const remainingTime = room?.tasks
-    .filter(t => !t.completed)
-    .reduce((acc, t) => acc + t.estimatedMinutes, 0) ?? 0;
-
   if (!room) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -132,6 +134,13 @@ export default function RoomDetailScreen() {
       </View>
     );
   }
+
+  // Calculate stats
+  const completedCount = room.tasks.filter(t => t.completed).length;
+  const totalTime = room.tasks.reduce((acc, t) => acc + t.estimatedMinutes, 0);
+  const remainingTime = room.tasks
+    .filter(t => !t.completed)
+    .reduce((acc, t) => acc + t.estimatedMinutes, 0);
 
   const handleTaskToggle = (taskId: string) => {
     const task = room.tasks.find(t => t.id === taskId);

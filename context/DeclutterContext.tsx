@@ -29,6 +29,12 @@ import {
   FocusModeSettings,
 } from '@/types/declutter';
 import { setGeminiApiKey } from '@/services/gemini';
+import {
+  saveApiKeySecure,
+  loadApiKeySecure,
+  deleteApiKeySecure,
+  isValidApiKeyFormat,
+} from '@/services/secureStorage';
 
 // Storage keys
 const STORAGE_KEYS = {
@@ -217,7 +223,14 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
         setSettingsState({ ...defaultSettings, ...loadedSettings });
       }
 
-      if (apiKey) {
+      // Load API key from secure storage instead
+      const secureApiKey = await loadApiKeySecure();
+      if (secureApiKey) {
+        setGeminiApiKey(secureApiKey);
+      } else if (apiKey) {
+        // Migrate from old storage to secure storage
+        await saveApiKeySecure(apiKey);
+        await AsyncStorage.removeItem(STORAGE_KEYS.API_KEY);
         setGeminiApiKey(apiKey);
       }
 
@@ -303,11 +316,11 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
   // BASIC ACTIONS
   // =====================
 
-  const setUserAction = (newUser: UserProfile) => {
+  const setUserAction = useCallback((newUser: UserProfile) => {
     setUser(newUser);
-  };
+  }, []);
 
-  const addRoom = (roomData: Omit<Room, 'id' | 'createdAt' | 'photos' | 'tasks' | 'currentProgress'>) => {
+  const addRoom = useCallback((roomData: Omit<Room, 'id' | 'createdAt' | 'photos' | 'tasks' | 'currentProgress'>) => {
     const newRoom: Room = {
       ...roomData,
       id: generateId(),
@@ -318,22 +331,20 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
     };
     setRooms(prev => [...prev, newRoom]);
     return newRoom;
-  };
+  }, []);
 
-  const updateRoom = (roomId: string, updates: Partial<Room>) => {
+  const updateRoom = useCallback((roomId: string, updates: Partial<Room>) => {
     setRooms(prev =>
       prev.map(room => (room.id === roomId ? { ...room, ...updates } : room))
     );
-  };
+  }, []);
 
-  const deleteRoom = (roomId: string) => {
+  const deleteRoom = useCallback((roomId: string) => {
     setRooms(prev => prev.filter(room => room.id !== roomId));
-    if (activeRoomId === roomId) {
-      setActiveRoomId(null);
-    }
-  };
+    setActiveRoomId(prev => prev === roomId ? null : prev);
+  }, []);
 
-  const addPhotoToRoom = (roomId: string, photoData: Omit<PhotoCapture, 'id'>) => {
+  const addPhotoToRoom = useCallback((roomId: string, photoData: Omit<PhotoCapture, 'id'>) => {
     const photo: PhotoCapture = {
       ...photoData,
       id: generateId(),
@@ -345,17 +356,17 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
           : room
       )
     );
-  };
+  }, []);
 
-  const setTasksForRoom = (roomId: string, tasks: CleaningTask[]) => {
+  const setTasksForRoom = useCallback((roomId: string, tasks: CleaningTask[]) => {
     setRooms(prev =>
       prev.map(room =>
         room.id === roomId ? { ...room, tasks } : room
       )
     );
-  };
+  }, []);
 
-  const toggleTask = (roomId: string, taskId: string) => {
+  const toggleTask = useCallback((roomId: string, taskId: string) => {
     setRooms(prev =>
       prev.map(room => {
         if (room.id !== roomId) return room;
@@ -436,9 +447,9 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
         };
       })
     );
-  };
+  }, [stats, mascot, focusSession, settings.arCollectionEnabled, feedMascotAction, spawnCollectibleAction]);
 
-  const toggleSubTask = (roomId: string, taskId: string, subTaskId: string) => {
+  const toggleSubTask = useCallback((roomId: string, taskId: string, subTaskId: string) => {
     setRooms(prev =>
       prev.map(room => {
         if (room.id !== roomId) return room;
@@ -456,21 +467,21 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
         return { ...room, tasks: updatedTasks };
       })
     );
-  };
+  }, []);
 
-  const setActiveRoom = (roomId: string | null) => {
+  const setActiveRoom = useCallback((roomId: string | null) => {
     setActiveRoomId(roomId);
-  };
+  }, []);
 
-  const updateSettings = (updates: Partial<AppSettings>) => {
+  const updateSettings = useCallback((updates: Partial<AppSettings>) => {
     setSettingsState(prev => ({ ...prev, ...updates }));
-  };
+  }, []);
 
-  const updateStats = (updates: Partial<UserStats>) => {
+  const updateStats = useCallback((updates: Partial<UserStats>) => {
     setStats(prev => ({ ...prev, ...updates }));
-  };
+  }, []);
 
-  const startSession = (roomId: string, focusMode: boolean) => {
+  const startSession = useCallback((roomId: string, focusMode: boolean) => {
     const session: CleaningSession = {
       id: generateId(),
       roomId,
@@ -479,9 +490,9 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
       focusMode,
     };
     setCurrentSession(session);
-  };
+  }, []);
 
-  const endSession = () => {
+  const endSession = useCallback(() => {
     if (currentSession) {
       if (currentSession.tasksCompletedIds.length > 0) {
         setStats(prev => ({
@@ -492,19 +503,17 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
       }
     }
     setCurrentSession(null);
-  };
+  }, [currentSession]);
 
-  const completeOnboarding = () => {
-    if (user) {
-      setUser({ ...user, onboardingComplete: true });
-    }
-  };
+  const completeOnboarding = useCallback(() => {
+    setUser(prev => prev ? { ...prev, onboardingComplete: true } : null);
+  }, []);
 
   // =====================
   // MASCOT ACTIONS
   // =====================
 
-  const createMascot = (name: string, personality: MascotPersonality) => {
+  const createMascot = useCallback((name: string, personality: MascotPersonality) => {
     const newMascot: Mascot = {
       name,
       personality,
@@ -521,13 +530,13 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
       accessories: [],
     };
     setMascot(newMascot);
-  };
+  }, []);
 
-  const updateMascotAction = (updates: Partial<Mascot>) => {
+  const updateMascotAction = useCallback((updates: Partial<Mascot>) => {
     setMascot(prev => prev ? { ...prev, ...updates } : null);
-  };
+  }, []);
 
-  const feedMascotAction = () => {
+  const feedMascotAction = useCallback(() => {
     if (!mascot) return;
 
     const newHunger = Math.min(100, mascot.hunger + 20);
@@ -550,9 +559,9 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
     setTimeout(() => {
       setMascot(prev => prev ? { ...prev, activity: 'idle' } : null);
     }, 2000);
-  };
+  }, [mascot]);
 
-  const interactWithMascot = () => {
+  const interactWithMascot = useCallback(() => {
     if (!mascot) return;
 
     const newHappiness = Math.min(100, mascot.happiness + 15);
@@ -568,13 +577,13 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
     setTimeout(() => {
       setMascot(prev => prev ? { ...prev, activity: 'idle' } : null);
     }, 3000);
-  };
+  }, [mascot]);
 
   // =====================
   // FOCUS MODE ACTIONS
   // =====================
 
-  const startFocusSession = (duration: number, roomId?: string) => {
+  const startFocusSession = useCallback((duration: number, roomId?: string) => {
     const session: FocusSession = {
       id: generateId(),
       roomId,
@@ -593,25 +602,25 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
     if (mascot) {
       setMascot(prev => prev ? { ...prev, activity: 'cleaning' } : null);
     }
-  };
+  }, [mascot]);
 
-  const pauseFocusSession = () => {
+  const pauseFocusSession = useCallback(() => {
     setFocusSession(prev => prev ? {
       ...prev,
       isPaused: true,
       pausedAt: new Date(),
     } : null);
-  };
+  }, []);
 
-  const resumeFocusSession = () => {
+  const resumeFocusSession = useCallback(() => {
     setFocusSession(prev => prev ? {
       ...prev,
       isPaused: false,
       pausedAt: undefined,
     } : null);
-  };
+  }, []);
 
-  const endFocusSession = () => {
+  const endFocusSession = useCallback(() => {
     if (focusSession) {
       // Grant bonus XP for focus sessions
       const bonusXp = Math.floor((focusSession.duration * 60 - focusSession.remainingSeconds) / 60) * 2;
@@ -630,11 +639,11 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
       }
     }
     setFocusSession(null);
-  };
+  }, [focusSession, mascot]);
 
-  const updateFocusSessionAction = (updates: Partial<FocusSession>) => {
+  const updateFocusSessionAction = useCallback((updates: Partial<FocusSession>) => {
     setFocusSession(prev => prev ? { ...prev, ...updates } : null);
-  };
+  }, []);
 
   // =====================
   // COLLECTION ACTIONS
@@ -675,7 +684,7 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
     return null;
   }, [settings.arCollectionEnabled, stats.totalTasksCompleted]);
 
-  const collectItem = (collectibleId: string, roomId?: string, taskId?: string) => {
+  const collectItem = useCallback((collectibleId: string, roomId?: string, taskId?: string) => {
     const collectible = COLLECTIBLES.find(c => c.id === collectibleId);
     if (!collectible) return;
 
@@ -719,17 +728,17 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
         setMascot(prev => prev ? { ...prev, activity: 'idle' } : null);
       }, 2000);
     }
-  };
+  }, [collection, mascot]);
 
-  const dismissSpawn = () => {
+  const dismissSpawn = useCallback(() => {
     setActiveSpawn(null);
-  };
+  }, []);
 
   // =====================
   // DATA MANAGEMENT ACTIONS
   // =====================
 
-  const clearAllData = async () => {
+  const clearAllData = useCallback(async () => {
     try {
       // Clear all AsyncStorage keys
       await Promise.all([
@@ -761,14 +770,14 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
       console.error('Error clearing data:', error);
       throw error;
     }
-  };
+  }, []);
 
-  const resetStats = () => {
+  const resetStats = useCallback(() => {
     setStats(defaultStats);
-  };
+  }, []);
 
-  // Context value
-  const value: DeclutterState = {
+  // Memoize context value to prevent unnecessary re-renders
+  const value: DeclutterState = React.useMemo(() => ({
     user,
     stats,
     rooms,
@@ -812,7 +821,21 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
     dismissSpawn,
     clearAllData,
     resetStats,
-  };
+  }), [
+    user,
+    stats,
+    rooms,
+    activeRoomId,
+    currentSession,
+    settings,
+    mascot,
+    focusSession,
+    collection,
+    collectionStats,
+    activeSpawn,
+    isAnalyzing,
+    analysisError,
+  ]);
 
   if (!isLoaded) {
     return null;
@@ -834,20 +857,25 @@ export function useDeclutter() {
   return context;
 }
 
-// Save API key
-export async function saveApiKey(apiKey: string) {
+// Save API key (using secure storage)
+export async function saveApiKey(apiKey: string): Promise<void> {
   try {
-    await AsyncStorage.setItem(STORAGE_KEYS.API_KEY, apiKey);
+    // Validate format first
+    if (!isValidApiKeyFormat(apiKey)) {
+      throw new Error('Invalid API key format');
+    }
+    await saveApiKeySecure(apiKey);
     setGeminiApiKey(apiKey);
   } catch (error) {
     console.error('Error saving API key:', error);
+    throw error;
   }
 }
 
-// Load API key
+// Load API key (from secure storage)
 export async function loadApiKey(): Promise<string | null> {
   try {
-    const key = await AsyncStorage.getItem(STORAGE_KEYS.API_KEY);
+    const key = await loadApiKeySecure();
     if (key) {
       setGeminiApiKey(key);
     }
@@ -855,5 +883,15 @@ export async function loadApiKey(): Promise<string | null> {
   } catch (error) {
     console.error('Error loading API key:', error);
     return null;
+  }
+}
+
+// Delete API key (from secure storage)
+export async function deleteApiKey(): Promise<void> {
+  try {
+    await deleteApiKeySecure();
+    setGeminiApiKey('');
+  } catch (error) {
+    console.error('Error deleting API key:', error);
   }
 }

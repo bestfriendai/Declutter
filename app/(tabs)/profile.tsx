@@ -286,9 +286,13 @@ export default function ProfileScreen() {
               title="Send Feedback"
               leftIcon={<Text style={styles.listIcon}>💬</Text>}
               showChevron
-              onPress={() => {
+              onPress={async () => {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                Linking.openURL('mailto:support@declutterly.app');
+                try {
+                  await Linking.openURL('mailto:support@declutterly.app');
+                } catch {
+                  Alert.alert('Error', 'Unable to open email client.');
+                }
               }}
             />
             <GroupedListItem

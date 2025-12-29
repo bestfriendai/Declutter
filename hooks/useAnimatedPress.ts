@@ -1,6 +1,7 @@
 /**
  * Declutterly - Animated Press Hook
  * Reusable press animation with spring physics
+ * Supports reduced motion accessibility setting
  */
 
 import { useCallback } from 'react';
@@ -8,7 +9,9 @@ import {
   useSharedValue,
   useAnimatedStyle,
   withSpring,
+  withTiming,
   WithSpringConfig,
+  useReducedMotion,
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 
@@ -33,6 +36,9 @@ export function useAnimatedPress(config: AnimatedPressConfig = {}) {
     hapticStyle = Haptics.ImpactFeedbackStyle.Light,
   } = config;
 
+  // Respect user's reduced motion preference
+  const reducedMotion = useReducedMotion();
+
   const scale = useSharedValue(1);
   const opacity = useSharedValue(1);
 
@@ -42,17 +48,27 @@ export function useAnimatedPress(config: AnimatedPressConfig = {}) {
   }));
 
   const onPressIn = useCallback(() => {
-    scale.value = withSpring(scalePressed, springConfig);
-    opacity.value = withSpring(0.9, springConfig);
+    if (reducedMotion) {
+      // For reduced motion: instant opacity change only, no scale
+      opacity.value = withTiming(0.7, { duration: 0 });
+    } else {
+      scale.value = withSpring(scalePressed, springConfig);
+      opacity.value = withSpring(0.9, springConfig);
+    }
     if (hapticFeedback) {
       Haptics.impactAsync(hapticStyle);
     }
-  }, [scalePressed, springConfig, hapticFeedback, hapticStyle]);
+  }, [scalePressed, springConfig, hapticFeedback, hapticStyle, reducedMotion]);
 
   const onPressOut = useCallback(() => {
-    scale.value = withSpring(1, springConfig);
-    opacity.value = withSpring(1, springConfig);
-  }, [springConfig]);
+    if (reducedMotion) {
+      // Instant reset for reduced motion
+      opacity.value = withTiming(1, { duration: 0 });
+    } else {
+      scale.value = withSpring(1, springConfig);
+      opacity.value = withSpring(1, springConfig);
+    }
+  }, [springConfig, reducedMotion]);
 
   return {
     animatedStyle,
@@ -60,6 +76,7 @@ export function useAnimatedPress(config: AnimatedPressConfig = {}) {
     onPressOut,
     scale,
     opacity,
+    reducedMotion,
   };
 }
 

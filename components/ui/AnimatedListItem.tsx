@@ -36,6 +36,11 @@ interface ListItemProps {
   disabled?: boolean;
   destructive?: boolean;
   style?: StyleProp<ViewStyle>;
+  // Accessibility
+  accessibilityLabel?: string;
+  accessibilityHint?: string;
+  accessibilityRole?: 'button' | 'link' | 'menuitem' | 'none';
+  testID?: string;
 }
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -51,6 +56,10 @@ export function AnimatedListItem({
   disabled = false,
   destructive = false,
   style,
+  accessibilityLabel,
+  accessibilityHint,
+  accessibilityRole = 'button',
+  testID,
 }: ListItemProps) {
   const colorScheme = useColorScheme() ?? 'dark';
   const colors = Colors[colorScheme];
@@ -80,6 +89,10 @@ export function AnimatedListItem({
     ? colors.textTertiary
     : colors.text;
 
+  // Build accessible label from title and subtitle
+  const computedAccessibilityLabel = accessibilityLabel || 
+    (subtitle ? `${title}, ${subtitle}` : title);
+
   return (
     <Animated.View
       entering={FadeInDown.delay(index * 50).springify()}
@@ -89,6 +102,13 @@ export function AnimatedListItem({
         onPressIn={handlePressIn}
         onPressOut={handlePressOut}
         disabled={disabled || !onPress}
+        accessibilityRole={onPress ? accessibilityRole : 'none'}
+        accessibilityLabel={computedAccessibilityLabel}
+        accessibilityHint={accessibilityHint}
+        accessibilityState={{
+          disabled: disabled,
+        }}
+        testID={testID}
         style={[animatedStyle]}
       >
         <View
@@ -368,6 +388,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     padding: 16,
+    minHeight: 52, // Apple HIG: minimum 44px touch target + padding
     borderRadius: 12,
     marginVertical: 4,
   },
@@ -415,6 +436,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 12,
     paddingHorizontal: 16,
+    minHeight: 48, // Apple HIG: minimum 44px touch target
   },
   separator: {
     height: 0.5,

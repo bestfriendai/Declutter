@@ -3,40 +3,39 @@
  * Clean, minimal Apple-style design
  */
 
-import React, { useState, useCallback } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  Pressable,
-  Dimensions,
-  RefreshControl,
-} from 'react-native';
 import { useColorScheme } from '@/hooks/useColorScheme';
-import { router } from 'expo-router';
 import * as Haptics from 'expo-haptics';
+import { router } from 'expo-router';
+import { SymbolView, type SFSymbol } from 'expo-symbols';
+import React, { useCallback, useState } from 'react';
+import {
+  Dimensions,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View
+} from 'react-native';
 import Animated, {
   FadeIn,
-  FadeInDown,
-  useAnimatedStyle,
-  useSharedValue,
-  withSpring,
+  FadeInDown
 } from 'react-native-reanimated';
-import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Colors } from '@/constants/Colors';
 import { useDeclutter } from '@/context/DeclutterContext';
-import { Room, ROOM_TYPE_INFO, RoomType, FOCUS_QUOTES } from '@/types/declutter';
-import { GlassButton } from '@/components/ui/GlassButton';
-import { SingleRing } from '@/components/ui/ActivityRings';
+import { FOCUS_QUOTES, Room, ROOM_TYPE_INFO, RoomType } from '@/types/declutter';
+
 import { CollectibleSpawn } from '@/components/features/CollectibleSpawn';
+import { SingleRing } from '@/components/ui/ActivityRings';
+import { ModernCard } from '@/components/ui/ModernCard';
+import { ScreenLayout } from '@/components/ui/ScreenLayout';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 export default function HomeScreen() {
-  const colorScheme = useColorScheme() ?? 'dark';
+  const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
   const insets = useSafeAreaInsets();
 
@@ -91,7 +90,7 @@ export default function HomeScreen() {
   const completedRooms = rooms.filter(r => r.currentProgress === 100);
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <ScreenLayout>
       {/* Collectible Spawn Overlay */}
       {activeSpawn && (
         <CollectibleSpawn
@@ -105,7 +104,7 @@ export default function HomeScreen() {
         style={styles.scrollView}
         contentContainerStyle={[
           styles.scrollContent,
-          { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 120 },
+          { paddingTop: 20, paddingBottom: 100 },
         ]}
         showsVerticalScrollIndicator={false}
         refreshControl={
@@ -113,7 +112,7 @@ export default function HomeScreen() {
         }
       >
         {/* Header */}
-        <Animated.View entering={FadeInDown.duration(500)} style={styles.header}>
+        <Animated.View entering={FadeInDown.duration(400)} style={styles.header}>
           <View>
             <Text style={[styles.greeting, { color: colors.textSecondary }]}>
               {getGreeting()}
@@ -126,8 +125,8 @@ export default function HomeScreen() {
             onPress={() => router.push('/settings')}
             style={({ pressed }) => [styles.avatarButton, pressed && { opacity: 0.7 }]}
           >
-            <View style={[styles.avatar, { backgroundColor: colors.primary + '20' }]}>
-              <Text style={styles.avatarText}>
+            <View style={[styles.avatar, { backgroundColor: colors.surfaceSecondary }]}>
+              <Text style={[styles.avatarText, { color: colors.text }]}>
                 {(user?.name || 'U')[0].toUpperCase()}
               </Text>
             </View>
@@ -136,11 +135,11 @@ export default function HomeScreen() {
 
         {/* Stats Row */}
         {rooms.length > 0 && (
-          <Animated.View entering={FadeInDown.duration(500).delay(100)} style={styles.statsRow}>
+          <Animated.View entering={FadeInDown.duration(400).delay(100)} style={styles.statsRow}>
             <StatItem value={totalProgress} label="Progress" suffix="%" colors={colors} />
-            <View style={[styles.statDivider, { backgroundColor: colors.separator }]} />
+            <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
             <StatItem value={stats.totalTasksCompleted} label="Tasks Done" colors={colors} />
-            <View style={[styles.statDivider, { backgroundColor: colors.separator }]} />
+            <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
             <StatItem value={stats.currentStreak} label="Day Streak" suffix="🔥" colors={colors} />
           </Animated.View>
         )}
@@ -148,7 +147,7 @@ export default function HomeScreen() {
         {/* Empty State */}
         {rooms.length === 0 && (
           <Animated.View entering={FadeIn.duration(600)} style={styles.emptyState}>
-            <View style={[styles.emptyIcon, { backgroundColor: colors.primary + '10' }]}>
+            <View style={[styles.emptyIcon, { backgroundColor: colors.surfaceSecondary }]}>
               <Text style={styles.emptyEmoji}>🏠</Text>
             </View>
             <Text style={[styles.emptyTitle, { color: colors.text }]}>
@@ -157,13 +156,15 @@ export default function HomeScreen() {
             <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
               Take a photo of any room and get an AI-powered cleaning plan
             </Text>
-            <GlassButton
-              title="Scan Your First Room"
+
+            <ModernCard
               onPress={() => router.push('/camera')}
-              variant="primary"
-              size="large"
-              style={{ marginTop: 24, width: '100%' }}
-            />
+              active
+              style={{ marginTop: 24, width: '100%', alignItems: 'center', backgroundColor: colors.primary }}
+            >
+              <Text style={{ color: colorScheme === 'dark' ? '#000' : '#FFF', fontWeight: '600' }}>Scan Your First Room</Text>
+            </ModernCard>
+
             <Pressable
               onPress={() => setShowAddRoom(true)}
               style={styles.textButton}
@@ -176,30 +177,30 @@ export default function HomeScreen() {
         )}
 
         {/* Quick Actions */}
-        <Animated.View entering={FadeInDown.duration(500).delay(200)} style={styles.section}>
+        <Animated.View entering={FadeInDown.duration(400).delay(200)} style={styles.section}>
           <Text style={[styles.sectionTitle, { color: colors.text }]}>Quick Actions</Text>
           <View style={styles.actionsRow}>
             <ActionButton
-              icon="📸"
+              icon="camera.fill"
               label="Scan"
               onPress={() => router.push('/camera')}
               colors={colors}
             />
             <ActionButton
-              icon="⏱"
+              icon="timer"
               label="Focus"
               onPress={() => router.push('/focus?duration=25')}
               colors={colors}
             />
             <ActionButton
-              icon="✨"
+              icon="sparkles"
               label="Collection"
               badge={collectionStats.uniqueCollected > 0 ? collectionStats.uniqueCollected : undefined}
               onPress={() => router.push('/collection')}
               colors={colors}
             />
             <ActionButton
-              icon="🏆"
+              icon="trophy.fill"
               label="Badges"
               onPress={() => router.push('/achievements')}
               colors={colors}
@@ -209,11 +210,11 @@ export default function HomeScreen() {
 
         {/* Active Rooms */}
         {activeRooms.length > 0 && (
-          <Animated.View entering={FadeInDown.duration(500).delay(300)} style={styles.section}>
+          <Animated.View entering={FadeInDown.duration(400).delay(300)} style={styles.section}>
             <View style={styles.sectionHeader}>
               <Text style={[styles.sectionTitle, { color: colors.text }]}>In Progress</Text>
               <Pressable onPress={() => setShowAddRoom(true)}>
-                <Text style={[styles.addButton, { color: colors.primary }]}>+ Add</Text>
+                <Text style={[styles.addButton, { color: colors.info }]}>+ Add</Text>
               </Pressable>
             </View>
             {activeRooms.map((room, index) => (
@@ -230,7 +231,7 @@ export default function HomeScreen() {
 
         {/* Completed Rooms */}
         {completedRooms.length > 0 && (
-          <Animated.View entering={FadeInDown.duration(500).delay(400)} style={styles.section}>
+          <Animated.View entering={FadeInDown.duration(400).delay(400)} style={styles.section}>
             <Text style={[styles.sectionTitle, { color: colors.text }]}>Completed</Text>
             {completedRooms.map((room, index) => (
               <RoomListItem
@@ -247,12 +248,12 @@ export default function HomeScreen() {
 
         {/* Motivation */}
         {rooms.length > 0 && (
-          <Animated.View entering={FadeInDown.duration(500).delay(500)} style={styles.section}>
-            <View style={[styles.quoteCard, { backgroundColor: colorScheme === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)' }]}>
+          <Animated.View entering={FadeInDown.duration(400).delay(500)} style={styles.section}>
+            <ModernCard style={StyleSheet.flatten([styles.quoteCard, { backgroundColor: colors.surfaceSecondary }])}>
               <Text style={[styles.quoteText, { color: colors.textSecondary }]}>
-                {`"${motivationQuote}"`}
+                &ldquo;{motivationQuote}&rdquo;
               </Text>
-            </View>
+            </ModernCard>
           </Animated.View>
         )}
       </ScrollView>
@@ -266,22 +267,20 @@ export default function HomeScreen() {
           colorScheme={colorScheme}
         />
       )}
-    </View>
+    </ScreenLayout>
   );
 }
 
-// Stat Item
-function StatItem({
-  value,
-  label,
-  suffix = '',
-  colors,
-}: {
-  value: number;
+// Stat Item Props
+interface StatItemProps {
+  value: number | string;
   label: string;
   suffix?: string;
   colors: typeof Colors.dark;
-}) {
+}
+
+// Stat Item Component
+const StatItem = React.memo(function StatItem({ value, label, suffix = '', colors }: StatItemProps) {
   return (
     <View style={styles.statItem}>
       <Text style={[styles.statValue, { color: colors.text }]}>
@@ -290,80 +289,65 @@ function StatItem({
       <Text style={[styles.statLabel, { color: colors.textSecondary }]}>{label}</Text>
     </View>
   );
-}
+});
 
-// Action Button
-function ActionButton({
-  icon,
-  label,
-  badge,
-  onPress,
-  colors,
-}: {
+// Action Button Props
+interface ActionButtonProps {
   icon: string;
   label: string;
   badge?: number;
   onPress: () => void;
   colors: typeof Colors.dark;
-}) {
-  const scale = useSharedValue(1);
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
-
-  return (
-    <Pressable
-      onPress={() => {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        onPress();
-      }}
-      onPressIn={() => { scale.value = withSpring(0.95); }}
-      onPressOut={() => { scale.value = withSpring(1); }}
-    >
-      <Animated.View style={[styles.actionButton, animatedStyle]}>
-        <View style={[styles.actionIcon, { backgroundColor: colors.card }]}>
-          <Text style={styles.actionEmoji}>{icon}</Text>
-          {badge !== undefined && (
-            <View style={styles.actionBadge}>
-              <Text style={styles.actionBadgeText}>{badge}</Text>
-            </View>
-          )}
-        </View>
-        <Text style={[styles.actionLabel, { color: colors.textSecondary }]}>{label}</Text>
-      </Animated.View>
-    </Pressable>
-  );
 }
 
-// Room List Item
-function RoomListItem({
-  room,
-  onPress,
-  colors,
-  isCompleted = false,
-  delay = 0,
-}: {
+// Action Button Component
+const ActionButton = React.memo(function ActionButton({ icon, label, badge, onPress, colors }: ActionButtonProps) {
+  return (
+    <Pressable onPress={onPress} style={{ alignItems: 'center', width: (SCREEN_WIDTH - 40) / 4 }}>
+      <ModernCard
+        active={false}
+        padding={12}
+        style={{
+          width: 56,
+          height: 56,
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: colors.surfaceSecondary,
+          marginBottom: 8,
+          borderRadius: 20,
+        }}
+      >
+        <SymbolView name={icon as SFSymbol} tintColor={colors.text} style={{ width: 24, height: 24 }} />
+        {badge !== undefined && (
+          <View style={[styles.actionBadge, { backgroundColor: colors.info }]}>
+            <Text style={styles.actionBadgeText}>{badge}</Text>
+          </View>
+        )}
+      </ModernCard>
+      <Text style={[styles.actionLabel, { color: colors.textSecondary }]}>{label}</Text>
+    </Pressable>
+  );
+});
+
+// Room List Item Props
+interface RoomListItemProps {
   room: Room;
   onPress: () => void;
   colors: typeof Colors.dark;
   isCompleted?: boolean;
   delay?: number;
-}) {
-  const completedTasks = room.tasks.filter(t => t.completed).length;
+}
+
+// Room List Item Component
+const RoomListItem = React.memo(function RoomListItem({ room, onPress, colors, isCompleted = false, delay = 0 }: RoomListItemProps) {
+  const completedTasks = room.tasks.filter((t) => t.completed).length;
   const totalTasks = room.tasks.length;
 
   return (
-    <Animated.View entering={FadeIn.delay(delay)}>
-      <Pressable
-        onPress={onPress}
-        style={({ pressed }) => [
-          styles.roomItem,
-          { backgroundColor: colors.card },
-          pressed && { opacity: 0.8 },
-        ]}
-      >
+    <Animated.View entering={FadeIn.delay(delay)} style={{ marginBottom: 12 }}>
+      <ModernCard onPress={onPress} padding={16} style={{ flexDirection: 'row', alignItems: 'center' }}>
         <View style={styles.roomEmoji}>
-          <Text style={{ fontSize: 28 }}>{room.emoji}</Text>
+          <Text style={{ fontSize: 24 }}>{room.emoji}</Text>
         </View>
         <View style={styles.roomInfo}>
           <Text style={[styles.roomName, { color: colors.text }]}>{room.name}</Text>
@@ -372,24 +356,25 @@ function RoomListItem({
           </Text>
         </View>
         {isCompleted ? (
-          <View style={styles.completedCheck}>
-            <Text style={{ fontSize: 16 }}>✓</Text>
+          <View style={[styles.completedCheck, { backgroundColor: colors.success }]}>
+            <SymbolView name="checkmark" tintColor="white" style={{ width: 14, height: 14 }} />
           </View>
         ) : (
           <SingleRing
             progress={room.currentProgress}
-            size={44}
+            size={40}
             strokeWidth={4}
-            color={colors.primary}
+            color={colors.info}
             showValue={false}
           >
-            <Text style={[styles.ringValue, { color: colors.text }]}>{room.currentProgress}%</Text>
+            <Text style={[styles.ringValue, { color: colors.textSecondary }]}>{room.currentProgress}%</Text>
           </SingleRing>
         )}
-      </Pressable>
+      </ModernCard>
     </Animated.View>
   );
-}
+});
+
 
 // Add Room Modal
 function AddRoomModal({
@@ -406,8 +391,8 @@ function AddRoomModal({
   return (
     <Animated.View entering={FadeIn} style={styles.modalOverlay}>
       <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
-      <BlurView intensity={80} tint={colorScheme as 'dark' | 'light'} style={styles.modalContent}>
-        <View style={[styles.modalInner, { backgroundColor: colorScheme === 'dark' ? 'rgba(30,30,30,0.9)' : 'rgba(255,255,255,0.95)' }]}>
+      <Animated.View entering={FadeInDown.duration(300)} style={[styles.modalContent, { backgroundColor: colors.surface }]}>
+        <View style={styles.modalInner}>
           <Text style={[styles.modalTitle, { color: colors.text }]}>Add Room</Text>
           <View style={styles.roomTypeGrid}>
             {(Object.keys(ROOM_TYPE_INFO) as RoomType[]).map((type) => (
@@ -419,7 +404,7 @@ function AddRoomModal({
                 }}
                 style={({ pressed }) => [
                   styles.roomTypeItem,
-                  { backgroundColor: pressed ? colors.cardPressed : 'transparent' },
+                  { backgroundColor: pressed ? colors.surfaceSecondary : 'transparent' },
                 ]}
               >
                 <Text style={{ fontSize: 32 }}>{ROOM_TYPE_INFO[type].emoji}</Text>
@@ -433,7 +418,7 @@ function AddRoomModal({
             <Text style={[styles.modalCancelText, { color: colors.textSecondary }]}>Cancel</Text>
           </Pressable>
         </View>
-      </BlurView>
+      </Animated.View>
     </Animated.View>
   );
 }
@@ -672,11 +657,19 @@ const styles = StyleSheet.create({
   modalOverlay: {
     ...StyleSheet.absoluteFillObject,
     justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.4)',
   },
   modalContent: {
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    overflow: 'hidden',
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: -2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 5,
   },
   modalInner: {
     padding: 24,

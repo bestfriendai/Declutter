@@ -13,12 +13,22 @@ import {
   Platform,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
-import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
 import Animated from 'react-native-reanimated';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { Colors } from '@/constants/Colors';
 import { useCardPress } from '@/hooks/useAnimatedPress';
 import { LinearGradient } from 'expo-linear-gradient';
+
+// Try to import expo-glass-effect, but handle if not available
+let GlassView: any = null;
+let isLiquidGlassAvailable: () => boolean = () => false;
+try {
+  const glassEffect = require('expo-glass-effect');
+  GlassView = glassEffect.GlassView;
+  isLiquidGlassAvailable = glassEffect.isLiquidGlassAvailable;
+} catch {
+  // expo-glass-effect not available, will use fallback
+}
 
 type GlassVariant = 'default' | 'elevated' | 'subtle' | 'hero' | 'interactive' | 'liquid';
 
@@ -39,7 +49,12 @@ interface GlassCardProps {
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 // Check if we can use native Liquid Glass (iOS 26+)
-const canUseLiquidGlass = Platform.OS === 'ios' && isLiquidGlassAvailable();
+let canUseLiquidGlass = false;
+try {
+  canUseLiquidGlass = Platform.OS === 'ios' && GlassView !== null && isLiquidGlassAvailable();
+} catch {
+  canUseLiquidGlass = false;
+}
 
 export function GlassCard({
   children,
