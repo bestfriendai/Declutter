@@ -140,7 +140,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const result = await signInWithEmail(email, password);
 
     if (!result.success) {
-      setState(prev => ({ ...prev, isLoading: false, error: result.error }));
+      setState(prev => ({ ...prev, isLoading: false, error: result.error ?? null }));
     }
 
     return result;
@@ -157,7 +157,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const result = await signUpWithEmail(email, password, displayName);
 
     if (!result.success) {
-      setState(prev => ({ ...prev, isLoading: false, error: result.error }));
+      setState(prev => ({ ...prev, isLoading: false, error: result.error ?? null }));
     } else if (result.user) {
       // Create initial user profile in Firestore
       await saveUserProfile({
@@ -184,7 +184,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const result = await signInWithApple();
 
     if (!result.success) {
-      setState(prev => ({ ...prev, isLoading: false, error: result.error }));
+      setState(prev => ({ ...prev, isLoading: false, error: result.error ?? null }));
     } else if (result.user) {
       // Create initial user profile if new user
       const profile = await loadAllDataFromCloud();
@@ -208,7 +208,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const result = await signInAnonymously();
 
     if (!result.success) {
-      setState(prev => ({ ...prev, isLoading: false, error: result.error }));
+      setState(prev => ({ ...prev, isLoading: false, error: result.error ?? null }));
     }
 
     return result;
@@ -244,7 +244,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const result = await deleteAccount(password);
 
     if (!result.success) {
-      setState(prev => ({ ...prev, isLoading: false, error: result.error }));
+      setState(prev => ({ ...prev, isLoading: false, error: result.error ?? null }));
     }
 
     return result;

@@ -366,6 +366,68 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
     );
   }, []);
 
+  // Moved before toggleTask to avoid temporal dead zone
+  const feedMascotAction = useCallback(() => {
+    if (!mascot) return;
+
+    const newHunger = Math.min(100, mascot.hunger + 20);
+    const newHappiness = Math.min(100, mascot.happiness + 10);
+    const newXp = mascot.xp + 5;
+    const newLevel = Math.floor(newXp / 50) + 1;
+
+    setMascot(prev => prev ? {
+      ...prev,
+      hunger: newHunger,
+      happiness: newHappiness,
+      xp: newXp,
+      level: newLevel,
+      lastFed: new Date(),
+      mood: newHunger > 80 ? 'happy' : prev.mood,
+      activity: 'cheering',
+    } : null);
+
+    // Reset activity after animation
+    setTimeout(() => {
+      setMascot(prev => prev ? { ...prev, activity: 'idle' } : null);
+    }, 2000);
+  }, [mascot]);
+
+  // Moved before toggleTask to avoid temporal dead zone
+  const spawnCollectibleAction = useCallback((): SpawnEvent | null => {
+    if (!settings.arCollectionEnabled) return null;
+
+    // Get eligible collectibles based on tasks completed
+    const eligible = COLLECTIBLES.filter(c =>
+      !c.isSpecial &&
+      c.requiredTasks <= stats.totalTasksCompleted &&
+      c.spawnChance > 0
+    );
+
+    if (eligible.length === 0) return null;
+
+    // Roll for spawn
+    const roll = Math.random();
+    let cumulative = 0;
+
+    for (const collectible of eligible) {
+      cumulative += collectible.spawnChance;
+      if (roll <= cumulative) {
+        const spawn: SpawnEvent = {
+          collectible,
+          position: {
+            x: Math.random() * 0.6 + 0.2, // 20-80% of screen
+            y: Math.random() * 0.4 + 0.3, // 30-70% of screen
+          },
+          expiresAt: new Date(Date.now() + 30000), // 30 seconds to collect
+          collected: false,
+        };
+        return spawn;
+      }
+    }
+
+    return null;
+  }, [settings.arCollectionEnabled, stats.totalTasksCompleted]);
+
   const toggleTask = useCallback((roomId: string, taskId: string) => {
     setRooms(prev =>
       prev.map(room => {
@@ -536,31 +598,6 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
     setMascot(prev => prev ? { ...prev, ...updates } : null);
   }, []);
 
-  const feedMascotAction = useCallback(() => {
-    if (!mascot) return;
-
-    const newHunger = Math.min(100, mascot.hunger + 20);
-    const newHappiness = Math.min(100, mascot.happiness + 10);
-    const newXp = mascot.xp + 5;
-    const newLevel = Math.floor(newXp / 50) + 1;
-
-    setMascot(prev => prev ? {
-      ...prev,
-      hunger: newHunger,
-      happiness: newHappiness,
-      xp: newXp,
-      level: newLevel,
-      lastFed: new Date(),
-      mood: newHunger > 80 ? 'happy' : prev.mood,
-      activity: 'cheering',
-    } : null);
-
-    // Reset activity after animation
-    setTimeout(() => {
-      setMascot(prev => prev ? { ...prev, activity: 'idle' } : null);
-    }, 2000);
-  }, [mascot]);
-
   const interactWithMascot = useCallback(() => {
     if (!mascot) return;
 
@@ -648,41 +685,6 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
   // =====================
   // COLLECTION ACTIONS
   // =====================
-
-  const spawnCollectibleAction = useCallback((): SpawnEvent | null => {
-    if (!settings.arCollectionEnabled) return null;
-
-    // Get eligible collectibles based on tasks completed
-    const eligible = COLLECTIBLES.filter(c =>
-      !c.isSpecial &&
-      c.requiredTasks <= stats.totalTasksCompleted &&
-      c.spawnChance > 0
-    );
-
-    if (eligible.length === 0) return null;
-
-    // Roll for spawn
-    const roll = Math.random();
-    let cumulative = 0;
-
-    for (const collectible of eligible) {
-      cumulative += collectible.spawnChance;
-      if (roll <= cumulative) {
-        const spawn: SpawnEvent = {
-          collectible,
-          position: {
-            x: Math.random() * 0.6 + 0.2, // 20-80% of screen
-            y: Math.random() * 0.4 + 0.3, // 30-70% of screen
-          },
-          expiresAt: new Date(Date.now() + 30000), // 30 seconds to collect
-          collected: false,
-        };
-        return spawn;
-      }
-    }
-
-    return null;
-  }, [settings.arCollectionEnabled, stats.totalTasksCompleted]);
 
   const collectItem = useCallback((collectibleId: string, roomId?: string, taskId?: string) => {
     const collectible = COLLECTIBLES.find(c => c.id === collectibleId);

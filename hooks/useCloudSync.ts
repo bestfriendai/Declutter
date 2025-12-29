@@ -59,7 +59,7 @@ export function useCloudSync() {
   const [isOnline, setIsOnline] = useState(true);
   const [pendingChanges, setPendingChanges] = useState(0);
 
-  const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const syncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const syncQueueRef = useRef<SyncQueueItem[]>([]);
 
   // Check network status

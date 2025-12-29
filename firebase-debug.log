@@ -1,0 +1,186 @@
+[debug] [2025-12-29T06:43:07.192Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2025-12-29T06:43:07.193Z] > authorizing via signed-in user (startupstartupapp@gmail.com)
+[debug] [2025-12-29T06:43:07.193Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2025-12-29T06:43:07.193Z] > authorizing via signed-in user (startupstartupapp@gmail.com)
+[debug] [2025-12-29T06:43:07.194Z] Checked if tokens are valid: true, expires at: 1766994162768
+[debug] [2025-12-29T06:43:07.194Z] Checked if tokens are valid: true, expires at: 1766994162768
+[debug] [2025-12-29T06:43:07.194Z] Checked if tokens are valid: true, expires at: 1766994162768
+[debug] [2025-12-29T06:43:07.194Z] Checked if tokens are valid: true, expires at: 1766994162768
+[debug] [2025-12-29T06:43:07.194Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2025-12-29T06:43:07.194Z] > authorizing via signed-in user (startupstartupapp@gmail.com)
+[debug] [2025-12-29T06:43:07.194Z] Checked if tokens are valid: true, expires at: 1766994162768
+[debug] [2025-12-29T06:43:07.194Z] Checked if tokens are valid: true, expires at: 1766994162768
+[debug] [2025-12-29T06:43:07.195Z] >>> [apiv2][query] GET https://cloudbilling.googleapis.com/v1/projects/getfreeapp-prod/billingInfo [none]
+[debug] [2025-12-29T06:43:07.195Z] >>> [apiv2][query] GET https://cloudbilling.googleapis.com/v1/projects/getfreeapp-prod/billingInfo [none]
+[debug] [2025-12-29T06:43:07.196Z] >>> [apiv2][query] GET https://cloudbilling.googleapis.com/v1/projects/getfreeapp-prod/billingInfo [none]
+[debug] [2025-12-29T06:43:07.544Z] <<< [apiv2][status] GET https://cloudbilling.googleapis.com/v1/projects/getfreeapp-prod/billingInfo 200
+[debug] [2025-12-29T06:43:07.544Z] <<< [apiv2][body] GET https://cloudbilling.googleapis.com/v1/projects/getfreeapp-prod/billingInfo {"name":"projects/getfreeapp-prod/billingInfo","projectId":"getfreeapp-prod","billingAccountName":"billingAccounts/018BF5-3AF53F-7100E4","billingEnabled":true}
+[debug] [2025-12-29T06:43:07.548Z] Checked if tokens are valid: true, expires at: 1766994162768
+[debug] [2025-12-29T06:43:07.548Z] Checked if tokens are valid: true, expires at: 1766994162768
+[debug] [2025-12-29T06:43:07.554Z] Checked if tokens are valid: true, expires at: 1766994162768
+[debug] [2025-12-29T06:43:07.554Z] Checked if tokens are valid: true, expires at: 1766994162768
+[debug] [2025-12-29T06:43:07.554Z] Checked if tokens are valid: true, expires at: 1766994162768
+[debug] [2025-12-29T06:43:07.554Z] Checked if tokens are valid: true, expires at: 1766994162768
+[debug] [2025-12-29T06:43:07.555Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/getfreeapp-prod/services/firebasedataconnect.googleapis.com [none]
+[debug] [2025-12-29T06:43:07.555Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/getfreeapp-prod/services/firebasedataconnect.googleapis.com x-goog-quota-user=projects/getfreeapp-prod
+[debug] [2025-12-29T06:43:07.555Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/getfreeapp-prod/services/firebaseapphosting.googleapis.com [none]
+[debug] [2025-12-29T06:43:07.555Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/getfreeapp-prod/services/firebaseapphosting.googleapis.com x-goog-quota-user=projects/getfreeapp-prod
+[debug] [2025-12-29T06:43:07.556Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/getfreeapp-prod/services/firebaseio.com [none]
+[debug] [2025-12-29T06:43:07.556Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/getfreeapp-prod/services/firebaseio.com x-goog-quota-user=projects/getfreeapp-prod
+[debug] [2025-12-29T06:43:07.585Z] <<< [apiv2][status] GET https://cloudbilling.googleapis.com/v1/projects/getfreeapp-prod/billingInfo 200
+[debug] [2025-12-29T06:43:07.585Z] <<< [apiv2][body] GET https://cloudbilling.googleapis.com/v1/projects/getfreeapp-prod/billingInfo {"name":"projects/getfreeapp-prod/billingInfo","projectId":"getfreeapp-prod","billingAccountName":"billingAccounts/018BF5-3AF53F-7100E4","billingEnabled":true}
+[debug] [2025-12-29T06:43:07.586Z] Checked if tokens are valid: true, expires at: 1766994162768
+[debug] [2025-12-29T06:43:07.586Z] Checked if tokens are valid: true, expires at: 1766994162768
+[debug] [2025-12-29T06:43:07.587Z] Checked if tokens are valid: true, expires at: 1766994162768
+[debug] [2025-12-29T06:43:07.587Z] Checked if tokens are valid: true, expires at: 1766994162768
+[debug] [2025-12-29T06:43:07.587Z] Checked if tokens are valid: true, expires at: 1766994162768
+[debug] [2025-12-29T06:43:07.587Z] Checked if tokens are valid: true, expires at: 1766994162768
+[debug] [2025-12-29T06:43:07.587Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/getfreeapp-prod/services/firebasedataconnect.googleapis.com [none]
+[debug] [2025-12-29T06:43:07.587Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/getfreeapp-prod/services/firebasedataconnect.googleapis.com x-goog-quota-user=projects/getfreeapp-prod
+[debug] [2025-12-29T06:43:07.588Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/getfreeapp-prod/services/firebaseapphosting.googleapis.com [none]
+[debug] [2025-12-29T06:43:07.588Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/getfreeapp-prod/services/firebaseapphosting.googleapis.com x-goog-quota-user=projects/getfreeapp-prod
+[debug] [2025-12-29T06:43:07.589Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/getfreeapp-prod/services/firebaseio.com [none]
+[debug] [2025-12-29T06:43:07.589Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/getfreeapp-prod/services/firebaseio.com x-goog-quota-user=projects/getfreeapp-prod
+[debug] [2025-12-29T06:43:07.620Z] <<< [apiv2][status] GET https://cloudbilling.googleapis.com/v1/projects/getfreeapp-prod/billingInfo 200
+[debug] [2025-12-29T06:43:07.620Z] <<< [apiv2][body] GET https://cloudbilling.googleapis.com/v1/projects/getfreeapp-prod/billingInfo {"name":"projects/getfreeapp-prod/billingInfo","projectId":"getfreeapp-prod","billingAccountName":"billingAccounts/018BF5-3AF53F-7100E4","billingEnabled":true}
+[debug] [2025-12-29T06:43:07.620Z] Checked if tokens are valid: true, expires at: 1766994162768
+[debug] [2025-12-29T06:43:07.620Z] Checked if tokens are valid: true, expires at: 1766994162768
+[debug] [2025-12-29T06:43:07.621Z] Checked if tokens are valid: true, expires at: 1766994162768
+[debug] [2025-12-29T06:43:07.621Z] Checked if tokens are valid: true, expires at: 1766994162768
+[debug] [2025-12-29T06:43:07.621Z] Checked if tokens are valid: true, expires at: 1766994162768
+[debug] [2025-12-29T06:43:07.621Z] Checked if tokens are valid: true, expires at: 1766994162768
+[debug] [2025-12-29T06:43:07.621Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/getfreeapp-prod/services/firebasedataconnect.googleapis.com [none]
+[debug] [2025-12-29T06:43:07.621Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/getfreeapp-prod/services/firebasedataconnect.googleapis.com x-goog-quota-user=projects/getfreeapp-prod
+[debug] [2025-12-29T06:43:07.622Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/getfreeapp-prod/services/firebaseapphosting.googleapis.com [none]
+[debug] [2025-12-29T06:43:07.622Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/getfreeapp-prod/services/firebaseapphosting.googleapis.com x-goog-quota-user=projects/getfreeapp-prod
+[debug] [2025-12-29T06:43:07.622Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/getfreeapp-prod/services/firebaseio.com [none]
+[debug] [2025-12-29T06:43:07.622Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/getfreeapp-prod/services/firebaseio.com x-goog-quota-user=projects/getfreeapp-prod
+[debug] [2025-12-29T06:43:07.760Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/getfreeapp-prod/services/firebaseio.com 403
+[debug] [2025-12-29T06:43:07.760Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/getfreeapp-prod/services/firebaseio.com [omitted]
+[debug] [2025-12-29T06:43:07.761Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/getfreeapp-prod/services/firebaseio.com 403
+[debug] [2025-12-29T06:43:07.761Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/getfreeapp-prod/services/firebaseio.com [omitted]
+[debug] [2025-12-29T06:43:07.761Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/getfreeapp-prod/services/firebaseio.com 403
+[debug] [2025-12-29T06:43:07.761Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/getfreeapp-prod/services/firebaseio.com [omitted]
+[debug] [2025-12-29T06:43:07.807Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/getfreeapp-prod/services/firebasedataconnect.googleapis.com 200
+[debug] [2025-12-29T06:43:07.808Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/getfreeapp-prod/services/firebasedataconnect.googleapis.com [omitted]
+[debug] [2025-12-29T06:43:07.870Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/getfreeapp-prod/services/firebaseapphosting.googleapis.com 200
+[debug] [2025-12-29T06:43:07.870Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/getfreeapp-prod/services/firebaseapphosting.googleapis.com [omitted]
+[debug] [2025-12-29T06:43:07.879Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/getfreeapp-prod/services/firebaseapphosting.googleapis.com 200
+[debug] [2025-12-29T06:43:07.879Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/getfreeapp-prod/services/firebaseapphosting.googleapis.com [omitted]
+[debug] [2025-12-29T06:43:07.887Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2025-12-29T06:43:07.887Z] > authorizing via signed-in user (startupstartupapp@gmail.com)
+[debug] [2025-12-29T06:43:07.887Z] Checked if tokens are valid: true, expires at: 1766994162768
+[debug] [2025-12-29T06:43:07.887Z] Checked if tokens are valid: true, expires at: 1766994162768
+[debug] [2025-12-29T06:43:07.887Z] >>> [apiv2][query] GET https://cloudbilling.googleapis.com/v1/projects/getfreeapp-prod/billingInfo [none]
+[debug] [2025-12-29T06:43:07.922Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/getfreeapp-prod/services/firebasedataconnect.googleapis.com 200
+[debug] [2025-12-29T06:43:07.922Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/getfreeapp-prod/services/firebasedataconnect.googleapis.com [omitted]
+[debug] [2025-12-29T06:43:07.939Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/getfreeapp-prod/services/firebasedataconnect.googleapis.com 200
+[debug] [2025-12-29T06:43:07.939Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/getfreeapp-prod/services/firebasedataconnect.googleapis.com [omitted]
+[debug] [2025-12-29T06:43:07.955Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/getfreeapp-prod/services/firebaseapphosting.googleapis.com 200
+[debug] [2025-12-29T06:43:07.955Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/getfreeapp-prod/services/firebaseapphosting.googleapis.com [omitted]
+[debug] [2025-12-29T06:43:07.957Z] <<< [apiv2][status] GET https://cloudbilling.googleapis.com/v1/projects/getfreeapp-prod/billingInfo 200
+[debug] [2025-12-29T06:43:07.957Z] <<< [apiv2][body] GET https://cloudbilling.googleapis.com/v1/projects/getfreeapp-prod/billingInfo {"name":"projects/getfreeapp-prod/billingInfo","projectId":"getfreeapp-prod","billingAccountName":"billingAccounts/018BF5-3AF53F-7100E4","billingEnabled":true}
+[debug] [2025-12-29T06:43:07.958Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2025-12-29T06:43:07.958Z] > authorizing via signed-in user (startupstartupapp@gmail.com)
+[debug] [2025-12-29T06:43:07.973Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2025-12-29T06:43:07.974Z] > authorizing via signed-in user (startupstartupapp@gmail.com)
+[debug] [2025-12-29T06:43:07.974Z] Checked if tokens are valid: true, expires at: 1766994162768
+[debug] [2025-12-29T06:43:07.974Z] Checked if tokens are valid: true, expires at: 1766994162768
+[debug] [2025-12-29T06:43:07.974Z] >>> [apiv2][query] GET https://cloudbilling.googleapis.com/v1/projects/getfreeapp-prod/billingInfo [none]
+[debug] [2025-12-29T06:43:08.045Z] <<< [apiv2][status] GET https://cloudbilling.googleapis.com/v1/projects/getfreeapp-prod/billingInfo 200
+[debug] [2025-12-29T06:43:08.045Z] <<< [apiv2][body] GET https://cloudbilling.googleapis.com/v1/projects/getfreeapp-prod/billingInfo {"name":"projects/getfreeapp-prod/billingInfo","projectId":"getfreeapp-prod","billingAccountName":"billingAccounts/018BF5-3AF53F-7100E4","billingEnabled":true}
+[debug] [2025-12-29T06:43:08.046Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2025-12-29T06:43:08.046Z] > authorizing via signed-in user (startupstartupapp@gmail.com)
+[debug] [2025-12-29T07:06:48.704Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2025-12-29T07:06:48.705Z] > authorizing via signed-in user (startupstartupapp@gmail.com)
+[debug] [2025-12-29T07:06:48.705Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2025-12-29T07:06:48.705Z] > authorizing via signed-in user (startupstartupapp@gmail.com)
+[debug] [2025-12-29T07:06:48.706Z] Checked if tokens are valid: true, expires at: 1766994162768
+[debug] [2025-12-29T07:06:48.706Z] Checked if tokens are valid: true, expires at: 1766994162768
+[debug] [2025-12-29T07:06:48.706Z] Checked if tokens are valid: true, expires at: 1766994162768
+[debug] [2025-12-29T07:06:48.706Z] Checked if tokens are valid: true, expires at: 1766994162768
+[debug] [2025-12-29T07:06:48.706Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2025-12-29T07:06:48.706Z] > authorizing via signed-in user (startupstartupapp@gmail.com)
+[debug] [2025-12-29T07:06:48.706Z] Checked if tokens are valid: true, expires at: 1766994162768
+[debug] [2025-12-29T07:06:48.706Z] Checked if tokens are valid: true, expires at: 1766994162768
+[debug] [2025-12-29T07:06:48.706Z] >>> [apiv2][query] GET https://cloudbilling.googleapis.com/v1/projects/getfreeapp-prod/billingInfo [none]
+[debug] [2025-12-29T07:06:48.707Z] >>> [apiv2][query] GET https://cloudbilling.googleapis.com/v1/projects/getfreeapp-prod/billingInfo [none]
+[debug] [2025-12-29T07:06:48.707Z] >>> [apiv2][query] GET https://cloudbilling.googleapis.com/v1/projects/getfreeapp-prod/billingInfo [none]
+[debug] [2025-12-29T07:06:48.894Z] <<< [apiv2][status] GET https://cloudbilling.googleapis.com/v1/projects/getfreeapp-prod/billingInfo 200
+[debug] [2025-12-29T07:06:48.894Z] <<< [apiv2][body] GET https://cloudbilling.googleapis.com/v1/projects/getfreeapp-prod/billingInfo {"name":"projects/getfreeapp-prod/billingInfo","projectId":"getfreeapp-prod","billingAccountName":"billingAccounts/018BF5-3AF53F-7100E4","billingEnabled":true}
+[debug] [2025-12-29T07:06:48.898Z] Checked if tokens are valid: true, expires at: 1766994162768
+[debug] [2025-12-29T07:06:48.898Z] Checked if tokens are valid: true, expires at: 1766994162768
+[debug] [2025-12-29T07:06:48.903Z] Checked if tokens are valid: true, expires at: 1766994162768
+[debug] [2025-12-29T07:06:48.904Z] Checked if tokens are valid: true, expires at: 1766994162768
+[debug] [2025-12-29T07:06:48.904Z] Checked if tokens are valid: true, expires at: 1766994162768
+[debug] [2025-12-29T07:06:48.904Z] Checked if tokens are valid: true, expires at: 1766994162768
+[debug] [2025-12-29T07:06:48.904Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/getfreeapp-prod/services/firebasedataconnect.googleapis.com [none]
+[debug] [2025-12-29T07:06:48.904Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/getfreeapp-prod/services/firebasedataconnect.googleapis.com x-goog-quota-user=projects/getfreeapp-prod
+[debug] [2025-12-29T07:06:48.905Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/getfreeapp-prod/services/firebaseapphosting.googleapis.com [none]
+[debug] [2025-12-29T07:06:48.905Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/getfreeapp-prod/services/firebaseapphosting.googleapis.com x-goog-quota-user=projects/getfreeapp-prod
+[debug] [2025-12-29T07:06:48.905Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/getfreeapp-prod/services/firebaseio.com [none]
+[debug] [2025-12-29T07:06:48.905Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/getfreeapp-prod/services/firebaseio.com x-goog-quota-user=projects/getfreeapp-prod
+[debug] [2025-12-29T07:06:48.988Z] <<< [apiv2][status] GET https://cloudbilling.googleapis.com/v1/projects/getfreeapp-prod/billingInfo 200
+[debug] [2025-12-29T07:06:48.988Z] <<< [apiv2][body] GET https://cloudbilling.googleapis.com/v1/projects/getfreeapp-prod/billingInfo {"name":"projects/getfreeapp-prod/billingInfo","projectId":"getfreeapp-prod","billingAccountName":"billingAccounts/018BF5-3AF53F-7100E4","billingEnabled":true}
+[debug] [2025-12-29T07:06:48.988Z] Checked if tokens are valid: true, expires at: 1766994162768
+[debug] [2025-12-29T07:06:48.989Z] Checked if tokens are valid: true, expires at: 1766994162768
+[debug] [2025-12-29T07:06:48.989Z] Checked if tokens are valid: true, expires at: 1766994162768
+[debug] [2025-12-29T07:06:48.990Z] Checked if tokens are valid: true, expires at: 1766994162768
+[debug] [2025-12-29T07:06:48.990Z] Checked if tokens are valid: true, expires at: 1766994162768
+[debug] [2025-12-29T07:06:48.990Z] Checked if tokens are valid: true, expires at: 1766994162768
+[debug] [2025-12-29T07:06:48.990Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/getfreeapp-prod/services/firebasedataconnect.googleapis.com [none]
+[debug] [2025-12-29T07:06:48.990Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/getfreeapp-prod/services/firebasedataconnect.googleapis.com x-goog-quota-user=projects/getfreeapp-prod
+[debug] [2025-12-29T07:06:48.991Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/getfreeapp-prod/services/firebaseapphosting.googleapis.com [none]
+[debug] [2025-12-29T07:06:48.991Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/getfreeapp-prod/services/firebaseapphosting.googleapis.com x-goog-quota-user=projects/getfreeapp-prod
+[debug] [2025-12-29T07:06:48.991Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/getfreeapp-prod/services/firebaseio.com [none]
+[debug] [2025-12-29T07:06:48.991Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/getfreeapp-prod/services/firebaseio.com x-goog-quota-user=projects/getfreeapp-prod
+[debug] [2025-12-29T07:06:49.034Z] <<< [apiv2][status] GET https://cloudbilling.googleapis.com/v1/projects/getfreeapp-prod/billingInfo 200
+[debug] [2025-12-29T07:06:49.034Z] <<< [apiv2][body] GET https://cloudbilling.googleapis.com/v1/projects/getfreeapp-prod/billingInfo {"name":"projects/getfreeapp-prod/billingInfo","projectId":"getfreeapp-prod","billingAccountName":"billingAccounts/018BF5-3AF53F-7100E4","billingEnabled":true}
+[debug] [2025-12-29T07:06:49.034Z] Checked if tokens are valid: true, expires at: 1766994162768
+[debug] [2025-12-29T07:06:49.034Z] Checked if tokens are valid: true, expires at: 1766994162768
+[debug] [2025-12-29T07:06:49.035Z] Checked if tokens are valid: true, expires at: 1766994162768
+[debug] [2025-12-29T07:06:49.035Z] Checked if tokens are valid: true, expires at: 1766994162768
+[debug] [2025-12-29T07:06:49.035Z] Checked if tokens are valid: true, expires at: 1766994162768
+[debug] [2025-12-29T07:06:49.035Z] Checked if tokens are valid: true, expires at: 1766994162768
+[debug] [2025-12-29T07:06:49.035Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/getfreeapp-prod/services/firebasedataconnect.googleapis.com [none]
+[debug] [2025-12-29T07:06:49.035Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/getfreeapp-prod/services/firebasedataconnect.googleapis.com x-goog-quota-user=projects/getfreeapp-prod
+[debug] [2025-12-29T07:06:49.036Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/getfreeapp-prod/services/firebaseapphosting.googleapis.com [none]
+[debug] [2025-12-29T07:06:49.036Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/getfreeapp-prod/services/firebaseapphosting.googleapis.com x-goog-quota-user=projects/getfreeapp-prod
+[debug] [2025-12-29T07:06:49.036Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/getfreeapp-prod/services/firebaseio.com [none]
+[debug] [2025-12-29T07:06:49.036Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/getfreeapp-prod/services/firebaseio.com x-goog-quota-user=projects/getfreeapp-prod
+[debug] [2025-12-29T07:06:49.125Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/getfreeapp-prod/services/firebaseio.com 403
+[debug] [2025-12-29T07:06:49.125Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/getfreeapp-prod/services/firebaseio.com [omitted]
+[debug] [2025-12-29T07:06:49.189Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/getfreeapp-prod/services/firebaseio.com 403
+[debug] [2025-12-29T07:06:49.189Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/getfreeapp-prod/services/firebaseio.com [omitted]
+[debug] [2025-12-29T07:06:49.218Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/getfreeapp-prod/services/firebaseapphosting.googleapis.com 200
+[debug] [2025-12-29T07:06:49.219Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/getfreeapp-prod/services/firebaseapphosting.googleapis.com [omitted]
+[debug] [2025-12-29T07:06:49.222Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/getfreeapp-prod/services/firebaseio.com 403
+[debug] [2025-12-29T07:06:49.222Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/getfreeapp-prod/services/firebaseio.com [omitted]
+[debug] [2025-12-29T07:06:49.226Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/getfreeapp-prod/services/firebasedataconnect.googleapis.com 200
+[debug] [2025-12-29T07:06:49.226Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/getfreeapp-prod/services/firebasedataconnect.googleapis.com [omitted]
+[debug] [2025-12-29T07:06:49.300Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/getfreeapp-prod/services/firebasedataconnect.googleapis.com 200
+[debug] [2025-12-29T07:06:49.300Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/getfreeapp-prod/services/firebasedataconnect.googleapis.com [omitted]
+[debug] [2025-12-29T07:06:49.301Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/getfreeapp-prod/services/firebaseapphosting.googleapis.com 200
+[debug] [2025-12-29T07:06:49.301Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/getfreeapp-prod/services/firebaseapphosting.googleapis.com [omitted]
+[debug] [2025-12-29T07:06:49.329Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2025-12-29T07:06:49.329Z] > authorizing via signed-in user (startupstartupapp@gmail.com)
+[debug] [2025-12-29T07:06:49.329Z] Checked if tokens are valid: true, expires at: 1766994162768
+[debug] [2025-12-29T07:06:49.329Z] Checked if tokens are valid: true, expires at: 1766994162768
+[debug] [2025-12-29T07:06:49.329Z] >>> [apiv2][query] GET https://cloudbilling.googleapis.com/v1/projects/getfreeapp-prod/billingInfo [none]
+[debug] [2025-12-29T07:06:49.478Z] <<< [apiv2][status] GET https://cloudbilling.googleapis.com/v1/projects/getfreeapp-prod/billingInfo 200
+[debug] [2025-12-29T07:06:49.478Z] <<< [apiv2][body] GET https://cloudbilling.googleapis.com/v1/projects/getfreeapp-prod/billingInfo {"name":"projects/getfreeapp-prod/billingInfo","projectId":"getfreeapp-prod","billingAccountName":"billingAccounts/018BF5-3AF53F-7100E4","billingEnabled":true}
+[debug] [2025-12-29T07:06:49.479Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2025-12-29T07:06:49.479Z] > authorizing via signed-in user (startupstartupapp@gmail.com)
+[debug] [2025-12-29T07:06:49.501Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/getfreeapp-prod/services/firebaseapphosting.googleapis.com 200
+[debug] [2025-12-29T07:06:49.501Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/getfreeapp-prod/services/firebaseapphosting.googleapis.com [omitted]
+[debug] [2025-12-29T07:06:49.546Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/getfreeapp-prod/services/firebasedataconnect.googleapis.com 200
+[debug] [2025-12-29T07:06:49.547Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/getfreeapp-prod/services/firebasedataconnect.googleapis.com [omitted]
+[debug] [2025-12-29T07:06:49.649Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2025-12-29T07:06:49.649Z] > authorizing via signed-in user (startupstartupapp@gmail.com)
+[debug] [2025-12-29T07:06:49.649Z] Checked if tokens are valid: true, expires at: 1766994162768
+[debug] [2025-12-29T07:06:49.649Z] Checked if tokens are valid: true, expires at: 1766994162768
+[debug] [2025-12-29T07:06:49.649Z] >>> [apiv2][query] GET https://cloudbilling.googleapis.com/v1/projects/getfreeapp-prod/billingInfo [none]
+[debug] [2025-12-29T07:06:49.905Z] <<< [apiv2][status] GET https://cloudbilling.googleapis.com/v1/projects/getfreeapp-prod/billingInfo 200
+[debug] [2025-12-29T07:06:49.905Z] <<< [apiv2][body] GET https://cloudbilling.googleapis.com/v1/projects/getfreeapp-prod/billingInfo {"name":"projects/getfreeapp-prod/billingInfo","projectId":"getfreeapp-prod","billingAccountName":"billingAccounts/018BF5-3AF53F-7100E4","billingEnabled":true}
+[debug] [2025-12-29T07:06:49.906Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2025-12-29T07:06:49.906Z] > authorizing via signed-in user (startupstartupapp@gmail.com)

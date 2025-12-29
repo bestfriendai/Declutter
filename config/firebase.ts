@@ -7,9 +7,10 @@ import { initializeApp, getApps, FirebaseApp } from 'firebase/app';
 import {
   getAuth,
   initializeAuth,
-  getReactNativePersistence,
   Auth
 } from 'firebase/auth';
+// @ts-expect-error - getReactNativePersistence is exported but types may be missing
+import { getReactNativePersistence } from 'firebase/auth';
 import { getFirestore, Firestore } from 'firebase/firestore';
 import { getStorage, FirebaseStorage } from 'firebase/storage';
 import AsyncStorage from '@react-native-async-storage/async-storage';

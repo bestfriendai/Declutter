@@ -71,7 +71,7 @@ function ChallengeCard({
 }) {
   const { colors } = useTheme();
   const typeInfo = CHALLENGE_TYPES[challenge.type];
-  const myProgress = challenge.participants.find(p => p.oderId === currentUserId);
+  const myProgress = challenge.participants.find(p => p.userId === currentUserId);
   const progressPercent = myProgress
     ? Math.min((myProgress.progress / challenge.target) * 100, 100)
     : 0;
@@ -136,7 +136,7 @@ function ChallengeCard({
         <View style={styles.avatarStack}>
           {challenge.participants.slice(0, 3).map((p, i) => (
             <View
-              key={p.oderId}
+              key={p.userId}
               style={[
                 styles.avatar,
                 { backgroundColor: colors.primary, marginLeft: i > 0 ? -8 : 0 },
@@ -758,6 +758,7 @@ const styles = StyleSheet.create({
   joinButton: {
     paddingVertical: 12,
     paddingHorizontal: 20,
+    marginTop: 4,
   },
   joinButtonText: {
     color: '#fff',
@@ -915,9 +916,6 @@ const styles = StyleSheet.create({
   },
   metaText: {
     fontSize: 13,
-  },
-  joinButton: {
-    marginTop: 4,
   },
   sharedRoomCard: {
     padding: 16,

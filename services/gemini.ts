@@ -6,8 +6,10 @@
 import { AIAnalysisResult, CleaningTask, Priority, TaskDifficulty, RoomType } from '@/types/declutter';
 import { apiRateLimiter } from '@/services/secureStorage';
 
-// Gemini API configuration - Using Gemini 2.0 Flash (latest stable)
-const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
+// Gemini API configuration - Using Gemini 3.0 Pro Image (latest with advanced vision)
+const GEMINI_MODEL = 'gemini-3-pro-image-preview';
+const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
+const GEMINI_API_URL = `${GEMINI_API_BASE}/${GEMINI_MODEL}:generateContent`;
 
 /**
  * Sanitizes error messages to prevent leaking sensitive information
@@ -366,9 +368,8 @@ export async function analyzeRoomImage(
     ],
     generationConfig: {
       temperature: 0.7,
-      topK: 40,
       topP: 0.95,
-      maxOutputTokens: 4096,
+      maxOutputTokens: 8192, // Gemini 3 Pro supports up to 32K output
     },
   };
 

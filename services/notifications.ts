@@ -32,8 +32,8 @@ export type NotificationCategory =
   | 'focus'
   | 'motivation';
 
-// Notification data type
-export interface NotificationData {
+// Notification data type - extends Record for Expo compatibility
+export interface NotificationData extends Record<string, unknown> {
   category: NotificationCategory;
   roomId?: string;
   taskId?: string;

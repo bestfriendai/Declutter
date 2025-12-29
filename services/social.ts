@@ -37,7 +37,7 @@ export type ChallengeStatus = 'pending' | 'accepted' | 'in_progress' | 'complete
 
 // Challenge participant
 export interface ChallengeParticipant {
-  oderId: string;
+  userId: string;
   displayName: string;
   progress: number;
   joined: Date;
@@ -101,7 +101,7 @@ export interface BodyDoublingSession {
 
 // Friend/connection
 export interface Connection {
-  oderId: string;
+  userId: string;
   displayName: string;
   avatarUrl?: string;
   addedAt: Date;
@@ -159,7 +159,7 @@ export async function createChallenge(
       startDate: now,
       endDate,
       participants: [{
-        oderId: user.uid,
+        userId: user.uid,
         displayName: user.displayName || 'Anonymous',
         progress: 0,
         joined: now,
@@ -207,7 +207,7 @@ export async function joinChallenge(inviteCode: string): Promise<Challenge | nul
 
     // Check if already joined
     const isAlreadyParticipant = data.participants?.some(
-      (p: any) => p.oderId === user.uid
+      (p: any) => p.userId === user.uid
     );
     if (isAlreadyParticipant) return null;
 
@@ -218,7 +218,7 @@ export async function joinChallenge(inviteCode: string): Promise<Challenge | nul
     // Add participant
     await updateDoc(doc(firebaseDb, 'challenges', docSnap.id), {
       participants: arrayUnion({
-        oderId: user.uid,
+        userId: user.uid,
         displayName: user.displayName || 'Anonymous',
         progress: 0,
         joined: Timestamp.now(),
@@ -262,7 +262,7 @@ export async function updateChallengeProgress(
     const data = docSnap.data();
     const participants = data.participants || [];
     const updatedParticipants = participants.map((p: any) => {
-      if (p.oderId === user.uid) {
+      if (p.userId === user.uid) {
         const completed = progress >= data.target;
         return {
           ...p,
@@ -295,7 +295,7 @@ export async function getMyChallenges(): Promise<Challenge[]> {
     snapshot.docs.forEach(doc => {
       const data = doc.data();
       const isParticipant = data.participants?.some(
-        (p: any) => p.oderId === user.uid
+        (p: any) => p.userId === user.uid
       );
 
       if (isParticipant) {
@@ -451,7 +451,7 @@ export async function createBodyDoublingSession(
       duration,
       maxParticipants,
       participants: [{
-        oderId: user.uid,
+        userId: user.uid,
         displayName: user.displayName || 'Anonymous',
         joinedAt: new Date(),
         isActive: true,
@@ -502,7 +502,7 @@ export async function joinBodyDoublingSession(
 
     // Check if already joined
     const isAlreadyParticipant = data.participants?.some(
-      (p: any) => p.oderId === user.uid
+      (p: any) => p.userId === user.uid
     );
     if (isAlreadyParticipant) {
       // Just return the session
@@ -528,7 +528,7 @@ export async function joinBodyDoublingSession(
     // Add participant
     await updateDoc(doc(firebaseDb, 'bodyDoublingSessions', docSnap.id), {
       participants: arrayUnion({
-        oderId: user.uid,
+        userId: user.uid,
         displayName: user.displayName || 'Anonymous',
         joinedAt: Timestamp.now(),
         isActive: true,
@@ -566,7 +566,7 @@ export async function leaveBodyDoublingSession(sessionId: string): Promise<void>
     const data = docSnap.data();
     const updatedParticipants = data.participants
       .map((p: any) => {
-        if (p.oderId === user.uid) {
+        if (p.userId === user.uid) {
           return { ...p, isActive: false };
         }
         return p;
@@ -678,19 +678,19 @@ export async function getConnections(): Promise<Connection[]> {
 
     const connections: Connection[] = [];
 
-    for (const doc of snapshot.docs) {
-      const data = doc.data();
+    for (const docSnapshot of snapshot.docs) {
+      const data = docSnapshot.data();
       const otherUserId = data.users.find((id: string) => id !== user.uid);
 
       if (otherUserId) {
         // Get other user's profile
         const userDoc = await getDoc(doc(firebaseDb, 'users', otherUserId));
-        const userData = userDoc.data();
+        const userData = userDoc.data() as { displayName?: string; avatarUrl?: string } | undefined;
 
         connections.push({
-          oderId: otherUserId,
-          displayName: userData?.name || 'Anonymous',
-          avatarUrl: userData?.avatar,
+          userId: otherUserId,
+          displayName: userData?.displayName || 'Anonymous',
+          avatarUrl: userData?.avatarUrl,
           addedAt: timestampToDate(data.createdAt),
           mutualChallenges: 0, // Would need to calculate
         });

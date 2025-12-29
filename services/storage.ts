@@ -16,6 +16,12 @@ import {
 import { firebaseStorage, isFirebaseConfigured } from '@/config/firebase';
 import { getCurrentUser } from './auth';
 import * as FileSystem from 'expo-file-system';
+
+// Type assertion for FileSystem constants that may have incomplete types
+const { cacheDirectory, documentDirectory, downloadAsync } = FileSystem as typeof FileSystem & {
+  cacheDirectory: string | null;
+  documentDirectory: string | null;
+};
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 
 // Upload progress callback type
@@ -154,7 +160,7 @@ export async function downloadPhoto(
   localPath?: string
 ): Promise<string | null> {
   try {
-    const cacheDir = FileSystem.cacheDirectory;
+    const cacheDir = cacheDirectory;
     if (!cacheDir) {
       console.error('Cache directory not available');
       return null;
@@ -163,7 +169,7 @@ export async function downloadPhoto(
     const fileName = localPath || `photo_${Date.now()}.jpg`;
     const localUri = `${cacheDir}${fileName}`;
 
-    const downloadResult = await FileSystem.downloadAsync(remoteUrl, localUri);
+    const downloadResult = await downloadAsync(remoteUrl, localUri);
 
     if (downloadResult.status === 200) {
       return downloadResult.uri;
