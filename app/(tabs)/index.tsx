@@ -1,13 +1,19 @@
 /**
- * Declutterly - Home Screen
- * Clean, minimal Apple-style design
+ * Declutterly — Home Screen (Apple 2026)
+ * Smart greeting, tinted glass cards, room progress, quick actions
  */
 
+import { Colors, ColorTokens } from '@/constants/Colors';
+import { GlassCard } from '@/components/ui/GlassCard';
+import { useDeclutter } from '@/context/DeclutterContext';
 import { useColorScheme } from '@/hooks/useColorScheme';
-import * as Haptics from 'expo-haptics';
+import { Typography } from '@/theme/typography';
+import { Spacing, BorderRadius } from '@/theme/spacing';
+import { MASCOT_PERSONALITIES } from '@/types/declutter';
+import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
-import { SymbolView, type SFSymbol } from 'expo-symbols';
-import React, { useCallback, useState } from 'react';
+import * as Haptics from 'expo-haptics';
+import React, { useCallback, useMemo } from 'react';
 import {
   Dimensions,
   Pressable,
@@ -15,422 +21,495 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  View
+  View,
 } from 'react-native';
 import Animated, {
-  FadeIn,
-  FadeInDown
+  FadeInDown,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Colors } from '@/constants/Colors';
-import { useDeclutter } from '@/context/DeclutterContext';
-import { FOCUS_QUOTES, Room, ROOM_TYPE_INFO, RoomType } from '@/types/declutter';
-
-import { CollectibleSpawn } from '@/components/features/CollectibleSpawn';
-import { SingleRing } from '@/components/ui/ActivityRings';
-import { ModernCard } from '@/components/ui/ModernCard';
-import { ScreenLayout } from '@/components/ui/ScreenLayout';
-
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const CARD_WIDTH = (SCREEN_WIDTH - 48 - 12) / 2;
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Smart Greeting
+// ─────────────────────────────────────────────────────────────────────────────
+function getGreeting(name: string): { greeting: string; emoji: string; subtitle: string } {
+  const hour = new Date().getHours();
+  const firstName = name.split(' ')[0] || 'Friend';
+
+  if (hour < 5)  return { greeting: `Night owl, ${firstName}`,  emoji: '🌙', subtitle: 'Still up? Even small wins count.' };
+  if (hour < 12) return { greeting: `Good morning, ${firstName}`, emoji: '☀️', subtitle: 'Fresh start — what will you tackle?' };
+  if (hour < 17) return { greeting: `Good afternoon, ${firstName}`, emoji: '🌤️', subtitle: 'Afternoon energy — let\'s use it!' };
+  if (hour < 20) return { greeting: `Good evening, ${firstName}`, emoji: '🌅', subtitle: 'Wind down with a quick win.' };
+  return { greeting: `Good night, ${firstName}`, emoji: '🌙', subtitle: 'One last task before bed?' };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Quick Action Button
+// ─────────────────────────────────────────────────────────────────────────────
+interface QuickActionProps {
+  emoji: string;
+  label: string;
+  sublabel?: string;
+  onPress: () => void;
+  gradient: readonly [string, string];
+  colors: ColorTokens;
+}
+
+function QuickActionButton({ emoji, label, sublabel, onPress, gradient, colors: _colors }: QuickActionProps) {
+  const scale = useSharedValue(1);
+
+  const animStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+
+  return (
+    <Pressable
+      onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); onPress(); }}
+      onPressIn={() => { scale.value = withSpring(0.94, { damping: 15, stiffness: 400 }); }}
+      onPressOut={() => { scale.value = withSpring(1, { damping: 12, stiffness: 300 }); }}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+    >
+      <Animated.View style={animStyle}>
+        <LinearGradient
+          colors={gradient}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.quickActionCard}
+        >
+          <Text style={styles.quickActionEmoji}>{emoji}</Text>
+          <Text style={[styles.quickActionLabel, { color: '#FFFFFF' }]}>{label}</Text>
+          {sublabel && (
+            <Text style={[styles.quickActionSublabel, { color: 'rgba(255,255,255,0.75)' }]}>
+              {sublabel}
+            </Text>
+          )}
+        </LinearGradient>
+      </Animated.View>
+    </Pressable>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Room Card
+// ─────────────────────────────────────────────────────────────────────────────
+interface RoomCardProps {
+  room: {
+    id: string;
+    name: string;
+    emoji: string;
+    currentProgress: number;
+    tasks: Array<{ completed: boolean; estimatedMinutes: number }>;
+    updatedAt?: Date;
+  };
+  colors: ColorTokens;
+  isDark: boolean;
+  onPress: () => void;
+}
+
+function RoomCard({ room, colors, isDark, onPress }: RoomCardProps) {
+  const scale = useSharedValue(1);
+  const pendingCount = room.tasks.filter(t => !t.completed).length;
+  const remainingMin = room.tasks.filter(t => !t.completed).reduce((a, t) => a + t.estimatedMinutes, 0);
+  const progress = Math.round(room.currentProgress);
+
+  const animStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+
+  // Progress ring color
+  const ringColor = progress >= 100 ? colors.success
+    : progress >= 70 ? colors.warning
+    : colors.accent;
+
+  return (
+    <Pressable
+      onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); onPress(); }}
+      onPressIn={() => { scale.value = withSpring(0.95, { damping: 15, stiffness: 400 }); }}
+      onPressOut={() => { scale.value = withSpring(1, { damping: 12, stiffness: 300 }); }}
+      accessibilityRole="button"
+      accessibilityLabel={`${room.name}, ${progress}% complete`}
+    >
+      <Animated.View style={[styles.roomCard, animStyle, {
+        backgroundColor: isDark ? colors.surface : colors.backgroundSecondary,
+        borderColor: isDark ? colors.cardBorder : colors.borderLight,
+      }]}>
+        {/* Progress bar at top */}
+        <View style={[styles.roomProgressBar, { backgroundColor: isDark ? colors.fillTertiary : colors.surfaceTertiary }]}>
+          <View style={[styles.roomProgressFill, {
+            width: `${progress}%`,
+            backgroundColor: ringColor,
+          }]} />
+        </View>
+
+        <View style={styles.roomCardContent}>
+          {/* Emoji */}
+          <Text style={styles.roomCardEmoji}>{room.emoji}</Text>
+
+          {/* Info */}
+          <Text style={[styles.roomCardName, { color: colors.text }]} numberOfLines={1}>
+            {room.name}
+          </Text>
+
+          <Text style={[styles.roomCardMeta, { color: colors.textSecondary }]}>
+            {pendingCount > 0 ? `${pendingCount} tasks · ~${remainingMin}m` : '✓ Complete!'}
+          </Text>
+
+          {/* Progress % */}
+          <View style={styles.roomCardFooter}>
+            <Text style={[styles.roomCardProgress, { color: ringColor }]}>
+              {progress}%
+            </Text>
+          </View>
+        </View>
+      </Animated.View>
+    </Pressable>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Stat Pill
+// ─────────────────────────────────────────────────────────────────────────────
+function StatPill({ value, label, color, colors, isDark }: {
+  value: string | number;
+  label: string;
+  color: string;
+  colors: ColorTokens;
+  isDark: boolean;
+}) {
+  return (
+    <View style={[styles.statPill, {
+      backgroundColor: isDark ? colors.surface : colors.backgroundSecondary,
+      borderColor: isDark ? colors.cardBorder : colors.borderLight,
+    }]}>
+      <Text style={[styles.statPillValue, { color }]}>{value}</Text>
+      <Text style={[styles.statPillLabel, { color: colors.textSecondary }]}>{label}</Text>
+    </View>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Main Screen
+// ─────────────────────────────────────────────────────────────────────────────
 export default function HomeScreen() {
-  const colorScheme = useColorScheme() ?? 'light';
+  const rawScheme = useColorScheme();
+  const colorScheme = rawScheme === 'dark' ? 'dark' : 'light';
   const colors = Colors[colorScheme];
+  const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
 
   const {
     user,
     rooms,
+    mascot,
     stats,
-    addRoom,
     setActiveRoom,
-    activeSpawn,
-    dismissSpawn,
-    collectionStats,
   } = useDeclutter();
 
-  const [showAddRoom, setShowAddRoom] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
-  const [motivationQuote] = useState<string>(
-    FOCUS_QUOTES[Math.floor(Math.random() * FOCUS_QUOTES.length)]
-  );
+  const streak = stats?.currentStreak ?? 0;
 
-  const onRefresh = useCallback(async () => {
+  const [refreshing, setRefreshing] = React.useState(false);
+
+  const greeting = useMemo(() => getGreeting(user?.name || 'Friend'), [user?.name]);
+
+  const totalRooms = rooms.length;
+  const completedRooms = rooms.filter(r => r.currentProgress >= 100).length;
+  const completedTasks = rooms.reduce((a, r) => a + r.tasks.filter(t => t.completed).length, 0);
+
+  // Quick win — fastest incomplete task
+  const quickWinTask = useMemo(() => {
+    const allPending = rooms.flatMap(r =>
+      r.tasks
+        .filter(t => !t.completed)
+        .map(t => ({ ...t, roomId: r.id, roomName: r.name, roomEmoji: r.emoji }))
+    );
+    return allPending.sort((a, b) => a.estimatedMinutes - b.estimatedMinutes)[0] ?? null;
+  }, [rooms]);
+
+  const onRefresh = useCallback(() => {
     setRefreshing(true);
-    setTimeout(() => setRefreshing(false), 1000);
+    setTimeout(() => setRefreshing(false), 800);
   }, []);
 
-  const handleAddRoom = (type: RoomType) => {
-    const info = ROOM_TYPE_INFO[type];
-    const newRoom = addRoom({
-      name: info.label,
-      type,
-      emoji: info.emoji,
-      messLevel: 0,
-    });
-    setShowAddRoom(false);
-    if (newRoom) {
-      setActiveRoom(newRoom.id);
-      router.push(`/room/${newRoom.id}`);
-    }
+  const handleAddRoom = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    router.push('/camera');
   };
 
-  const handleRoomPress = (room: Room) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setActiveRoom(room.id);
-    router.push(`/room/${room.id}`);
+  const handleOpenRoom = (roomId: string) => {
+    setActiveRoom(roomId);
+    router.push(`/room/${roomId}`);
   };
 
-  const totalProgress = rooms.length > 0
-    ? Math.round(rooms.reduce((acc, r) => acc + r.currentProgress, 0) / rooms.length)
-    : 0;
+  const handleFocusMode = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    router.push('/focus');
+  };
 
-  const activeRooms = rooms.filter(r => r.currentProgress < 100);
-  const completedRooms = rooms.filter(r => r.currentProgress === 100);
+  const handleQuickWin = () => {
+    if (!quickWinTask) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setActiveRoom(quickWinTask.roomId);
+    router.push(`/room/${quickWinTask.roomId}`);
+  };
 
   return (
-    <ScreenLayout>
-      {/* Collectible Spawn Overlay */}
-      {activeSpawn && (
-        <CollectibleSpawn
-          spawn={activeSpawn}
-          onCollect={() => Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)}
-          onDismiss={dismissSpawn}
-        />
-      )}
-
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={[
           styles.scrollContent,
-          { paddingTop: 20, paddingBottom: 100 },
+          { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 100 },
         ]}
         showsVerticalScrollIndicator={false}
+        contentInsetAdjustmentBehavior="automatic"
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textSecondary} />
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.accent}
+          />
         }
       >
-        {/* Header */}
-        <Animated.View entering={FadeInDown.duration(400)} style={styles.header}>
-          <View>
-            <Text style={[styles.greeting, { color: colors.textSecondary }]}>
-              {getGreeting()}
-            </Text>
-            <Text style={[styles.userName, { color: colors.text }]}>
-              {user?.name || 'Welcome'}
-            </Text>
-          </View>
-          <Pressable
-            onPress={() => router.push('/settings')}
-            style={({ pressed }) => [styles.avatarButton, pressed && { opacity: 0.7 }]}
-          >
-            <View style={[styles.avatar, { backgroundColor: colors.surfaceSecondary }]}>
-              <Text style={[styles.avatarText, { color: colors.text }]}>
-                {(user?.name || 'U')[0].toUpperCase()}
+        {/* ── Hero Header ─────────────────────────────────────────────── */}
+        <Animated.View entering={FadeInDown.delay(0).springify()} style={styles.heroSection}>
+          <View style={styles.greetingRow}>
+            <View style={styles.greetingText}>
+              <Text style={[Typography.displaySmall, { color: colors.text }]} numberOfLines={1}>
+                {greeting.greeting}
+              </Text>
+              <Text style={[Typography.subheadline, { color: colors.textSecondary, marginTop: 4 }]}>
+                {greeting.subtitle}
               </Text>
             </View>
-          </Pressable>
+            <Text style={styles.greetingEmoji}>{greeting.emoji}</Text>
+          </View>
+
+          {/* Streak badge */}
+          {streak > 0 && (
+            <Animated.View entering={FadeInDown.delay(100).springify()}>
+              <View style={[styles.streakBadge, {
+                backgroundColor: isDark ? colors.warningMuted : 'rgba(255, 149, 0, 0.10)',
+                borderColor: isDark ? 'rgba(255, 159, 10, 0.30)' : 'rgba(255, 149, 0, 0.20)',
+              }]}>
+                <Text style={styles.streakFire}>🔥</Text>
+                <Text style={[styles.streakText, { color: colors.warning }]}>
+                  {streak} day streak
+                </Text>
+              </View>
+            </Animated.View>
+          )}
         </Animated.View>
 
-        {/* Stats Row */}
-        {rooms.length > 0 && (
-          <Animated.View entering={FadeInDown.duration(400).delay(100)} style={styles.statsRow}>
-            <StatItem value={totalProgress} label="Progress" suffix="%" colors={colors} />
-            <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
-            <StatItem value={stats.totalTasksCompleted} label="Tasks Done" colors={colors} />
-            <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
-            <StatItem value={stats.currentStreak} label="Day Streak" suffix="🔥" colors={colors} />
+        {/* ── Stats Row ───────────────────────────────────────────────── */}
+        <Animated.View entering={FadeInDown.delay(80).springify()} style={styles.statsRow}>
+          <StatPill
+            value={completedTasks}
+            label="tasks done"
+            color={colors.success}
+            colors={colors}
+            isDark={isDark}
+          />
+          <StatPill
+            value={`${completedRooms}/${totalRooms}`}
+            label="rooms"
+            color={colors.accent}
+            colors={colors}
+            isDark={isDark}
+          />
+          <StatPill
+            value={stats?.xp ?? 0}
+            label="XP"
+            color={colors.warning}
+            colors={colors}
+            isDark={isDark}
+          />
+        </Animated.View>
+
+        {/* ── Quick Actions ───────────────────────────────────────────── */}
+        <Animated.View entering={FadeInDown.delay(120).springify()} style={styles.section}>
+          <Text style={[Typography.title3, { color: colors.text, marginBottom: Spacing.sm }]}>
+            Quick Actions
+          </Text>
+          <View style={styles.quickActionsGrid}>
+            <QuickActionButton
+              emoji="📸"
+              label="New Room"
+              sublabel="Snap & analyze"
+              onPress={handleAddRoom}
+              gradient={isDark ? ['#0A84FF', '#5856D6'] : ['#007AFF', '#5856D6']}
+              colors={colors}
+            />
+            <QuickActionButton
+              emoji="🎯"
+              label="Focus Mode"
+              sublabel="Deep work timer"
+              onPress={handleFocusMode}
+              gradient={['#667eea', '#764ba2']}
+              colors={colors}
+            />
+            {quickWinTask && (
+              <QuickActionButton
+                emoji="⚡"
+                label="Quick Win"
+                sublabel={`~${quickWinTask.estimatedMinutes}m task`}
+                onPress={handleQuickWin}
+                gradient={['#11998e', '#38ef7d']}
+                colors={colors}
+              />
+            )}
+            <QuickActionButton
+              emoji="📊"
+              label="Insights"
+              sublabel="Your progress"
+              onPress={() => router.push('/insights')}
+              gradient={['#f093fb', '#f5576c']}
+              colors={colors}
+            />
+          </View>
+        </Animated.View>
+
+        {/* ── Mascot Greeting ─────────────────────────────────────────── */}
+        {mascot && (
+          <Animated.View entering={FadeInDown.delay(160).springify()} style={styles.section}>
+            <GlassCard
+              variant="subtle"
+              style={styles.mascotCard}
+              tintColor={colors.accent}
+              tintOpacity={0.05}
+            >
+              <View style={styles.mascotRow}>
+                <Text style={styles.mascotEmoji}>{MASCOT_PERSONALITIES[mascot.personality]?.emoji ?? '🧹'}</Text>
+                <View style={styles.mascotInfo}>
+                  <Text style={[Typography.headline, { color: colors.text }]}>
+                    {mascot.name} says hi!
+                  </Text>
+                  <Text style={[Typography.subheadline, { color: colors.textSecondary, marginTop: 2 }]}>
+                    {completedTasks > 0
+                      ? `You've completed ${completedTasks} tasks. Keep going!`
+                      : 'Ready to start decluttering? Let\'s go!'}
+                  </Text>
+                </View>
+              </View>
+            </GlassCard>
           </Animated.View>
         )}
 
-        {/* Empty State */}
-        {rooms.length === 0 && (
-          <Animated.View entering={FadeIn.duration(600)} style={styles.emptyState}>
-            <View style={[styles.emptyIcon, { backgroundColor: colors.surfaceSecondary }]}>
-              <Text style={styles.emptyEmoji}>🏠</Text>
+        {/* ── Rooms ───────────────────────────────────────────────────── */}
+        {rooms.length > 0 ? (
+          <Animated.View entering={FadeInDown.delay(200).springify()} style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={[Typography.title3, { color: colors.text }]}>Your Rooms</Text>
+              <Pressable
+                onPress={handleAddRoom}
+                accessibilityRole="button"
+                accessibilityLabel="Add new room"
+              >
+                <Text style={[Typography.subheadlineMedium, { color: colors.accent }]}>
+                  + Add Room
+                </Text>
+              </Pressable>
             </View>
-            <Text style={[styles.emptyTitle, { color: colors.text }]}>
-              Ready to declutter?
-            </Text>
-            <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
-              Take a photo of any room and get an AI-powered cleaning plan
-            </Text>
 
-            <ModernCard
-              onPress={() => router.push('/camera')}
-              active
-              style={{ marginTop: 24, width: '100%', alignItems: 'center', backgroundColor: colors.primary }}
-            >
-              <Text style={{ color: colorScheme === 'dark' ? '#000' : '#FFF', fontWeight: '600' }}>Scan Your First Room</Text>
-            </ModernCard>
+            <View style={styles.roomsGrid}>
+              {rooms.map((room, index) => (
+                <Animated.View
+                  key={room.id}
+                  entering={FadeInDown.delay(200 + index * 60).springify()}
+                >
+                  <RoomCard
+                    room={room}
+                    colors={colors}
+                    isDark={isDark}
+                    onPress={() => handleOpenRoom(room.id)}
+                  />
+                </Animated.View>
+              ))}
+            </View>
+          </Animated.View>
+        ) : (
+          /* ── Empty State ──────────────────────────────────────────── */
+          <Animated.View entering={FadeInDown.delay(200).springify()} style={styles.section}>
+            <GlassCard variant="elevated" style={styles.emptyCard} showHighlight>
+              <View style={styles.emptyContent}>
+                <Text style={styles.emptyEmoji}>🏠</Text>
+                <Text style={[Typography.title2, { color: colors.text, textAlign: 'center', marginTop: Spacing.md }]}>
+                  No rooms yet
+                </Text>
+                <Text style={[Typography.subheadline, { color: colors.textSecondary, textAlign: 'center', marginTop: Spacing.xs, lineHeight: 22 }]}>
+                  Take a photo of any messy space and our AI will create a personalized cleaning plan.
+                </Text>
 
+                <Pressable
+                  onPress={handleAddRoom}
+                  style={styles.emptyButton}
+                  accessibilityRole="button"
+                  accessibilityLabel="Add your first room"
+                >
+                  <LinearGradient
+                    colors={isDark ? ['#0A84FF', '#5856D6'] : ['#007AFF', '#5856D6']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.emptyButtonGradient}
+                  >
+                    <Text style={[Typography.headline, { color: '#FFFFFF' }]}>
+                      📸 Add Your First Room
+                    </Text>
+                  </LinearGradient>
+                </Pressable>
+              </View>
+            </GlassCard>
+          </Animated.View>
+        )}
+
+        {/* ── Today's Focus ───────────────────────────────────────────── */}
+        {quickWinTask && rooms.length > 0 && (
+          <Animated.View entering={FadeInDown.delay(280).springify()} style={styles.section}>
+            <Text style={[Typography.title3, { color: colors.text, marginBottom: Spacing.sm }]}>
+              Today's Focus
+            </Text>
             <Pressable
-              onPress={() => setShowAddRoom(true)}
-              style={styles.textButton}
+              onPress={handleQuickWin}
+              accessibilityRole="button"
+              accessibilityLabel={`Quick win: ${quickWinTask.title}`}
             >
-              <Text style={[styles.textButtonLabel, { color: colors.textSecondary }]}>
-                or add manually
-              </Text>
+              <GlassCard
+                variant="tinted"
+                tintColor={colors.success}
+                tintOpacity={0.08}
+                style={styles.focusCard}
+              >
+                <View style={styles.focusRow}>
+                  <View style={[styles.focusIcon, { backgroundColor: colors.successMuted }]}>
+                    <Text style={{ fontSize: 20 }}>⚡</Text>
+                  </View>
+                  <View style={styles.focusInfo}>
+                    <Text style={[Typography.headline, { color: colors.text }]} numberOfLines={1}>
+                      {quickWinTask.title}
+                    </Text>
+                    <Text style={[Typography.caption1, { color: colors.textSecondary, marginTop: 2 }]}>
+                      {(quickWinTask as { roomEmoji?: string }).roomEmoji} {(quickWinTask as { roomName?: string }).roomName} · ~{quickWinTask.estimatedMinutes} min
+                    </Text>
+                  </View>
+                  <Text style={[Typography.headline, { color: colors.success }]}>→</Text>
+                </View>
+              </GlassCard>
             </Pressable>
           </Animated.View>
         )}
-
-        {/* Quick Actions */}
-        <Animated.View entering={FadeInDown.duration(400).delay(200)} style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>Quick Actions</Text>
-          <View style={styles.actionsRow}>
-            <ActionButton
-              icon="camera.fill"
-              label="Scan"
-              onPress={() => router.push('/camera')}
-              colors={colors}
-            />
-            <ActionButton
-              icon="timer"
-              label="Focus"
-              onPress={() => router.push('/focus?duration=25')}
-              colors={colors}
-            />
-            <ActionButton
-              icon="sparkles"
-              label="Collection"
-              badge={collectionStats.uniqueCollected > 0 ? collectionStats.uniqueCollected : undefined}
-              onPress={() => router.push('/collection')}
-              colors={colors}
-            />
-            <ActionButton
-              icon="trophy.fill"
-              label="Badges"
-              onPress={() => router.push('/achievements')}
-              colors={colors}
-            />
-          </View>
-        </Animated.View>
-
-        {/* Active Rooms */}
-        {activeRooms.length > 0 && (
-          <Animated.View entering={FadeInDown.duration(400).delay(300)} style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Text style={[styles.sectionTitle, { color: colors.text }]}>In Progress</Text>
-              <Pressable onPress={() => setShowAddRoom(true)}>
-                <Text style={[styles.addButton, { color: colors.info }]}>+ Add</Text>
-              </Pressable>
-            </View>
-            {activeRooms.map((room, index) => (
-              <RoomListItem
-                key={room.id}
-                room={room}
-                onPress={() => handleRoomPress(room)}
-                colors={colors}
-                delay={index * 50}
-              />
-            ))}
-          </Animated.View>
-        )}
-
-        {/* Completed Rooms */}
-        {completedRooms.length > 0 && (
-          <Animated.View entering={FadeInDown.duration(400).delay(400)} style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>Completed</Text>
-            {completedRooms.map((room, index) => (
-              <RoomListItem
-                key={room.id}
-                room={room}
-                onPress={() => handleRoomPress(room)}
-                colors={colors}
-                isCompleted
-                delay={index * 50}
-              />
-            ))}
-          </Animated.View>
-        )}
-
-        {/* Motivation */}
-        {rooms.length > 0 && (
-          <Animated.View entering={FadeInDown.duration(400).delay(500)} style={styles.section}>
-            <ModernCard style={StyleSheet.flatten([styles.quoteCard, { backgroundColor: colors.surfaceSecondary }])}>
-              <Text style={[styles.quoteText, { color: colors.textSecondary }]}>
-                &ldquo;{motivationQuote}&rdquo;
-              </Text>
-            </ModernCard>
-          </Animated.View>
-        )}
       </ScrollView>
-
-      {/* Add Room Modal */}
-      {showAddRoom && (
-        <AddRoomModal
-          onAdd={handleAddRoom}
-          onClose={() => setShowAddRoom(false)}
-          colors={colors}
-          colorScheme={colorScheme}
-        />
-      )}
-    </ScreenLayout>
-  );
-}
-
-// Stat Item Props
-interface StatItemProps {
-  value: number | string;
-  label: string;
-  suffix?: string;
-  colors: typeof Colors.dark;
-}
-
-// Stat Item Component
-const StatItem = React.memo(function StatItem({ value, label, suffix = '', colors }: StatItemProps) {
-  return (
-    <View style={styles.statItem}>
-      <Text style={[styles.statValue, { color: colors.text }]}>
-        {value}{suffix}
-      </Text>
-      <Text style={[styles.statLabel, { color: colors.textSecondary }]}>{label}</Text>
     </View>
   );
-});
-
-// Action Button Props
-interface ActionButtonProps {
-  icon: string;
-  label: string;
-  badge?: number;
-  onPress: () => void;
-  colors: typeof Colors.dark;
 }
 
-// Action Button Component
-const ActionButton = React.memo(function ActionButton({ icon, label, badge, onPress, colors }: ActionButtonProps) {
-  return (
-    <Pressable onPress={onPress} style={{ alignItems: 'center', width: (SCREEN_WIDTH - 40) / 4 }}>
-      <ModernCard
-        active={false}
-        padding={12}
-        style={{
-          width: 56,
-          height: 56,
-          alignItems: 'center',
-          justifyContent: 'center',
-          backgroundColor: colors.surfaceSecondary,
-          marginBottom: 8,
-          borderRadius: 20,
-        }}
-      >
-        <SymbolView name={icon as SFSymbol} tintColor={colors.text} style={{ width: 24, height: 24 }} />
-        {badge !== undefined && (
-          <View style={[styles.actionBadge, { backgroundColor: colors.info }]}>
-            <Text style={styles.actionBadgeText}>{badge}</Text>
-          </View>
-        )}
-      </ModernCard>
-      <Text style={[styles.actionLabel, { color: colors.textSecondary }]}>{label}</Text>
-    </Pressable>
-  );
-});
-
-// Room List Item Props
-interface RoomListItemProps {
-  room: Room;
-  onPress: () => void;
-  colors: typeof Colors.dark;
-  isCompleted?: boolean;
-  delay?: number;
-}
-
-// Room List Item Component
-const RoomListItem = React.memo(function RoomListItem({ room, onPress, colors, isCompleted = false, delay = 0 }: RoomListItemProps) {
-  const completedTasks = room.tasks.filter((t) => t.completed).length;
-  const totalTasks = room.tasks.length;
-
-  return (
-    <Animated.View entering={FadeIn.delay(delay)} style={{ marginBottom: 12 }}>
-      <ModernCard onPress={onPress} padding={16} style={{ flexDirection: 'row', alignItems: 'center' }}>
-        <View style={styles.roomEmoji}>
-          <Text style={{ fontSize: 24 }}>{room.emoji}</Text>
-        </View>
-        <View style={styles.roomInfo}>
-          <Text style={[styles.roomName, { color: colors.text }]}>{room.name}</Text>
-          <Text style={[styles.roomMeta, { color: colors.textSecondary }]}>
-            {totalTasks > 0 ? `${completedTasks}/${totalTasks} tasks` : 'No tasks yet'}
-          </Text>
-        </View>
-        {isCompleted ? (
-          <View style={[styles.completedCheck, { backgroundColor: colors.success }]}>
-            <SymbolView name="checkmark" tintColor="white" style={{ width: 14, height: 14 }} />
-          </View>
-        ) : (
-          <SingleRing
-            progress={room.currentProgress}
-            size={40}
-            strokeWidth={4}
-            color={colors.info}
-            showValue={false}
-          >
-            <Text style={[styles.ringValue, { color: colors.textSecondary }]}>{room.currentProgress}%</Text>
-          </SingleRing>
-        )}
-      </ModernCard>
-    </Animated.View>
-  );
-});
-
-
-// Add Room Modal
-function AddRoomModal({
-  onAdd,
-  onClose,
-  colors,
-  colorScheme,
-}: {
-  onAdd: (type: RoomType) => void;
-  onClose: () => void;
-  colors: typeof Colors.dark;
-  colorScheme: string;
-}) {
-  return (
-    <Animated.View entering={FadeIn} style={styles.modalOverlay}>
-      <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
-      <Animated.View entering={FadeInDown.duration(300)} style={[styles.modalContent, { backgroundColor: colors.surface }]}>
-        <View style={styles.modalInner}>
-          <Text style={[styles.modalTitle, { color: colors.text }]}>Add Room</Text>
-          <View style={styles.roomTypeGrid}>
-            {(Object.keys(ROOM_TYPE_INFO) as RoomType[]).map((type) => (
-              <Pressable
-                key={type}
-                onPress={() => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  onAdd(type);
-                }}
-                style={({ pressed }) => [
-                  styles.roomTypeItem,
-                  { backgroundColor: pressed ? colors.surfaceSecondary : 'transparent' },
-                ]}
-              >
-                <Text style={{ fontSize: 32 }}>{ROOM_TYPE_INFO[type].emoji}</Text>
-                <Text style={[styles.roomTypeLabel, { color: colors.text }]}>
-                  {ROOM_TYPE_INFO[type].label}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-          <Pressable onPress={onClose} style={styles.modalCancel}>
-            <Text style={[styles.modalCancelText, { color: colors.textSecondary }]}>Cancel</Text>
-          </Pressable>
-        </View>
-      </Animated.View>
-    </Animated.View>
-  );
-}
-
-// Helper
-function getGreeting(): string {
-  const hour = new Date().getHours();
-  if (hour < 12) return 'Good morning';
-  if (hour < 17) return 'Good afternoon';
-  return 'Good evening';
-}
-
+// ─────────────────────────────────────────────────────────────────────────────
+// Styles
+// ─────────────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -439,273 +518,201 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingHorizontal: 20,
+    paddingHorizontal: Spacing.ml,
   },
-  header: {
+
+  // Hero
+  heroSection: {
+    marginBottom: Spacing.ml,
+  },
+  greetingRow: {
     flexDirection: 'row',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
+    marginBottom: Spacing.sm,
+  },
+  greetingText: {
+    flex: 1,
+    paddingRight: Spacing.sm,
+  },
+  greetingEmoji: {
+    fontSize: 40,
+    marginTop: 4,
+  },
+  streakBadge: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 24,
+    alignSelf: 'flex-start',
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 6,
+    borderRadius: BorderRadius.xl,
+    borderWidth: 1,
+    gap: 6,
   },
-  greeting: {
-    fontSize: 15,
-    fontWeight: '500',
-    marginBottom: 2,
+  streakFire: {
+    fontSize: 14,
   },
-  userName: {
-    fontSize: 28,
-    fontWeight: '700',
-    letterSpacing: -0.5,
-  },
-  avatarButton: {},
-  avatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarText: {
-    fontSize: 18,
+  streakText: {
+    fontSize: 13,
     fontWeight: '600',
-    color: '#6366F1',
   },
 
   // Stats
   statsRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 16,
-    marginBottom: 24,
+    gap: 10,
+    marginBottom: Spacing.lg,
   },
-  statItem: {
+  statPill: {
     flex: 1,
     alignItems: 'center',
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.xs,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 0.5,
   },
-  statValue: {
-    fontSize: 24,
-    fontWeight: '700',
-    letterSpacing: -0.5,
+  statPillValue: {
+    ...Typography.title2,
   },
-  statLabel: {
-    fontSize: 12,
-    fontWeight: '500',
-    marginTop: 2,
-  },
-  statDivider: {
-    width: 1,
-    height: 32,
-  },
-
-  // Empty State
-  emptyState: {
-    alignItems: 'center',
-    paddingVertical: 40,
-    paddingHorizontal: 20,
-  },
-  emptyIcon: {
-    width: 80,
-    height: 80,
-    borderRadius: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 20,
-  },
-  emptyEmoji: {
-    fontSize: 36,
-  },
-  emptyTitle: {
-    fontSize: 22,
-    fontWeight: '700',
-    letterSpacing: -0.3,
-    marginBottom: 8,
-  },
-  emptySubtitle: {
-    fontSize: 15,
-    fontWeight: '500',
+  statPillLabel: {
+    ...Typography.caption2,
+    marginTop: Spacing.hairline,
     textAlign: 'center',
-    lineHeight: 22,
-  },
-  textButton: {
-    marginTop: 16,
-    paddingVertical: 8,
-  },
-  textButtonLabel: {
-    fontSize: 14,
-    fontWeight: '500',
   },
 
-  // Sections
+  // Section
   section: {
-    marginBottom: 28,
+    marginBottom: Spacing.lg + Spacing.xxs,
   },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    letterSpacing: -0.3,
-    marginBottom: 12,
-  },
-  addButton: {
-    fontSize: 15,
-    fontWeight: '600',
+    marginBottom: Spacing.sm,
   },
 
-  // Actions
-  actionsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  actionButton: {
-    alignItems: 'center',
-    width: (SCREEN_WIDTH - 60) / 4,
-  },
-  actionIcon: {
-    width: 56,
-    height: 56,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 6,
-  },
-  actionEmoji: {
-    fontSize: 24,
-  },
-  actionBadge: {
-    position: 'absolute',
-    top: -4,
-    right: -4,
-    backgroundColor: '#6366F1',
-    borderRadius: 10,
-    minWidth: 20,
-    height: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 6,
-  },
-  actionBadgeText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#FFF',
-  },
-  actionLabel: {
-    fontSize: 12,
-    fontWeight: '500',
-  },
-
-  // Room Items
-  roomItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 14,
-    borderRadius: 16,
-    marginBottom: 10,
-  },
-  roomEmoji: {
-    width: 48,
-    height: 48,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  roomInfo: {
-    flex: 1,
-    marginLeft: 12,
-  },
-  roomName: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 2,
-  },
-  roomMeta: {
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  ringValue: {
-    fontSize: 10,
-    fontWeight: '700',
-  },
-  completedCheck: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#34D399',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  // Quote
-  quoteCard: {
-    padding: 20,
-    borderRadius: 16,
-    alignItems: 'center',
-  },
-  quoteText: {
-    fontSize: 14,
-    fontWeight: '500',
-    fontStyle: 'italic',
-    textAlign: 'center',
-    lineHeight: 22,
-  },
-
-  // Modal
-  modalOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0,0,0,0.4)',
-  },
-  modalContent: {
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: -2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
-    elevation: 5,
-  },
-  modalInner: {
-    padding: 24,
-    paddingBottom: 40,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    textAlign: 'center',
-    marginBottom: 20,
-  },
-  roomTypeGrid: {
+  // Quick Actions
+  quickActionsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    justifyContent: 'space-between',
+    gap: Spacing.sm,
   },
-  roomTypeItem: {
-    width: '30%',
-    aspectRatio: 1,
-    borderRadius: 16,
+  quickActionCard: {
+    width: (SCREEN_WIDTH - 52) / 2,
+    paddingVertical: 18,
+    paddingHorizontal: Spacing.md,
+    borderRadius: BorderRadius.card,
+    gap: Spacing.xxs,
+  },
+  quickActionEmoji: {
+    fontSize: 28,
+    marginBottom: Spacing.xxs,
+  },
+  quickActionLabel: {
+    ...Typography.subheadlineMedium,
+    color: undefined,
+  },
+  quickActionSublabel: {
+    ...Typography.caption1,
+    color: undefined,
+  },
+
+  // Mascot
+  mascotCard: {
+    padding: Spacing.md,
+  },
+  mascotRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm + Spacing.hairline,
+  },
+  mascotEmoji: {
+    fontSize: 40,
+  },
+  mascotInfo: {
+    flex: 1,
+  },
+
+  // Rooms Grid
+  roomsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.sm,
+  },
+  roomCard: {
+    width: CARD_WIDTH,
+    borderRadius: BorderRadius.card,
+    borderWidth: 0.5,
+    overflow: 'hidden',
+  },
+  roomProgressBar: {
+    height: 3,
+    width: '100%',
+  },
+  roomProgressFill: {
+    height: '100%',
+    borderRadius: 2,
+  },
+  roomCardContent: {
+    padding: Spacing.sm + Spacing.hairline,
+  },
+  roomCardEmoji: {
+    fontSize: 32,
+    marginBottom: Spacing.xs,
+  },
+  roomCardName: {
+    ...Typography.subheadlineMedium,
+    marginBottom: Spacing.xxs,
+  },
+  roomCardMeta: {
+    ...Typography.caption1,
+  },
+  roomCardFooter: {
+    marginTop: 10,
+  },
+  roomCardProgress: {
+    ...Typography.title3,
+  },
+
+  // Empty State
+  emptyCard: {
+    padding: Spacing.xl,
+  },
+  emptyContent: {
+    alignItems: 'center',
+  },
+  emptyEmoji: {
+    fontSize: 64,
+  },
+  emptyButton: {
+    marginTop: Spacing.lg,
+    borderRadius: BorderRadius.lg,
+    overflow: 'hidden',
+    width: '100%',
+  },
+  emptyButtonGradient: {
+    paddingVertical: Spacing.md,
+    alignItems: 'center',
+    borderRadius: BorderRadius.lg,
+  },
+
+  // Focus Card
+  focusCard: {
+    padding: Spacing.md,
+  },
+  focusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  focusIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: BorderRadius.md,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 12,
   },
-  roomTypeLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    marginTop: 6,
-  },
-  modalCancel: {
-    alignItems: 'center',
-    paddingVertical: 16,
-    marginTop: 8,
-  },
-  modalCancelText: {
-    fontSize: 16,
-    fontWeight: '600',
+  focusInfo: {
+    flex: 1,
   },
 });

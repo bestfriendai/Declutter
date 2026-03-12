@@ -1,164 +1,272 @@
 /**
- * Declutterly - Screen Layout Component
- * Provides consistent safe area handling and screen structure
+ * Declutterly — Screen Layout (Apple 2026)
+ * Adaptive background, safe area, optional nav bar, scroll wrapper
  */
 
 import { Colors } from '@/constants/Colors';
-import { StatusBar } from 'expo-status-bar';
+import { Typography } from '@/theme/typography';
+import { LinearGradient } from 'expo-linear-gradient';
+import { router } from 'expo-router';
+import * as Haptics from 'expo-haptics';
 import React from 'react';
 import {
-  StyleSheet,
-  useColorScheme,
-  View,
-  ViewStyle,
-  StyleProp,
-  ScrollView,
   KeyboardAvoidingView,
   Platform,
+  Pressable,
+  ScrollView,
+  StyleProp,
+  StyleSheet,
+  Text,
+  View,
+  ViewStyle,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useColorScheme } from '@/hooks/useColorScheme';
 
-type SafeAreaEdge = 'top' | 'bottom' | 'left' | 'right';
-
+// ─────────────────────────────────────────────────────────────────────────────
+// Types
+// ─────────────────────────────────────────────────────────────────────────────
 interface ScreenLayoutProps {
   children: React.ReactNode;
-  /** Additional styles for the content container */
-  style?: StyleProp<ViewStyle>;
-  /** Which edges to apply safe area padding to */
-  edges?: SafeAreaEdge[];
-  /** Background color override */
-  backgroundColor?: string;
-  /** Whether content should be scrollable */
+
+  /** Screen title shown in nav bar */
+  title?: string;
+
+  /** Show back button */
+  showBack?: boolean;
+
+  /** Custom back handler */
+  onBack?: () => void;
+
+  /** Right nav bar item */
+  rightItem?: React.ReactNode;
+
+  /** Wrap content in ScrollView */
   scrollable?: boolean;
-  /** Enable keyboard avoiding behavior */
+
+  /** Use gradient background */
+  gradient?: boolean;
+
+  /** Custom gradient colors */
+  gradientColors?: readonly [string, string, ...string[]];
+
+  /** Extra padding at bottom (for tab bar) */
+  bottomPadding?: number;
+
+  /** Horizontal padding */
+  horizontalPadding?: number;
+
+  /** Style for the content container */
+  contentStyle?: StyleProp<ViewStyle>;
+
+  /** Keyboard avoiding behavior */
   keyboardAvoiding?: boolean;
-  /** Status bar style override */
-  statusBarStyle?: 'auto' | 'light' | 'dark';
+
+  /** Hide nav bar entirely */
+  hideNavBar?: boolean;
+
+  /** Large title style (iOS style) */
+  largeTitleMode?: boolean;
+
   /** Accessibility label for the screen */
   accessibilityLabel?: string;
-  /** Additional padding beyond safe area */
-  contentPadding?: number;
-  /** Header component to render above safe area */
-  headerComponent?: React.ReactNode;
-  /** Footer component to render below safe area */
-  footerComponent?: React.ReactNode;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// ScreenLayout Component
+// ─────────────────────────────────────────────────────────────────────────────
 export function ScreenLayout({
   children,
-  style,
-  edges = ['top'],
-  backgroundColor,
+  title,
+  showBack = false,
+  onBack,
+  rightItem,
   scrollable = false,
+  gradient = false,
+  gradientColors,
+  bottomPadding = 0,
+  horizontalPadding = 20,
+  contentStyle,
   keyboardAvoiding = false,
-  statusBarStyle,
+  hideNavBar = false,
+  largeTitleMode = false,
   accessibilityLabel,
-  contentPadding = 0,
-  headerComponent,
-  footerComponent,
 }: ScreenLayoutProps) {
-  const insets = useSafeAreaInsets();
-  const colorScheme = useColorScheme() ?? 'dark';
+  const rawScheme = useColorScheme();
+  const colorScheme = rawScheme === 'dark' ? 'dark' : 'light';
   const colors = Colors[colorScheme];
+  const isDark = colorScheme === 'dark';
+  const insets = useSafeAreaInsets();
 
-  // Calculate padding based on edges prop
-  const safeAreaStyle: ViewStyle = {
-    paddingTop: edges.includes('top') ? insets.top : 0,
-    paddingBottom: edges.includes('bottom') ? insets.bottom : 0,
-    paddingLeft: edges.includes('left') ? Math.max(insets.left, contentPadding) : contentPadding,
-    paddingRight: edges.includes('right') ? Math.max(insets.right, contentPadding) : contentPadding,
+  const handleBack = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (onBack) {
+      onBack();
+    } else {
+      router.back();
+    }
   };
 
-  const bgColor = backgroundColor || colors.background;
-  const computedStatusBarStyle = statusBarStyle || (colorScheme === 'dark' ? 'light' : 'dark');
+  // Default gradient colors
+  const defaultGradient = isDark
+    ? (['#000000', '#0A0A0F', '#000000'] as const)
+    : (['#F2F2F7', '#FFFFFF', '#F2F2F7'] as const);
 
-  const contentElement = scrollable ? (
+  const activeGradient = gradientColors ?? defaultGradient;
+
+  // Nav bar
+  const navBar = !hideNavBar && (title || showBack || rightItem) ? (
+    <View
+      style={[
+        styles.navBar,
+        {
+          paddingTop: insets.top + 8,
+          borderBottomWidth: largeTitleMode ? 0 : StyleSheet.hairlineWidth,
+          borderBottomColor: isDark ? colors.divider : colors.borderLight,
+        },
+      ]}
+      accessibilityRole="header"
+    >
+      {/* Back button */}
+      <View style={styles.navLeft}>
+        {showBack && (
+          <Pressable
+            onPress={handleBack}
+            style={styles.backButton}
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
+            hitSlop={8}
+          >
+            <Text style={[styles.backChevron, { color: colors.accent }]}>‹</Text>
+            <Text style={[Typography.body, { color: colors.accent }]}>Back</Text>
+          </Pressable>
+        )}
+      </View>
+
+      {/* Title */}
+      {title && !largeTitleMode && (
+        <Text
+          style={[Typography.navTitle, { color: colors.text }]}
+          numberOfLines={1}
+          accessibilityRole="header"
+        >
+          {title}
+        </Text>
+      )}
+
+      {/* Right item */}
+      <View style={styles.navRight}>
+        {rightItem}
+      </View>
+    </View>
+  ) : (
+    // Just safe area top padding when no nav bar
+    !hideNavBar ? <View style={{ height: insets.top }} /> : null
+  );
+
+  // Large title (below nav bar)
+  const largeTitle = largeTitleMode && title ? (
+    <View style={[styles.largeTitleContainer, { paddingHorizontal: horizontalPadding }]}>
+      <Text style={[Typography.largeTitle, { color: colors.text }]}>{title}</Text>
+    </View>
+  ) : null;
+
+  // Content
+  const contentPaddingStyle: ViewStyle = {
+    paddingHorizontal: horizontalPadding,
+    paddingBottom: insets.bottom + bottomPadding + 16,
+    paddingTop: largeTitleMode ? 8 : 16,
+  };
+
+  const content = scrollable ? (
     <ScrollView
       style={styles.scrollView}
-      contentContainerStyle={[styles.scrollContent, safeAreaStyle, style]}
+      contentContainerStyle={[contentPaddingStyle, contentStyle]}
       showsVerticalScrollIndicator={false}
       keyboardShouldPersistTaps="handled"
+      contentInsetAdjustmentBehavior="automatic"
     >
+      {largeTitle}
       {children}
     </ScrollView>
   ) : (
-    <View style={[styles.content, safeAreaStyle, style]}>
+    <View style={[styles.content, contentPaddingStyle, contentStyle]}>
+      {largeTitle}
       {children}
     </View>
   );
 
-  const mainContent = keyboardAvoiding ? (
-    <KeyboardAvoidingView
-      style={styles.keyboardAvoid}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
-    >
-      {contentElement}
-    </KeyboardAvoidingView>
-  ) : (
-    contentElement
-  );
-
-  return (
+  const inner = (
     <View
-      style={[styles.container, { backgroundColor: bgColor }]}
+      style={[styles.container, { backgroundColor: colors.background }]}
       accessibilityLabel={accessibilityLabel}
-      accessibilityRole="none"
     >
-      <StatusBar style={computedStatusBarStyle} />
-      {headerComponent}
-      {mainContent}
-      {footerComponent}
+      {gradient && (
+        <LinearGradient
+          colors={activeGradient}
+          style={StyleSheet.absoluteFill}
+        />
+      )}
+      {navBar}
+      {content}
     </View>
   );
+
+  if (keyboardAvoiding) {
+    return (
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        {inner}
+      </KeyboardAvoidingView>
+    );
+  }
+
+  return inner;
 }
 
-/**
- * Preset layout for screens with tab bar
- * Automatically handles bottom safe area for tab bar
- */
-export function TabScreenLayout(
-  props: Omit<ScreenLayoutProps, 'edges'>
-) {
-  return <ScreenLayout {...props} edges={['top']} />;
-}
-
-/**
- * Preset layout for modal screens
- * No top safe area (modal handles it), includes bottom
- */
-export function ModalScreenLayout(
-  props: Omit<ScreenLayoutProps, 'edges'>
-) {
-  return <ScreenLayout {...props} edges={['bottom']} />;
-}
-
-/**
- * Preset layout for full-screen content (camera, video, etc.)
- * No safe area padding
- */
-export function FullScreenLayout(
-  props: Omit<ScreenLayoutProps, 'edges'>
-) {
-  return <ScreenLayout {...props} edges={[]} />;
-}
-
+// ─────────────────────────────────────────────────────────────────────────────
+// Styles
+// ─────────────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
+  flex: { flex: 1 },
+  container: { flex: 1 },
+
+  navBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+    minHeight: 44,
   },
-  content: {
-    flex: 1,
+  navLeft: {
+    minWidth: 80,
+    alignItems: 'flex-start',
   },
-  scrollView: {
-    flex: 1,
+  navRight: {
+    minWidth: 80,
+    alignItems: 'flex-end',
   },
-  scrollContent: {
-    flexGrow: 1,
+  backButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
   },
-  keyboardAvoid: {
-    flex: 1,
+  backChevron: {
+    fontSize: 28,
+    fontWeight: '300',
+    lineHeight: 32,
+    marginTop: -2,
   },
+
+  largeTitleContainer: {
+    paddingBottom: 8,
+  },
+
+  scrollView: { flex: 1 },
+  content: { flex: 1 },
 });
 
 export default ScreenLayout;

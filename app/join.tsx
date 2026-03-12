@@ -1,0 +1,387 @@
+/**
+ * Declutterly - Join Screen
+ * Universal invite code entry for challenges, sessions, and shared rooms
+ * Accessible via deep link: declutterly://join or https://declutterly.app/join
+ */
+
+import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import React, { useEffect, useState } from 'react';
+import {
+    ActivityIndicator,
+    Alert,
+    Keyboard,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    TouchableWithoutFeedback,
+    View,
+} from 'react-native';
+import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
+import Animated, { FadeInDown } from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+import { GlassButton } from '@/components/ui/GlassButton';
+import { GlassCard } from '@/components/ui/GlassCard';
+import { useAuth } from '@/context/AuthContext';
+import {
+    joinBodyDoublingSession,
+    joinChallenge,
+    joinSharedRoom,
+} from '@/services/social';
+import { useTheme } from '@/theme/ThemeProvider';
+import { Typography } from '@/theme/typography';
+import { Spacing, BorderRadius } from '@/theme/spacing';
+const ROUTES = {
+  CHALLENGE: (id: string) => `/challenge/${id}` as const,
+  SOCIAL: '/social' as const,
+  AUTH: { LOGIN: '/auth/login' as const },
+};
+
+export default function JoinScreen() {
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const { colors } = useTheme();
+  const { isAuthenticated } = useAuth();
+  const params = useLocalSearchParams<{ code?: string }>();
+
+  const [code, setCode] = useState(params.code || '');
+  const [isJoining, setIsJoining] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Auto-focus on code input
+  useEffect(() => {
+    if (params.code) {
+      setCode(params.code);
+    }
+  }, [params.code]);
+
+  const handleJoin = async () => {
+    const trimmedCode = code.trim().toUpperCase();
+
+    if (!trimmedCode) {
+      setError('Please enter an invite code');
+      return;
+    }
+
+    if (trimmedCode.length < 6) {
+      setError('Invite code is too short');
+      return;
+    }
+
+    setIsJoining(true);
+    setError(null);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+    try {
+      // Try joining challenge first
+      const challenge = await joinChallenge(trimmedCode);
+      if (challenge) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        Alert.alert(
+          'Joined Challenge!',
+          `You've joined "${challenge.title}"`,
+          [
+            {
+              text: 'View Challenge',
+              onPress: () => router.replace(ROUTES.CHALLENGE(challenge.id)),
+            },
+          ]
+        );
+        setIsJoining(false);
+        return;
+      }
+
+      // Try joining body doubling session
+      const session = await joinBodyDoublingSession(trimmedCode);
+      if (session) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        Alert.alert(
+          'Joined Session!',
+          `You've joined "${session.title}" hosted by ${session.hostName}`,
+          [
+            {
+              text: 'Go to Social',
+              onPress: () => router.replace(ROUTES.SOCIAL),
+            },
+          ]
+        );
+        setIsJoining(false);
+        return;
+      }
+
+      // Try joining shared room
+      const room = await joinSharedRoom(trimmedCode);
+      if (room) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        Alert.alert(
+          'Room Shared!',
+          `${room.ownerName} shared "${room.roomName}" with you`,
+          [
+            {
+              text: 'Go to Social',
+              onPress: () => router.replace(ROUTES.SOCIAL),
+            },
+          ]
+        );
+        setIsJoining(false);
+        return;
+      }
+
+      // Nothing found
+      setError('Invalid code. Make sure the code is correct and the challenge/session is still active.');
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    } catch (err) {
+      console.error('Join error:', err);
+      setError('Failed to join. Please try again.');
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    } finally {
+      setIsJoining(false);
+    }
+  };
+
+  // Not authenticated state
+  if (!isAuthenticated) {
+    return (
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <LinearGradient
+          colors={colors.backgroundGradient}
+          style={StyleSheet.absoluteFill}
+        />
+        <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => {
+              Haptics.selectionAsync();
+              router.back();
+            }}
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
+          >
+            <Ionicons name="chevron-back" size={24} color={colors.text} />
+          </TouchableOpacity>
+          <Text style={[styles.headerTitle, { color: colors.text }]}>Join</Text>
+          <View style={styles.placeholder} />
+        </View>
+        <View style={styles.authContainer}>
+          <Ionicons name="lock-closed" size={64} color={colors.textTertiary} />
+          <Text style={[styles.authTitle, { color: colors.text }]}>
+            Sign in to join
+          </Text>
+          <Text style={[styles.authText, { color: colors.textSecondary }]}>
+            Create an account or sign in to join challenges, sessions, and shared rooms.
+          </Text>
+          <GlassButton
+            title="Sign In"
+            onPress={() => router.push(ROUTES.AUTH.LOGIN)}
+            variant="primary"
+            style={styles.authButton}
+          />
+        </View>
+      </View>
+    );
+  }
+
+  return (
+    <KeyboardAvoidingView
+      behavior="padding"
+      style={{ flex: 1 }}
+    >
+      <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+        <View style={[styles.container, { backgroundColor: colors.background }]}>
+          <LinearGradient
+            colors={colors.backgroundGradient}
+            style={StyleSheet.absoluteFill}
+          />
+
+          {/* Header */}
+          <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
+            <TouchableOpacity
+              style={styles.backButton}
+              onPress={() => {
+                Haptics.selectionAsync();
+                router.back();
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Go back"
+          >
+            <Ionicons name="chevron-back" size={24} color={colors.text} />
+          </TouchableOpacity>
+          <Text style={[styles.headerTitle, { color: colors.text }]}>Join</Text>
+          <View style={styles.placeholder} />
+        </View>
+
+        <View style={styles.content}>
+          <Animated.View entering={FadeInDown.delay(100).springify()}>
+            <View style={styles.iconContainer}>
+              <View style={[styles.iconCircle, { backgroundColor: colors.primary + '20' }]}>
+                <Ionicons name="ticket-outline" size={48} color={colors.primary} />
+              </View>
+            </View>
+
+            <Text style={[styles.title, { color: colors.text }]}>
+              Enter Invite Code
+            </Text>
+            <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
+              Join challenges, body doubling sessions, or view shared rooms
+            </Text>
+          </Animated.View>
+
+          <Animated.View entering={FadeInDown.delay(200).springify()}>
+            <GlassCard style={styles.inputCard}>
+              <TextInput
+                style={[
+                  styles.codeInput,
+                  { color: colors.text, borderColor: error ? colors.error : colors.border },
+                ]}
+                placeholder="ABC123XY"
+                placeholderTextColor={colors.textTertiary}
+                value={code}
+                onChangeText={(text) => {
+                  setCode(text.toUpperCase());
+                  setError(null);
+                }}
+                autoCapitalize="characters"
+                autoCorrect={false}
+                maxLength={10}
+                returnKeyType="done"
+                onSubmitEditing={handleJoin}
+                editable={!isJoining}
+              />
+              {error && (
+                <Text style={[styles.errorText, { color: colors.error }]}>
+                  {error}
+                </Text>
+              )}
+            </GlassCard>
+          </Animated.View>
+
+          <Animated.View entering={FadeInDown.delay(300).springify()}>
+            <GlassButton
+              title={isJoining ? 'Joining...' : 'Join'}
+              onPress={handleJoin}
+              variant="primary"
+              size="large"
+              disabled={isJoining || !code.trim()}
+              icon={
+                isJoining ? (
+                  <ActivityIndicator size="small" color={colors.textOnPrimary} />
+                ) : (
+                  <Ionicons name="enter" size={20} color={colors.textOnPrimary} />
+                )
+              }
+              style={styles.joinButton}
+            />
+          </Animated.View>
+
+          <Animated.View entering={FadeInDown.delay(400).springify()}>
+            <Text style={[styles.helpText, { color: colors.textSecondary }]}>
+              Codes are 6-8 characters and are case-insensitive.{'\n'}
+              Ask a friend for their invite code to get started!
+            </Text>
+          </Animated.View>
+        </View>
+      </View>
+    </TouchableWithoutFeedback>
+    </KeyboardAvoidingView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+  },
+  backButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerTitle: {
+    flex: 1,
+    ...Typography.title3,
+    textAlign: 'center',
+  },
+  placeholder: {
+    width: 44,
+  },
+  content: {
+    flex: 1,
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.xxl,
+  },
+  iconContainer: {
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  iconCircle: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  title: {
+    ...Typography.title1,
+    textAlign: 'center',
+    marginBottom: Spacing.xs,
+  },
+  subtitle: {
+    ...Typography.callout,
+    textAlign: 'center',
+    marginBottom: Spacing.xl,
+  },
+  inputCard: {
+    padding: Spacing.md,
+    marginBottom: Spacing.lg,
+  },
+  codeInput: {
+    ...Typography.title1,
+    textAlign: 'center',
+    letterSpacing: 6,
+    paddingVertical: Spacing.md,
+    borderWidth: 2,
+    borderRadius: BorderRadius.input,
+  },
+  errorText: {
+    ...Typography.footnote,
+    textAlign: 'center',
+    marginTop: Spacing.sm,
+  },
+  joinButton: {
+    marginBottom: Spacing.lg,
+  },
+  helpText: {
+    ...Typography.footnote,
+    textAlign: 'center',
+  },
+  authContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 32,
+  },
+  authTitle: {
+    ...Typography.title3,
+    marginTop: Spacing.md,
+    marginBottom: Spacing.xs,
+  },
+  authText: {
+    ...Typography.subheadline,
+    textAlign: 'center',
+    marginBottom: Spacing.lg,
+  },
+  authButton: {
+    minWidth: 150,
+  },
+});

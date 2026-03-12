@@ -1,298 +1,396 @@
 /**
- * Declutterly - Glass Card Component
- * iOS 26 Liquid Glass effect with fallback for older versions
+ * Declutterly — Apple 2026 Glass Card
+ * iOS 26 Liquid Glass with BlurView fallback, tinted variants, and elevation
  */
 
-import React from 'react';
-import {
-  View,
-  StyleSheet,
-  Pressable,
-  ViewStyle,
-  StyleProp,
-  Platform,
-} from 'react-native';
+import { Colors, Shadows } from '@/constants/Colors';
 import { BlurView } from 'expo-blur';
-import Animated from 'react-native-reanimated';
-import { useColorScheme } from '@/hooks/useColorScheme';
-import { Colors } from '@/constants/Colors';
-import { useCardPress } from '@/hooks/useAnimatedPress';
-import { LinearGradient } from 'expo-linear-gradient';
+import React, { useCallback } from 'react';
+import {
+  Pressable,
+  StyleProp,
+  StyleSheet,
+  useColorScheme,
+  View,
+  ViewStyle,
+} from 'react-native';
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+} from 'react-native-reanimated';
+import * as Haptics from 'expo-haptics';
 
-// Try to import expo-glass-effect, but handle if not available
-let GlassView: any = null;
-let isLiquidGlassAvailable: () => boolean = () => false;
-try {
-  const glassEffect = require('expo-glass-effect');
-  GlassView = glassEffect.GlassView;
-  isLiquidGlassAvailable = glassEffect.isLiquidGlassAvailable;
-} catch {
-  // expo-glass-effect not available, will use fallback
-}
+// ─────────────────────────────────────────────────────────────────────────────
+// Types
+// ─────────────────────────────────────────────────────────────────────────────
+export type GlassVariant =
+  | 'default'     // Standard glass card
+  | 'hero'        // Large hero card with stronger blur
+  | 'subtle'      // Minimal glass effect
+  | 'elevated'    // Elevated with shadow
+  | 'tinted'      // Tinted with accent color
+  | 'ultraThin'   // Ultra-thin material
+  | 'chromatic'   // Opaque chromatic material
+  | 'flat'        // No blur, just surface color
+  | 'outlined';   // Border only, transparent
 
-type GlassVariant = 'default' | 'elevated' | 'subtle' | 'hero' | 'interactive' | 'liquid';
+export type GlassRadius =
+  | 'none'    // 0
+  | 'small'   // 12
+  | 'medium'  // 16
+  | 'large'   // 20
+  | 'xl'      // 24
+  | 'xxl'     // 32
+  | 'full';   // 9999
 
 interface GlassCardProps {
   children: React.ReactNode;
   variant?: GlassVariant;
-  onPress?: () => void;
+  radius?: GlassRadius;
   style?: StyleProp<ViewStyle>;
+  contentStyle?: StyleProp<ViewStyle>;
+  tintColor?: string;
+  tintOpacity?: number;
+  onPress?: () => void;
+  onLongPress?: () => void;
+  haptic?: boolean;
+  disabled?: boolean;
+  accessibilityLabel?: string;
+  accessibilityRole?: 'button' | 'none' | 'link' | 'header' | 'image' | 'text';
+  accessibilityHint?: string;
+  /** Override blur intensity (0-100) */
   blurIntensity?: number;
-  padding?: number;
-  borderRadius?: number;
-  showGradientBorder?: boolean;
-  gradientColors?: string[];
-  /** Force use of legacy BlurView instead of LiquidGlass */
-  forceLegacy?: boolean;
+  /** Show top highlight shimmer */
+  showHighlight?: boolean;
+  /** Animate on press */
+  pressable?: boolean;
+  testID?: string;
 }
 
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+// ─────────────────────────────────────────────────────────────────────────────
+// Radius Map
+// ─────────────────────────────────────────────────────────────────────────────
+const RADIUS_MAP: Record<GlassRadius, number> = {
+  none:   0,
+  small:  12,
+  medium: 16,
+  large:  20,
+  xl:     24,
+  xxl:    32,
+  full:   9999,
+};
 
-// Check if we can use native Liquid Glass (iOS 26+)
-let canUseLiquidGlass = false;
-try {
-  canUseLiquidGlass = Platform.OS === 'ios' && GlassView !== null && isLiquidGlassAvailable();
-} catch {
-  canUseLiquidGlass = false;
+// ─────────────────────────────────────────────────────────────────────────────
+// Variant Config
+// ─────────────────────────────────────────────────────────────────────────────
+interface VariantConfig {
+  blurIntensity: number;
+  lightBg: string;
+  darkBg: string;
+  lightBorder: string;
+  darkBorder: string;
+  defaultRadius: GlassRadius;
+  shadow: object;
 }
 
+const VARIANT_CONFIG: Record<GlassVariant, VariantConfig> = {
+  default: {
+    blurIntensity: 60,
+    lightBg:       'rgba(255, 255, 255, 0.72)',
+    darkBg:        'rgba(28, 28, 30, 0.72)',
+    lightBorder:   'rgba(0, 0, 0, 0.06)',
+    darkBorder:    'rgba(255, 255, 255, 0.10)',
+    defaultRadius: 'large',
+    shadow:        Shadows.small,
+  },
+  hero: {
+    blurIntensity: 80,
+    lightBg:       'rgba(255, 255, 255, 0.85)',
+    darkBg:        'rgba(28, 28, 30, 0.85)',
+    lightBorder:   'rgba(0, 0, 0, 0.05)',
+    darkBorder:    'rgba(255, 255, 255, 0.12)',
+    defaultRadius: 'xl',
+    shadow:        Shadows.medium,
+  },
+  subtle: {
+    blurIntensity: 30,
+    lightBg:       'rgba(255, 255, 255, 0.40)',
+    darkBg:        'rgba(28, 28, 30, 0.40)',
+    lightBorder:   'rgba(0, 0, 0, 0.04)',
+    darkBorder:    'rgba(255, 255, 255, 0.06)',
+    defaultRadius: 'medium',
+    shadow:        Shadows.xs,
+  },
+  elevated: {
+    blurIntensity: 70,
+    lightBg:       'rgba(255, 255, 255, 0.90)',
+    darkBg:        'rgba(44, 44, 46, 0.90)',
+    lightBorder:   'rgba(0, 0, 0, 0.06)',
+    darkBorder:    'rgba(255, 255, 255, 0.14)',
+    defaultRadius: 'xl',
+    shadow:        Shadows.large,
+  },
+  tinted: {
+    blurIntensity: 50,
+    lightBg:       'rgba(255, 255, 255, 0.60)',
+    darkBg:        'rgba(28, 28, 30, 0.60)',
+    lightBorder:   'rgba(0, 0, 0, 0.06)',
+    darkBorder:    'rgba(255, 255, 255, 0.10)',
+    defaultRadius: 'large',
+    shadow:        Shadows.small,
+  },
+  ultraThin: {
+    blurIntensity: 20,
+    lightBg:       'rgba(255, 255, 255, 0.25)',
+    darkBg:        'rgba(28, 28, 30, 0.25)',
+    lightBorder:   'rgba(0, 0, 0, 0.03)',
+    darkBorder:    'rgba(255, 255, 255, 0.06)',
+    defaultRadius: 'medium',
+    shadow:        Shadows.none,
+  },
+  chromatic: {
+    blurIntensity: 100,
+    lightBg:       'rgba(255, 255, 255, 0.95)',
+    darkBg:        'rgba(28, 28, 30, 0.95)',
+    lightBorder:   'rgba(0, 0, 0, 0.08)',
+    darkBorder:    'rgba(255, 255, 255, 0.15)',
+    defaultRadius: 'large',
+    shadow:        Shadows.medium,
+  },
+  flat: {
+    blurIntensity: 0,
+    lightBg:       '#FFFFFF',
+    darkBg:        '#1C1C1E',
+    lightBorder:   'rgba(0, 0, 0, 0.08)',
+    darkBorder:    'rgba(255, 255, 255, 0.08)',
+    defaultRadius: 'large',
+    shadow:        Shadows.small,
+  },
+  outlined: {
+    blurIntensity: 0,
+    lightBg:       'transparent',
+    darkBg:        'transparent',
+    lightBorder:   'rgba(0, 0, 0, 0.12)',
+    darkBorder:    'rgba(255, 255, 255, 0.15)',
+    defaultRadius: 'large',
+    shadow:        Shadows.none,
+  },
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GlassCard Component
+// ─────────────────────────────────────────────────────────────────────────────
 export function GlassCard({
   children,
   variant = 'default',
-  onPress,
+  radius,
   style,
-  blurIntensity,
-  padding = 16,
-  borderRadius = 20,
-  showGradientBorder = false,
-  gradientColors,
-  forceLegacy = false,
+  contentStyle,
+  tintColor,
+  tintOpacity = 0.12,
+  onPress,
+  onLongPress,
+  haptic = true,
+  disabled = false,
+  accessibilityLabel,
+  accessibilityRole = 'none',
+  accessibilityHint,
+  blurIntensity: blurIntensityOverride,
+  showHighlight = false,
+  pressable = false,
+  testID,
 }: GlassCardProps) {
-  const colorScheme = useColorScheme() ?? 'dark';
-  const colors = Colors[colorScheme];
-  const { animatedStyle, onPressIn, onPressOut } = useCardPress();
+  const rawScheme = useColorScheme();
+  const colorScheme = rawScheme === 'dark' ? 'dark' : 'light';
+  const isDark = colorScheme === 'dark';
 
-  // Use Liquid Glass for 'liquid' or 'interactive' variants when available
-  const useLiquidGlass = !forceLegacy && canUseLiquidGlass &&
-    (variant === 'liquid' || variant === 'interactive' || variant === 'hero');
+  const config = VARIANT_CONFIG[variant];
+  const borderRadius = RADIUS_MAP[radius ?? config.defaultRadius];
+  const blurIntensity = blurIntensityOverride ?? config.blurIntensity;
+  const isInteractive = !!(onPress || onLongPress || pressable);
 
-  const getBlurIntensity = () => {
-    if (blurIntensity !== undefined) return blurIntensity;
-    switch (variant) {
-      case 'subtle':
-        return 20;
-      case 'elevated':
-      case 'hero':
-        return 80;
-      case 'liquid':
-      case 'interactive':
-        return 100;
-      default:
-        return 60;
+  // Press animation
+  const scale = useSharedValue(1);
+  const opacity = useSharedValue(1);
+
+  const handlePressIn = useCallback(() => {
+    if (!isInteractive || disabled) return;
+    scale.value = withSpring(0.97, { damping: 20, stiffness: 400 });
+    opacity.value = withSpring(0.85, { damping: 20, stiffness: 400 });
+  }, [isInteractive, disabled]);
+
+  const handlePressOut = useCallback(() => {
+    if (!isInteractive || disabled) return;
+    scale.value = withSpring(1, { damping: 15, stiffness: 300 });
+    opacity.value = withSpring(1, { damping: 15, stiffness: 300 });
+  }, [isInteractive, disabled]);
+
+  const handlePress = useCallback(() => {
+    if (disabled) return;
+    if (haptic) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
-  };
+    onPress?.();
+  }, [disabled, haptic, onPress]);
 
-  const getBackgroundColor = () => {
-    // For Liquid Glass, use more transparent backgrounds
-    if (useLiquidGlass) {
-      return 'transparent';
+  const handleLongPress = useCallback(() => {
+    if (disabled) return;
+    if (haptic) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
+    onLongPress?.();
+  }, [disabled, haptic, onLongPress]);
 
-    switch (variant) {
-      case 'subtle':
-        return colorScheme === 'dark'
-          ? 'rgba(30, 30, 30, 0.4)'
-          : 'rgba(255, 255, 255, 0.4)';
-      case 'elevated':
-      case 'hero':
-        return colorScheme === 'dark'
-          ? 'rgba(40, 40, 40, 0.8)'
-          : 'rgba(255, 255, 255, 0.85)';
-      case 'liquid':
-      case 'interactive':
-        return colorScheme === 'dark'
-          ? 'rgba(30, 30, 30, 0.5)'
-          : 'rgba(255, 255, 255, 0.5)';
-      default:
-        return colorScheme === 'dark'
-          ? 'rgba(30, 30, 30, 0.65)'
-          : 'rgba(255, 255, 255, 0.75)';
-    }
-  };
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+    opacity: opacity.value,
+  }));
 
-  const getElevationStyle = (): ViewStyle => {
-    switch (variant) {
-      case 'elevated':
-        return {
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: 8 },
-          shadowOpacity: colorScheme === 'dark' ? 0.4 : 0.15,
-          shadowRadius: 24,
-          elevation: 8,
-        };
-      case 'hero':
-      case 'liquid':
-        return {
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: 12 },
-          shadowOpacity: colorScheme === 'dark' ? 0.5 : 0.2,
-          shadowRadius: 32,
-          elevation: 12,
-        };
-      case 'subtle':
-        return {};
-      default:
-        return {
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: 4 },
-          shadowOpacity: colorScheme === 'dark' ? 0.3 : 0.1,
-          shadowRadius: 12,
-          elevation: 4,
-        };
-    }
-  };
+  // Background color
+  const backgroundColor = isDark ? config.darkBg : config.lightBg;
+  const borderColor = isDark ? config.darkBorder : config.lightBorder;
 
-  const borderStyle: ViewStyle = {
+  const containerStyle: ViewStyle = {
+    borderRadius,
+    overflow: 'hidden',
     borderWidth: 0.5,
-    borderColor: colorScheme === 'dark'
-      ? 'rgba(255, 255, 255, 0.1)'
-      : 'rgba(0, 0, 0, 0.05)',
+    borderColor,
+    ...config.shadow,
   };
 
-  // Render with native Liquid Glass (iOS 26+)
-  const renderLiquidGlassContent = () => (
-    <View style={[styles.container, { borderRadius }, getElevationStyle(), style]}>
-      <GlassView
-        style={[StyleSheet.absoluteFill, { borderRadius }]}
-        glassEffectStyle={variant === 'interactive' ? 'clear' : 'regular'}
-        isInteractive={variant === 'interactive'}
-        tintColor={colorScheme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'}
-      />
-      <View style={[styles.content, { padding }]}>{children}</View>
-    </View>
-  );
+  const content = (
+    <Animated.View style={[containerStyle, style, isInteractive && animatedStyle]}>
+      {/* Blur layer (skip for flat/outlined/zero intensity) */}
+      {blurIntensity > 0 && variant !== 'flat' && variant !== 'outlined' && (
+        <BlurView
+          intensity={blurIntensity}
+          tint={isDark ? 'dark' : 'light'}
+          style={StyleSheet.absoluteFill}
+        />
+      )}
 
-  // Render with BlurView fallback (older iOS / Android)
-  const renderBlurContent = () => (
-    <View style={[styles.container, { borderRadius }, getElevationStyle(), style]}>
-      <BlurView
-        intensity={getBlurIntensity()}
-        tint={colorScheme === 'dark' ? 'dark' : 'light'}
-        style={[StyleSheet.absoluteFill, { borderRadius }]}
-      />
+      {/* Solid background fallback */}
       <View
         style={[
           StyleSheet.absoluteFill,
-          { backgroundColor: getBackgroundColor(), borderRadius },
-          borderStyle,
+          { backgroundColor },
         ]}
       />
-      {/* Top highlight gradient for glass effect */}
-      <LinearGradient
-        colors={
-          colorScheme === 'dark'
-            ? ['rgba(255, 255, 255, 0.08)', 'rgba(255, 255, 255, 0)']
-            : ['rgba(255, 255, 255, 0.5)', 'rgba(255, 255, 255, 0)']
-        }
-        style={[
-          styles.highlight,
-          { borderTopLeftRadius: borderRadius, borderTopRightRadius: borderRadius },
-        ]}
-      />
-      <View style={[styles.content, { padding }]}>{children}</View>
+
+      {/* Tint overlay */}
+      {tintColor && (
+        <View
+          style={[
+            StyleSheet.absoluteFill,
+            { backgroundColor: tintColor, opacity: tintOpacity },
+          ]}
+        />
+      )}
+
+      {/* Top highlight shimmer */}
+      {showHighlight && (
+        <View
+          style={[
+            styles.highlight,
+            {
+              backgroundColor: isDark
+                ? 'rgba(255, 255, 255, 0.06)'
+                : 'rgba(255, 255, 255, 0.60)',
+            },
+          ]}
+        />
+      )}
+
+      {/* Content */}
+      <View style={[styles.content, contentStyle]}>
+        {children}
+      </View>
+    </Animated.View>
+  );
+
+  if (isInteractive) {
+    return (
+      <Pressable
+        onPress={handlePress}
+        onLongPress={handleLongPress}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        disabled={disabled}
+        accessibilityLabel={accessibilityLabel}
+        accessibilityRole={accessibilityRole === 'none' ? 'button' : accessibilityRole}
+        accessibilityHint={accessibilityHint}
+        accessibilityState={{ disabled }}
+        testID={testID}
+        style={{ opacity: disabled ? 0.5 : 1 }}
+      >
+        {content}
+      </Pressable>
+    );
+  }
+
+  return (
+    <View
+      accessibilityLabel={accessibilityLabel}
+      accessibilityRole={accessibilityRole}
+      testID={testID}
+    >
+      {content}
     </View>
   );
-
-  const cardContent = useLiquidGlass ? renderLiquidGlassContent() : renderBlurContent();
-
-  if (showGradientBorder) {
-    const gradColors = gradientColors ?? [...colors.gradientPrimary];
-    return (
-      <View style={[styles.gradientWrapper, { borderRadius: borderRadius + 1 }]}>
-        <LinearGradient
-          colors={gradColors as [string, string, ...string[]]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={[StyleSheet.absoluteFill, { borderRadius: borderRadius + 1 }]}
-        />
-        <View style={[styles.gradientInner, { borderRadius }]}>
-          {onPress ? (
-            <AnimatedPressable
-              onPress={onPress}
-              onPressIn={onPressIn}
-              onPressOut={onPressOut}
-              style={animatedStyle}
-            >
-              {cardContent}
-            </AnimatedPressable>
-          ) : (
-            cardContent
-          )}
-        </View>
-      </View>
-    );
-  }
-
-  if (onPress) {
-    return (
-      <AnimatedPressable
-        onPress={onPress}
-        onPressIn={onPressIn}
-        onPressOut={onPressOut}
-        style={animatedStyle}
-      >
-        {cardContent}
-      </AnimatedPressable>
-    );
-  }
-
-  return cardContent;
 }
 
-// Hero Card with Liquid Glass
-export function LiquidGlassHeroCard({
-  children,
-  style,
-  onPress,
-}: {
-  children: React.ReactNode;
-  style?: StyleProp<ViewStyle>;
-  onPress?: () => void;
-}) {
-  return (
-    <GlassCard
-      variant="liquid"
-      padding={24}
-      borderRadius={28}
-      style={style}
-      onPress={onPress}
-    >
-      {children}
-    </GlassCard>
-  );
+// ─────────────────────────────────────────────────────────────────────────────
+// Specialized Variants
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Hero card — large, prominent, strong blur */
+export function HeroCard(props: Omit<GlassCardProps, 'variant'>) {
+  return <GlassCard {...props} variant="hero" showHighlight />;
 }
 
+/** Subtle card — minimal glass effect */
+export function SubtleCard(props: Omit<GlassCardProps, 'variant'>) {
+  return <GlassCard {...props} variant="subtle" />;
+}
+
+/** Elevated card — with prominent shadow */
+export function ElevatedCard(props: Omit<GlassCardProps, 'variant'>) {
+  return <GlassCard {...props} variant="elevated" showHighlight />;
+}
+
+/** Flat card — no blur, solid surface */
+export function FlatCard(props: Omit<GlassCardProps, 'variant'>) {
+  return <GlassCard {...props} variant="flat" />;
+}
+
+/** Outlined card — border only */
+export function OutlinedCard(props: Omit<GlassCardProps, 'variant'>) {
+  return <GlassCard {...props} variant="outlined" />;
+}
+
+/** Tinted card — with accent color overlay */
+export function TintedCard({
+  color,
+  ...props
+}: Omit<GlassCardProps, 'variant' | 'tintColor'> & { color: string }) {
+  return <GlassCard {...props} variant="tinted" tintColor={color} tintOpacity={0.15} />;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Styles
+// ─────────────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  container: {
-    overflow: 'hidden',
-  },
   content: {
     position: 'relative',
-    zIndex: 1,
   },
   highlight: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
-    height: 60,
-    zIndex: 0,
-  },
-  gradientWrapper: {
-    padding: 1,
-  },
-  gradientInner: {
-    overflow: 'hidden',
+    height: 1,
+    zIndex: 1,
   },
 });
 

@@ -12,6 +12,7 @@ import {
   ViewStyle,
   TextStyle,
   StyleProp,
+  ActivityIndicator,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
 import Animated from 'react-native-reanimated';
@@ -84,8 +85,7 @@ export function GlassButton({
             borderRadius: 16,
           },
           text: {
-            ...Typography.button,
-            fontSize: 18,
+            ...Typography.buttonLarge,
           },
         };
       default:
@@ -96,7 +96,7 @@ export function GlassButton({
             borderRadius: 14,
           },
           text: {
-            ...Typography.button,
+            ...Typography.buttonMedium,
           },
         };
     }
@@ -114,7 +114,7 @@ export function GlassButton({
       case 'primary':
         return {
           container: {},
-          text: { color: '#FFFFFF' },
+          text: { color: colors.textOnPrimary },
           useGradient: true,
         };
       case 'secondary':
@@ -122,11 +122,11 @@ export function GlassButton({
           container: {
             backgroundColor: colorScheme === 'dark'
               ? 'rgba(255, 255, 255, 0.1)'
-              : 'rgba(0, 0, 0, 0.05)',
+              : 'rgba(0, 0, 0, 0.06)',
             borderWidth: 1,
             borderColor: colorScheme === 'dark'
               ? 'rgba(255, 255, 255, 0.15)'
-              : 'rgba(0, 0, 0, 0.1)',
+              : 'rgba(0, 0, 0, 0.12)',
           },
           text: { color: colors.text },
         };
@@ -147,10 +147,10 @@ export function GlassButton({
       case 'glass':
         return {
           container: {
-            borderWidth: 0.5,
+            borderWidth: colorScheme === 'dark' ? 0.5 : 1,
             borderColor: colorScheme === 'dark'
               ? 'rgba(255, 255, 255, 0.1)'
-              : 'rgba(0, 0, 0, 0.05)',
+              : 'rgba(0, 0, 0, 0.08)',
           },
           text: { color: colors.text },
           useBlur: true,
@@ -158,7 +158,7 @@ export function GlassButton({
       default:
         return {
           container: {},
-          text: { color: '#FFFFFF' },
+          text: { color: colors.textOnPrimary },
           useGradient: true,
         };
     }
@@ -166,23 +166,43 @@ export function GlassButton({
 
   const variantStyles = getVariantStyles();
 
+  const getLoadingIndicatorColor = () => {
+    if (variant === 'primary' || variant === 'glass') {
+      return colors.textOnPrimary;
+    }
+    if (variant === 'destructive') {
+      return colors.danger;
+    }
+    return colors.text;
+  };
+
   const renderContent = () => (
     <View style={styles.contentContainer}>
-      {icon && iconPosition === 'left' && (
-        <View style={styles.iconLeft}>{icon}</View>
-      )}
-      <Text
-        style={[
-          sizeStyles.text,
-          variantStyles.text,
-          disabled && styles.disabledText,
-          textStyle,
-        ]}
-      >
-        {title}
-      </Text>
-      {icon && iconPosition === 'right' && (
-        <View style={styles.iconRight}>{icon}</View>
+      {loading ? (
+        <ActivityIndicator
+          size="small"
+          color={getLoadingIndicatorColor()}
+          accessibilityLabel="Loading"
+        />
+      ) : (
+        <>
+          {icon && iconPosition === 'left' && (
+            <View style={styles.iconLeft}>{icon}</View>
+          )}
+          <Text
+            style={[
+              sizeStyles.text,
+              variantStyles.text,
+              disabled && { color: colors.disabled },
+              textStyle,
+            ]}
+          >
+            {title}
+          </Text>
+          {icon && iconPosition === 'right' && (
+            <View style={styles.iconRight}>{icon}</View>
+          )}
+        </>
       )}
     </View>
   );
@@ -258,6 +278,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
+    borderCurve: 'continuous',
   },
   contentContainer: {
     flexDirection: 'row',
@@ -278,10 +299,10 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
   disabled: {
-    opacity: 0.5,
+    opacity: 0.6,
   },
   disabledText: {
-    opacity: 0.7,
+    // Text color handled dynamically based on theme
   },
 });
 
@@ -323,7 +344,7 @@ export function IconButton({
       default:
         return colorScheme === 'dark'
           ? 'rgba(255, 255, 255, 0.1)'
-          : 'rgba(0, 0, 0, 0.05)';
+          : 'rgba(0, 0, 0, 0.06)';
     }
   };
 

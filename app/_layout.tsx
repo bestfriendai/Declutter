@@ -1,151 +1,96 @@
 /**
- * Declutterly - Root Layout
- * Main navigation structure with authentication and tab bar
+ * Declutterly — Root Layout (Apple 2026)
+ * ThemeProvider, safe area, status bar, font loading
  */
 
-import { DeclutterProvider, useDeclutter } from '@/context/DeclutterContext';
-import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { ThemeProvider } from '@/theme/ThemeProvider';
-import { ErrorBoundary } from '@/components/ErrorBoundary';
-import { ToastProvider } from '@/components/ui/Toast';
-import { Stack, useRouter, useSegments } from 'expo-router';
+import { ConvexClientProvider } from '@/context/ConvexProvider';
+import { AuthProvider } from '@/context/AuthContext';
+import { DeclutterProvider } from '@/context/DeclutterContext';
+import { MascotProvider } from '@/context/MascotContext';
+import { FocusProvider } from '@/context/FocusContext';
+import { useFonts } from 'expo-font';
+import { Stack } from 'expo-router';
+import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
-import React, { useEffect } from 'react';
-import { useColorScheme as useRNColorScheme, ActivityIndicator, View } from 'react-native';
-import { isFirebaseConfigured } from '@/config/firebase';
+import React, { useCallback, useEffect } from 'react';
+import { useColorScheme } from '@/hooks/useColorScheme';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { Colors } from '@/constants/Colors';
+import { StyleSheet } from 'react-native';
 
-// Auth gate component - redirects based on auth state
-function AuthGate({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, isLoading, isFirebaseReady } = useAuth();
-  const { user } = useDeclutter();
-  const router = useRouter();
-  const segments = useSegments();
-
-  useEffect(() => {
-    // Skip auth redirect if Firebase is not configured (development mode)
-    if (!isFirebaseReady) return;
-
-    const inAuthGroup = segments[0] === 'auth';
-
-    if (!isLoading) {
-      if (!isAuthenticated && !inAuthGroup) {
-        // Not authenticated and not on auth screen - redirect to login
-        router.replace('/auth/login');
-      } else if (isAuthenticated && inAuthGroup) {
-        // Authenticated but on auth screen - redirect to main app
-        if (user?.onboardingComplete) {
-          router.replace('/(tabs)');
-        } else {
-          router.replace('/onboarding');
-        }
-      }
-    }
-  }, [isAuthenticated, isLoading, segments, isFirebaseReady, user?.onboardingComplete]);
-
-  if (isLoading && isFirebaseReady) {
-    return (
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#000' }}>
-        <ActivityIndicator size="large" color="#6366F1" />
-      </View>
-    );
-  }
-
-  return <>{children}</>;
-}
-
-function RootLayoutNav() {
-  const { user, settings } = useDeclutter();
-  const { isAuthenticated, isFirebaseReady } = useAuth();
-  const systemScheme = useRNColorScheme();
-
-  // Determine effective color scheme based on user preference
-  const effectiveScheme = settings.theme === 'auto'
-    ? systemScheme ?? 'dark'
-    : settings.theme;
-
-  // Skip auth checks if Firebase is not configured (development mode)
-  const needsAuth = isFirebaseReady && !isAuthenticated;
-  const needsOnboarding = !user?.onboardingComplete && (isAuthenticated || !isFirebaseReady);
-
-  return (
-    <ThemeProvider forcedColorScheme={effectiveScheme}>
-      <AuthGate>
-        <StatusBar style={effectiveScheme === 'dark' ? 'light' : 'dark'} />
-        <Stack screenOptions={{ headerShown: false }}>
-          {/* Auth screens */}
-          <Stack.Screen name="auth" options={{ headerShown: false }} />
-
-          {/* Onboarding */}
-          <Stack.Screen name="onboarding" options={{ headerShown: false }} />
-
-          {/* Main app screens */}
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-
-          <Stack.Screen
-            name="room/[id]"
-            options={{
-              presentation: 'card',
-              headerShown: false,
-            }}
-          />
-          <Stack.Screen
-            name="camera"
-            options={{
-              presentation: 'fullScreenModal',
-              headerShown: false,
-            }}
-          />
-          <Stack.Screen
-            name="analysis"
-            options={{
-              presentation: 'modal',
-              headerShown: false,
-            }}
-          />
-          <Stack.Screen
-            name="settings"
-            options={{
-              presentation: 'modal',
-              headerShown: false,
-            }}
-          />
-          <Stack.Screen
-            name="insights"
-            options={{
-              presentation: 'card',
-              headerShown: false,
-            }}
-          />
-          <Stack.Screen
-            name="focus"
-            options={{
-              presentation: 'fullScreenModal',
-              headerShown: false,
-            }}
-          />
-          <Stack.Screen
-            name="social"
-            options={{
-              presentation: 'card',
-              headerShown: false,
-            }}
-          />
-        </Stack>
-      </AuthGate>
-    </ThemeProvider>
-  );
-}
+// Keep splash screen visible while loading
+SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
+  const rawScheme = useColorScheme();
+  const colorScheme = rawScheme === 'dark' ? 'dark' : 'light';
+  const colors = Colors[colorScheme];
+  const isDark = colorScheme === 'dark';
+
+  const [loaded, error] = useFonts({
+    SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
+  });
+
+  const onLayoutReady = useCallback(async () => {
+    if (loaded || error) {
+      await SplashScreen.hideAsync();
+    }
+  }, [loaded, error]);
+
+  useEffect(() => {
+    onLayoutReady();
+  }, [onLayoutReady]);
+
+  if (!loaded && !error) return null;
+
   return (
-    <ErrorBoundary>
-      <AuthProvider>
-        <DeclutterProvider>
-          <ToastProvider>
-            <RootLayoutNav />
-          </ToastProvider>
-        </DeclutterProvider>
-      </AuthProvider>
-    </ErrorBoundary>
+    <GestureHandlerRootView style={styles.root}>
+      <SafeAreaProvider>
+        <ConvexClientProvider>
+          <ThemeProvider>
+            <AuthProvider>
+              <DeclutterProvider>
+                <MascotProvider>
+                  <FocusProvider>
+                    <StatusBar style={isDark ? 'light' : 'dark'} animated />
+                    <Stack
+                      screenOptions={{
+                        headerShown: false,
+                        contentStyle: { backgroundColor: colors.background },
+                        animation: 'ios_from_right',
+                        animationDuration: 350,
+                        gestureEnabled: true,
+                        gestureDirection: 'horizontal',
+                      }}
+                    >
+                      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+                      <Stack.Screen name="auth" options={{ headerShown: false, animation: 'fade' }} />
+                      <Stack.Screen name="onboarding" options={{ headerShown: false, animation: 'fade' }} />
+                      <Stack.Screen name="camera" options={{ headerShown: false, presentation: 'fullScreenModal' }} />
+                      <Stack.Screen name="focus" options={{ headerShown: false, presentation: 'modal' }} />
+                      <Stack.Screen name="room/[id]" options={{ headerShown: false }} />
+                      <Stack.Screen name="settings" options={{ headerShown: false }} />
+                      <Stack.Screen name="achievements" options={{ headerShown: false }} />
+                      <Stack.Screen name="insights" options={{ headerShown: false }} />
+                      <Stack.Screen name="mascot" options={{ headerShown: false, presentation: 'modal' }} />
+                      <Stack.Screen name="analysis" options={{ headerShown: false }} />
+                      <Stack.Screen name="social" options={{ headerShown: false }} />
+                      <Stack.Screen name="collection" options={{ headerShown: false }} />
+                      <Stack.Screen name="+not-found" options={{ headerShown: false }} />
+                    </Stack>
+                  </FocusProvider>
+                </MascotProvider>
+              </DeclutterProvider>
+            </AuthProvider>
+          </ThemeProvider>
+        </ConvexClientProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }
+
+const styles = StyleSheet.create({
+  root: { flex: 1 },
+});

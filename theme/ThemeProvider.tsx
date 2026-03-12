@@ -1,189 +1,188 @@
 /**
- * Declutterly - Theme Provider
- * Centralized theme management with Apple TV 2025 design system
+ * Declutterly — Apple 2026 Theme Provider
+ * Adaptive colors, elevation system, and theme context
  */
 
-import React, { createContext, useContext, useMemo, useEffect } from 'react';
-import { useColorScheme as useRNColorScheme, ColorSchemeName } from 'react-native';
-import { Colors, Shadows, RoomColors, PriorityColors, RingColors, RarityColors } from '@/constants/Colors';
-import { Typography, FontSizes, FontWeights, LineHeights } from './typography';
-import { GlassCardStyles, BlurIntensity, getGlassBackground, getGlassBorder } from './glass';
-import { setForcedColorScheme } from '@/hooks/useColorScheme';
+import { Colors, ColorTokens, Elevation, Shadows } from '@/constants/Colors';
+import { Typography } from '@/theme/typography';
+import React, { createContext, useCallback, useContext, useMemo } from 'react';
+import { Appearance, ColorSchemeName, useColorScheme } from 'react-native';
 
-// Spacing scale (strict 8px grid system)
-export const Spacing = {
-  none: 0,
-  xxs: 4,
-  xs: 8,
-  sm: 12,
-  md: 16,
-  lg: 24,
-  xl: 32,
-  xxl: 40,
-  xxxl: 48,
-  huge: 64,
-  massive: 80,
-} as const;
+// ─────────────────────────────────────────────────────────────────────────────
+// Theme Context Types
+// ─────────────────────────────────────────────────────────────────────────────
+export type ColorScheme = 'light' | 'dark';
+export type ElevationLevel = 0 | 1 | 2 | 3 | 4 | 5;
 
-// Border radius scale
-export const BorderRadius = {
-  none: 0,
-  xs: 4,
-  sm: 8,
-  md: 12,
-  lg: 16,
-  xl: 20,
-  xxl: 24,
-  xxxl: 32,
-  full: 9999,
-} as const;
-
-// Animation timing
-export const AnimationConfig = {
-  // Spring configs for Reanimated
-  spring: {
-    gentle: { damping: 20, stiffness: 180 },
-    snappy: { damping: 15, stiffness: 300 },
-    bouncy: { damping: 10, stiffness: 200 },
-    stiff: { damping: 25, stiffness: 400 },
-  },
-  // Duration configs
-  duration: {
-    instant: 100,
-    fast: 200,
-    normal: 300,
-    slow: 500,
-    slower: 700,
-  },
-  // Easing presets (for non-spring animations)
-  easing: {
-    ease: [0.25, 0.1, 0.25, 1],
-    easeIn: [0.42, 0, 1, 1],
-    easeOut: [0, 0, 0.58, 1],
-    easeInOut: [0.42, 0, 0.58, 1],
-  },
-} as const;
-
-// Theme context type
-interface ThemeContextType {
-  colorScheme: 'light' | 'dark';
+export interface ThemeContextValue {
+  colorScheme: ColorScheme;
   isDark: boolean;
-  colors: typeof Colors.light | typeof Colors.dark;
-  typography: typeof Typography;
-  spacing: typeof Spacing;
-  borderRadius: typeof BorderRadius;
+  isLight: boolean;
+  colors: ColorTokens;
+  elevation: Record<ElevationLevel, string>;
   shadows: typeof Shadows;
-  animation: typeof AnimationConfig;
-  glass: {
-    card: ReturnType<typeof GlassCardStyles.card>;
-    elevated: ReturnType<typeof GlassCardStyles.elevated>;
-    subtle: ReturnType<typeof GlassCardStyles.subtle>;
-    pill: ReturnType<typeof GlassCardStyles.pill>;
-    section: ReturnType<typeof GlassCardStyles.section>;
-    fab: ReturnType<typeof GlassCardStyles.fab>;
-    navbar: ReturnType<typeof GlassCardStyles.navbar>;
-    tabbar: ReturnType<typeof GlassCardStyles.tabbar>;
-    input: ReturnType<typeof GlassCardStyles.input>;
-    modal: ReturnType<typeof GlassCardStyles.modal>;
-  };
-  blurIntensity: typeof BlurIntensity;
-  roomColors: typeof RoomColors;
-  priorityColors: typeof PriorityColors;
-  ringColors: typeof RingColors;
-  rarityColors: typeof RarityColors;
+  typography: typeof Typography;
+
+  // Helpers
+  getElevatedColor: (level: ElevationLevel) => string;
+  getAdaptiveColor: (light: string, dark: string) => string;
+  getShadow: (level: 'none' | 'xs' | 'small' | 'medium' | 'large' | 'xl') => object;
+  getGlowShadow: (color: string, intensity?: number) => object;
+  getColoredShadow: (color: string) => object;
 }
 
-// Create context
-const ThemeContext = createContext<ThemeContextType | null>(null);
+// ─────────────────────────────────────────────────────────────────────────────
+// Context
+// ─────────────────────────────────────────────────────────────────────────────
+const ThemeContext = createContext<ThemeContextValue | null>(null);
 
-// Provider props
-interface ThemeProviderProps {
-  children: React.ReactNode;
-  forcedColorScheme?: ColorSchemeName;
-}
+// ─────────────────────────────────────────────────────────────────────────────
+// Provider
+// ─────────────────────────────────────────────────────────────────────────────
+export function ThemeProvider({ children }: { children: React.ReactNode }) {
+  const rawScheme = useColorScheme();
+  const colorScheme: ColorScheme = rawScheme === 'dark' ? 'dark' : 'light';
+  const isDark = colorScheme === 'dark';
+  const isLight = !isDark;
 
-// Theme Provider component
-export function ThemeProvider({ children, forcedColorScheme }: ThemeProviderProps) {
-  const systemColorScheme = useRNColorScheme();
-  const colorScheme = (forcedColorScheme ?? systemColorScheme ?? 'dark') as 'light' | 'dark';
+  const colors = Colors[colorScheme] as ColorTokens;
+  const elevationColors = Elevation[colorScheme] as Record<ElevationLevel, string>;
 
-  // Sync the color scheme to the global hook so all components get the right value
-  useEffect(() => {
-    setForcedColorScheme(colorScheme);
-  }, [colorScheme]);
-
-  const theme = useMemo<ThemeContextType>(() => ({
-    colorScheme,
-    isDark: colorScheme === 'dark',
-    colors: Colors[colorScheme],
-    typography: Typography,
-    spacing: Spacing,
-    borderRadius: BorderRadius,
-    shadows: Shadows,
-    animation: AnimationConfig,
-    glass: {
-      card: GlassCardStyles.card(colorScheme),
-      elevated: GlassCardStyles.elevated(colorScheme),
-      subtle: GlassCardStyles.subtle(colorScheme),
-      pill: GlassCardStyles.pill(colorScheme),
-      section: GlassCardStyles.section(colorScheme),
-      fab: GlassCardStyles.fab(colorScheme),
-      navbar: GlassCardStyles.navbar(colorScheme),
-      tabbar: GlassCardStyles.tabbar(colorScheme),
-      input: GlassCardStyles.input(colorScheme),
-      modal: GlassCardStyles.modal(colorScheme),
-    },
-    blurIntensity: BlurIntensity,
-    roomColors: RoomColors,
-    priorityColors: PriorityColors,
-    ringColors: RingColors,
-    rarityColors: RarityColors,
-  }), [colorScheme]);
-
-  return (
-    <ThemeContext.Provider value={theme}>
-      {children}
-    </ThemeContext.Provider>
+  const getElevatedColor = useCallback(
+    (level: ElevationLevel): string => elevationColors[level],
+    [elevationColors]
   );
+
+  const getAdaptiveColor = useCallback(
+    (light: string, dark: string): string => (isDark ? dark : light),
+    [isDark]
+  );
+
+  const getShadow = useCallback(
+    (level: 'none' | 'xs' | 'small' | 'medium' | 'large' | 'xl') => {
+      const shadow = Shadows[level];
+      if (isDark && level !== 'none') {
+        // Reduce shadow opacity in dark mode (shadows less visible on dark bg)
+        return {
+          ...shadow,
+          shadowOpacity: (shadow as { shadowOpacity?: number }).shadowOpacity
+            ? (shadow as { shadowOpacity: number }).shadowOpacity * 0.6
+            : 0,
+        };
+      }
+      return shadow;
+    },
+    [isDark]
+  );
+
+  const getGlowShadow = useCallback(
+    (color: string, intensity: number = 0.4) => Shadows.glow(color, intensity),
+    []
+  );
+
+  const getColoredShadow = useCallback(
+    (color: string) => Shadows.colored(color),
+    []
+  );
+
+  const value = useMemo<ThemeContextValue>(
+    () => ({
+      colorScheme,
+      isDark,
+      isLight,
+      colors,
+      elevation: elevationColors,
+      shadows: Shadows,
+      typography: Typography,
+      getElevatedColor,
+      getAdaptiveColor,
+      getShadow,
+      getGlowShadow,
+      getColoredShadow,
+    }),
+    [
+      colorScheme,
+      isDark,
+      isLight,
+      colors,
+      elevationColors,
+      getElevatedColor,
+      getAdaptiveColor,
+      getShadow,
+      getGlowShadow,
+      getColoredShadow,
+    ]
+  );
+
+  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }
 
-// Hook to use theme
-export function useTheme(): ThemeContextType {
-  const context = useContext(ThemeContext);
-  if (!context) {
-    throw new Error('useTheme must be used within a ThemeProvider');
+// ─────────────────────────────────────────────────────────────────────────────
+// Hooks
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Primary theme hook — access all theme values */
+export function useTheme(): ThemeContextValue {
+  const ctx = useContext(ThemeContext);
+  if (!ctx) {
+    // Fallback for components outside ThemeProvider
+    const scheme = Appearance.getColorScheme() ?? 'dark';
+    const colorScheme: ColorScheme = scheme === 'dark' ? 'dark' : 'light';
+    const isDark = colorScheme === 'dark';
+    return {
+      colorScheme,
+      isDark,
+      isLight: !isDark,
+      colors: Colors[colorScheme] as ColorTokens,
+      elevation: Elevation[colorScheme] as Record<ElevationLevel, string>,
+      shadows: Shadows,
+      typography: Typography,
+      getElevatedColor: (level) => Elevation[colorScheme][level] as string,
+      getAdaptiveColor: (light, dark) => (isDark ? dark : light),
+      getShadow: (level) => Shadows[level] ?? {},
+      getGlowShadow: (color, intensity) => Shadows.glow(color, intensity),
+      getColoredShadow: (color) => Shadows.colored(color),
+    };
   }
-  return context;
+  return ctx;
 }
 
-// Convenience hooks
-export function useIsDark() {
-  return useTheme().isDark;
-}
-
-export function useColors() {
+/** Shorthand hook — just colors */
+export function useColors(): ColorTokens {
   return useTheme().colors;
 }
 
-export function useTypography() {
+/** Shorthand hook — color scheme */
+export function useColorSchemeValue(): ColorScheme {
+  return useTheme().colorScheme;
+}
+
+/** Shorthand hook — isDark boolean */
+export function useIsDark(): boolean {
+  return useTheme().isDark;
+}
+
+/** Adaptive color hook — returns correct value for current scheme */
+export function useAdaptiveColor(light: string, dark: string): string {
+  const { isDark } = useTheme();
+  return isDark ? dark : light;
+}
+
+/** Elevation color hook — returns surface color at given elevation */
+export function useElevatedColor(level: ElevationLevel): string {
+  return useTheme().getElevatedColor(level);
+}
+
+/** Typography hook */
+export function useTypography(): typeof Typography {
   return useTheme().typography;
 }
 
-export function useSpacing() {
-  return useTheme().spacing;
+// ─────────────────────────────────────────────────────────────────────────────
+// Utility: Get colors without hook (for StyleSheet.create)
+// ─────────────────────────────────────────────────────────────────────────────
+export function getColors(scheme: ColorSchemeName): ColorTokens {
+  return Colors[scheme === 'dark' ? 'dark' : 'light'] as ColorTokens;
 }
-
-export function useGlass() {
-  return useTheme().glass;
-}
-
-export function useAnimation() {
-  return useTheme().animation;
-}
-
-// Export for direct imports
-export { Typography, FontSizes, FontWeights, LineHeights };
-export { Colors, Shadows, RoomColors, PriorityColors, RingColors, RarityColors };
-export { BlurIntensity, getGlassBackground, getGlassBorder, GlassCardStyles };
 
 export default ThemeProvider;

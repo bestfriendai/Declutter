@@ -3,51 +3,47 @@
  * Challenges, room sharing, and body doubling sessions
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import { GlassButton } from '@/components/ui/GlassButton';
+import { GlassCard } from '@/components/ui/GlassCard';
+import { useAuth } from '@/context/AuthContext';
 import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  TextInput,
-  Alert,
-  RefreshControl,
-  Share,
-  Modal,
-  Dimensions,
-} from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
-import { useRouter } from 'expo-router';
+    BodyDoublingSession,
+    Challenge,
+    ChallengeType,
+    SharedRoom,
+    createChallenge,
+    getActiveSessions,
+    getMyChallenges,
+    getSharedWithMe,
+    joinBodyDoublingSession,
+    joinChallenge,
+} from '@/services/social';
+import { useTheme } from '@/theme/ThemeProvider';
 import { Ionicons } from '@expo/vector-icons';
+import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useRouter } from 'expo-router';
+import React, { useCallback, useEffect, useState } from 'react';
+import {
+    Alert,
+    KeyboardAvoidingView,
+    Modal,
+    Platform,
+    Pressable,
+    RefreshControl,
+    ScrollView,
+    Share,
+    StyleSheet,
+    Text,
+    TextInput,
+    View,
+} from 'react-native';
 import Animated, {
-  FadeInDown,
-  FadeInRight,
-  SlideInRight,
+    FadeInDown,
+    SlideInRight,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useDeclutter } from '@/context/DeclutterContext';
-import { useAuth } from '@/context/AuthContext';
-import { useTheme } from '@/theme/ThemeProvider';
-import { GlassCard } from '@/components/ui/GlassCard';
-import { GlassButton } from '@/components/ui/GlassButton';
-import {
-  Challenge,
-  ChallengeType,
-  BodyDoublingSession,
-  SharedRoom,
-  getMyChallenges,
-  createChallenge,
-  joinChallenge,
-  getActiveSessions,
-  createBodyDoublingSession,
-  joinBodyDoublingSession,
-  getSharedWithMe,
-} from '@/services/social';
-
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 // Tab type
 type SocialTab = 'challenges' | 'sessions' | 'shared';
@@ -86,15 +82,15 @@ function ChallengeCard({
       await Share.share({
         message: `Join my Declutterly challenge: "${challenge.title}"! Use code: ${challenge.inviteCode}`,
       });
-    } catch (error) {
-      console.error('Share error:', error);
+    } catch {
+      // User cancelled share
     }
   };
 
   return (
     <GlassCard style={styles.challengeCard}>
       <View style={styles.challengeHeader}>
-        <View style={[styles.typeIcon, { backgroundColor: colors.primary + '20' }]}>
+        <View style={[styles.typeIcon, { backgroundColor: colors.accentMuted }]}>
           <Ionicons name={typeInfo.icon as any} size={20} color={colors.primary} />
         </View>
         <View style={styles.challengeInfo}>
@@ -105,9 +101,14 @@ function ChallengeCard({
             {challenge.description}
           </Text>
         </View>
-        <TouchableOpacity onPress={handleShare}>
+        <Pressable
+          onPress={handleShare}
+          accessibilityRole="button"
+          accessibilityLabel="Share challenge"
+          hitSlop={8}
+        >
           <Ionicons name="share-outline" size={22} color={colors.textSecondary} />
-        </TouchableOpacity>
+        </Pressable>
       </View>
 
       <View style={styles.challengeProgress}>
@@ -139,10 +140,10 @@ function ChallengeCard({
               key={p.userId}
               style={[
                 styles.avatar,
-                { backgroundColor: colors.primary, marginLeft: i > 0 ? -8 : 0 },
+                { backgroundColor: colors.primary, borderColor: colors.avatarBorder, marginLeft: i > 0 ? -8 : 0 },
               ]}
             >
-              <Text style={styles.avatarText}>
+              <Text style={[styles.avatarText, { color: colors.textOnPrimary }]}>
                 {p.displayName.charAt(0).toUpperCase()}
               </Text>
             </View>
@@ -181,7 +182,7 @@ function SessionCard({
     <GlassCard style={styles.sessionCard}>
       <View style={styles.sessionHeader}>
         <View style={[styles.liveIndicator, { backgroundColor: colors.success }]}>
-          <Text style={styles.liveText}>LIVE</Text>
+          <Text style={[styles.liveText, { color: colors.textOnSuccess }]}>LIVE</Text>
         </View>
         <Text style={[styles.sessionTitle, { color: colors.text }]}>
           {session.title}
@@ -218,7 +219,7 @@ function SessionCard({
         onPress={onJoin}
         variant="primary"
         size="small"
-        icon={<Ionicons name="enter" size={18} color="#fff" />}
+        icon={<Ionicons name="enter" size={18} color={colors.textOnPrimary} />}
         style={styles.joinButton}
       />
     </GlassCard>
@@ -269,7 +270,10 @@ function CreateChallengeModal({
 
   return (
     <Modal visible={visible} animationType="slide" transparent>
-      <View style={styles.modalOverlay}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.modalOverlay}
+      >
         <BlurView
           intensity={isDark ? 40 : 80}
           tint={isDark ? 'dark' : 'light'}
@@ -279,9 +283,18 @@ function CreateChallengeModal({
             <Text style={[styles.modalTitle, { color: colors.text }]}>
               Create Challenge
             </Text>
-            <TouchableOpacity onPress={onClose}>
+            <Pressable
+              onPress={() => {
+                Haptics.selectionAsync();
+                onClose();
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Close modal"
+              hitSlop={8}
+              style={{ minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' }}
+            >
               <Ionicons name="close" size={24} color={colors.text} />
-            </TouchableOpacity>
+            </Pressable>
           </View>
 
           <ScrollView style={styles.modalScroll}>
@@ -320,16 +333,22 @@ function CreateChallengeModal({
             </Text>
             <View style={styles.typeGrid}>
               {(Object.keys(CHALLENGE_TYPES) as ChallengeType[]).map(t => (
-                <TouchableOpacity
+                <Pressable
                   key={t}
                   style={[
                     styles.typeOption,
                     {
                       borderColor: type === t ? colors.primary : colors.border,
-                      backgroundColor: type === t ? colors.primary + '20' : 'transparent',
+                      backgroundColor: type === t ? colors.accentMuted : 'transparent',
                     },
                   ]}
-                  onPress={() => setType(t)}
+                  onPress={() => {
+                    Haptics.selectionAsync();
+                    setType(t);
+                  }}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected: type === t }}
+                  accessibilityLabel={CHALLENGE_TYPES[t].label}
                 >
                   <Ionicons
                     name={CHALLENGE_TYPES[t].icon as any}
@@ -344,7 +363,7 @@ function CreateChallengeModal({
                   >
                     {CHALLENGE_TYPES[t].label}
                   </Text>
-                </TouchableOpacity>
+                </Pressable>
               ))}
             </View>
 
@@ -392,7 +411,7 @@ function CreateChallengeModal({
             />
           </ScrollView>
         </BlurView>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -400,7 +419,7 @@ function CreateChallengeModal({
 export default function SocialScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { colors, isDark } = useTheme();
+  const { colors } = useTheme();
   const { isAuthenticated, user } = useAuth();
 
   const [activeTab, setActiveTab] = useState<SocialTab>('challenges');
@@ -423,8 +442,8 @@ export default function SocialScreen() {
       setChallenges(challengesData);
       setSessions(sessionsData);
       setSharedRooms(sharedData);
-    } catch (error) {
-      console.error('Error loading social data:', error);
+    } catch {
+      // Failed to load social data — user will see empty state
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
@@ -496,10 +515,7 @@ export default function SocialScreen() {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
         <LinearGradient
-          colors={isDark
-            ? ['#0a0a1a', '#1a1a2e', '#0f0f23']
-            : ['#f8f9ff', '#ffffff', '#f0f4ff']
-          }
+          colors={colors.backgroundGradient}
           style={StyleSheet.absoluteFill}
         />
         <View style={[styles.emptyState, { paddingTop: insets.top + 80 }]}>
@@ -521,33 +537,57 @@ export default function SocialScreen() {
     );
   }
 
+  if (isLoading) {
+    return (
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <LinearGradient
+          colors={colors.backgroundGradient}
+          style={StyleSheet.absoluteFill}
+        />
+        <View style={[styles.emptyState, { paddingTop: insets.top + 80 }]}>
+          <Ionicons name="hourglass-outline" size={48} color={colors.textTertiary} />
+          <Text style={[styles.emptyTitle, { color: colors.text }]}>
+            Loading...
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <LinearGradient
-        colors={isDark
-          ? ['#0a0a1a', '#1a1a2e', '#0f0f23']
-          : ['#f8f9ff', '#ffffff', '#f0f4ff']
-        }
+        colors={colors.backgroundGradient}
         style={StyleSheet.absoluteFill}
       />
 
       {/* Header */}
       <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
-        <TouchableOpacity
+        <Pressable
           style={styles.backButton}
-          onPress={() => router.back()}
+          onPress={() => {
+            Haptics.selectionAsync();
+            router.back();
+          }}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
         >
           <Ionicons name="chevron-back" size={24} color={colors.text} />
-        </TouchableOpacity>
+        </Pressable>
         <Text style={[styles.headerTitle, { color: colors.text }]}>
           Social
         </Text>
-        <TouchableOpacity
+        <Pressable
           style={styles.addButton}
-          onPress={() => setShowCreateModal(true)}
+          onPress={() => {
+            Haptics.selectionAsync();
+            setShowCreateModal(true);
+          }}
+          accessibilityRole="button"
+          accessibilityLabel="Create challenge"
         >
           <Ionicons name="add" size={24} color={colors.primary} />
-        </TouchableOpacity>
+        </Pressable>
       </View>
 
       {/* Join Code Input */}
@@ -565,12 +605,15 @@ export default function SocialScreen() {
             autoCapitalize="characters"
             maxLength={6}
           />
-          <TouchableOpacity
+          <Pressable
             style={[styles.joinButton, { backgroundColor: colors.primary }]}
             onPress={handleJoinWithCode}
+            accessibilityRole="button"
+            accessibilityLabel="Join with invite code"
+            accessibilityHint="Join a challenge or session using the entered code"
           >
-            <Text style={styles.joinButtonText}>Join</Text>
-          </TouchableOpacity>
+            <Text style={[styles.joinButtonText, { color: colors.textOnPrimary }]}>Join</Text>
+          </Pressable>
         </View>
       </Animated.View>
 
@@ -580,13 +623,19 @@ export default function SocialScreen() {
         style={styles.tabs}
       >
         {(['challenges', 'sessions', 'shared'] as SocialTab[]).map(tab => (
-          <TouchableOpacity
+          <Pressable
             key={tab}
             style={[
               styles.tab,
-              activeTab === tab && { backgroundColor: colors.primary + '20' },
+              activeTab === tab && { backgroundColor: colors.accentMuted },
             ]}
-            onPress={() => setActiveTab(tab)}
+            onPress={() => {
+              Haptics.selectionAsync();
+              setActiveTab(tab);
+            }}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: activeTab === tab }}
+            accessibilityLabel={`${tab.charAt(0).toUpperCase() + tab.slice(1)} tab`}
           >
             <Text
               style={[
@@ -596,7 +645,7 @@ export default function SocialScreen() {
             >
               {tab.charAt(0).toUpperCase() + tab.slice(1)}
             </Text>
-          </TouchableOpacity>
+          </Pressable>
         ))}
       </Animated.View>
 
@@ -606,6 +655,7 @@ export default function SocialScreen() {
           styles.scrollContent,
           { paddingBottom: insets.bottom + 20 },
         ]}
+        contentInsetAdjustmentBehavior="automatic"
         refreshControl={
           <RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} />
         }
@@ -653,8 +703,22 @@ export default function SocialScreen() {
                   <SessionCard
                     session={session}
                     onJoin={() => {
-                      // Navigate to session or show details
-                      Alert.alert('Join Session', `Joining "${session.title}"...`);
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                      Alert.alert(
+                        'Join Session',
+                        `Join "${session.title}" hosted by ${session.hostName}?`,
+                        [
+                          { text: 'Cancel', style: 'cancel' },
+                          { 
+                            text: 'Join', 
+                            onPress: () => {
+                              // In a real app, navigate to video/chat screen
+                              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                              Alert.alert('Joined!', 'You are now in the session (simulated).'); 
+                            } 
+                          }
+                        ]
+                      );
                     }}
                   />
                 </Animated.View>
@@ -678,19 +742,27 @@ export default function SocialScreen() {
                   key={room.id}
                   entering={SlideInRight.delay(index * 100).springify()}
                 >
-                  <GlassCard style={styles.sharedRoomCard}>
-                    <View style={styles.sharedRoomHeader}>
-                      <Text style={styles.sharedRoomEmoji}>{room.roomEmoji}</Text>
-                      <View>
-                        <Text style={[styles.sharedRoomName, { color: colors.text }]}>
-                          {room.roomName}
-                        </Text>
-                        <Text style={[styles.sharedRoomOwner, { color: colors.textSecondary }]}>
-                          Shared by {room.ownerName}
-                        </Text>
+                  <Pressable
+                    onPress={() => {
+                      Haptics.selectionAsync();
+                      router.push(`/room/${room.id}`);
+                    }}
+                    style={({ pressed }) => ({ opacity: pressed ? 0.8 : 1 })}
+                  >
+                    <GlassCard style={styles.sharedRoomCard}>
+                      <View style={styles.sharedRoomHeader}>
+                        <Text style={styles.sharedRoomEmoji}>{room.roomEmoji}</Text>
+                        <View>
+                          <Text style={[styles.sharedRoomName, { color: colors.text }]}>
+                            {room.roomName}
+                          </Text>
+                          <Text style={[styles.sharedRoomOwner, { color: colors.textSecondary }]}>
+                            Shared by {room.ownerName}
+                          </Text>
+                        </View>
                       </View>
-                    </View>
-                  </GlassCard>
+                    </GlassCard>
+                  </Pressable>
                 </Animated.View>
               ))
             )}
@@ -758,10 +830,11 @@ const styles = StyleSheet.create({
   joinButton: {
     paddingVertical: 12,
     paddingHorizontal: 20,
-    marginTop: 4,
+    borderRadius: 0,
+    borderTopRightRadius: 11,
+    borderBottomRightRadius: 11,
   },
   joinButtonText: {
-    color: '#fff',
     fontWeight: '600',
   },
   tabs: {
@@ -850,10 +923,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2,
-    borderColor: '#000',
   },
   avatarText: {
-    color: '#fff',
     fontWeight: '600',
     fontSize: 12,
   },
@@ -888,7 +959,6 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   liveText: {
-    color: '#fff',
     fontSize: 10,
     fontWeight: '700',
   },

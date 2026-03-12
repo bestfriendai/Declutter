@@ -48,10 +48,17 @@ interface ToastProps {
 }
 
 const TOAST_ICONS: Record<ToastType, string> = {
-  success: '',
-  error: '',
-  warning: '',
-  info: '',
+  success: '✓',
+  error: '✗',
+  warning: '⚠',
+  info: 'ℹ',
+};
+
+const TOAST_ICON_ACCESSIBILITY_LABELS: Record<ToastType, string> = {
+  success: 'Success',
+  error: 'Error',
+  warning: 'Warning',
+  info: 'Information',
 };
 
 export function Toast({
@@ -68,7 +75,10 @@ export function Toast({
   const colors = Colors[colorScheme];
   const insets = useSafeAreaInsets();
   const reducedMotion = useReducedMotion();
-  
+
+  // Track if toast should render (separate from animation state)
+  const [shouldRender, setShouldRender] = useState(false);
+
   const translateY = useSharedValue(position === 'top' ? -100 : 100);
   const opacity = useSharedValue(0);
 
@@ -93,9 +103,12 @@ export function Toast({
 
   useEffect(() => {
     if (visible) {
+      // Show toast
+      setShouldRender(true);
+
       // Haptic feedback on show
       Haptics.notificationAsync(
-        type === 'error' 
+        type === 'error'
           ? Haptics.NotificationFeedbackType.Error
           : type === 'success'
           ? Haptics.NotificationFeedbackType.Success
@@ -132,6 +145,11 @@ export function Toast({
           { duration: 200 }
         );
       }
+      // Hide toast after animation completes
+      const hideTimer = setTimeout(() => {
+        setShouldRender(false);
+      }, 250);
+      return () => clearTimeout(hideTimer);
     }
   }, [visible, duration, reducedMotion, position]);
 
@@ -158,7 +176,8 @@ export function Toast({
 
   const typeColor = getTypeColor();
 
-  if (!visible && opacity.value === 0) {
+  // Don't render if not visible and animation is complete
+  if (!shouldRender) {
     return null;
   }
 
@@ -197,7 +216,13 @@ export function Toast({
           ]}
         />
         <View style={styles.content}>
-          <Text style={styles.icon}>{getTypeIcon()}</Text>
+          <Text
+            style={[styles.icon, { color: typeColor }]}
+            accessibilityLabel={TOAST_ICON_ACCESSIBILITY_LABELS[type]}
+            accessibilityRole="image"
+          >
+            {getTypeIcon()}
+          </Text>
           <Text
             style={[
               Typography.subheadline,

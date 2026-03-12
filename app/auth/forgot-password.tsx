@@ -1,32 +1,36 @@
 /**
- * Forgot Password Screen
- * Send password reset email
+ * Declutterly — Forgot Password Screen (Apple 2026)
+ * Password reset flow with success state and resend cooldown
  */
 
-import React, { useState, useCallback } from 'react';
+import { GlassButton } from '@/components/ui/GlassButton';
+import { useAuth } from '@/context/AuthContext';
+import { useTheme } from '@/theme/ThemeProvider';
+import { Typography } from '@/theme/typography';
+import { Spacing, BorderRadius } from '@/theme/spacing';
+import { Ionicons } from '@expo/vector-icons';
+import { BlurView } from 'expo-blur';
+import * as Haptics from 'expo-haptics';
+import { LinearGradient } from 'expo-linear-gradient';
+import { StatusBar } from 'expo-status-bar';
+import { useRouter } from 'expo-router';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
-  ActivityIndicator,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
-import { useRouter } from 'expo-router';
-import * as Haptics from 'expo-haptics';
-import { Ionicons } from '@expo/vector-icons';
 import Animated, {
   FadeInDown,
   FadeInUp,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useAuth } from '@/context/AuthContext';
-import { useTheme } from '@/theme/ThemeProvider';
-import { GlassButton } from '@/components/ui/GlassButton';
 
 export default function ForgotPasswordScreen() {
   const router = useRouter();
@@ -38,14 +42,25 @@ export default function ForgotPasswordScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
+
+  // Resend cooldown timer
+  useEffect(() => {
+    if (resendCooldown > 0) {
+      const timer = setTimeout(() => setResendCooldown(resendCooldown - 1), 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [resendCooldown]);
 
   const handleResetPassword = useCallback(async () => {
     if (!email.trim()) {
       setError('Please enter your email');
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
       return;
     }
     if (!email.includes('@')) {
       setError('Please enter a valid email');
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
       return;
     }
 
@@ -59,20 +74,26 @@ export default function ForgotPasswordScreen() {
     if (result.success) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setSuccess(true);
+      setResendCooldown(60);
     } else {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       setError(result.error || 'Failed to send reset email');
     }
   }, [email, resetPassword]);
 
+  const handleBack = useCallback(() => {
+    Haptics.selectionAsync();
+    router.back();
+  }, [router]);
+
   if (success) {
     return (
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <View style={[styles.container, { backgroundColor: colors.background }]} accessibilityLabel="Password reset email sent">
+        <StatusBar style={isDark ? 'light' : 'dark'} />
         <LinearGradient
           colors={isDark
-            ? ['#1a1a2e', '#16213e', '#0f0f23']
-            : ['#f8f9ff', '#e8ecff', '#f0f4ff']
-          }
+            ? ['#000000', '#0A0A0F', '#0D0D1A']
+            : ['#F2F2F7', '#E8E8F0', '#FFFFFF']}
           style={StyleSheet.absoluteFill}
         />
 
@@ -81,21 +102,59 @@ export default function ForgotPasswordScreen() {
             entering={FadeInDown.springify()}
             style={styles.successContainer}
           >
-            <View style={[styles.successIcon, { backgroundColor: colors.success + '20' }]}>
+            <View style={[styles.successIcon, { backgroundColor: colors.successMuted }]}>
               <Ionicons name="mail-open" size={48} color={colors.success} />
             </View>
-            <Text style={[styles.successTitle, { color: colors.text }]}>
+            <Text
+              style={[Typography.title1, styles.successTitle, { color: colors.text }]}
+              accessibilityRole="header"
+            >
               Check Your Email
             </Text>
-            <Text style={[styles.successText, { color: colors.textSecondary }]}>
-              We've sent password reset instructions to{'\n'}
-              <Text style={{ fontWeight: '600', color: colors.text }}>{email}</Text>
+            <Text style={[Typography.body, styles.successText, { color: colors.textSecondary }]}>
+              {"We've sent password reset instructions to\n"}
+              <Text style={[Typography.bodyMedium, { color: colors.text }]}>{email}</Text>
             </Text>
+
+            {/* Spam folder hint */}
+            <View style={[styles.hintContainer, { backgroundColor: colors.accentMuted }]}>
+              <Ionicons name="information-circle-outline" size={18} color={colors.accent} />
+              <Text style={[Typography.footnote, styles.hintText, { color: colors.textSecondary }]}>
+                {"Can't find it? Check your spam folder"}
+              </Text>
+            </View>
+
+            {/* Resend button with timer */}
+            <Pressable
+              style={[styles.resendButton, resendCooldown > 0 && styles.resendButtonDisabled]}
+              onPress={() => {
+                if (resendCooldown === 0) {
+                  setSuccess(false);
+                  handleResetPassword();
+                }
+              }}
+              disabled={resendCooldown > 0}
+              accessibilityRole="button"
+              accessibilityLabel={resendCooldown > 0 ? `Resend in ${resendCooldown} seconds` : 'Resend email'}
+              accessibilityState={{ disabled: resendCooldown > 0 }}
+            >
+              <Text style={[
+                Typography.calloutMedium,
+                { color: resendCooldown > 0 ? colors.textSecondary : colors.accent, textAlign: 'center' },
+              ]}>
+                {resendCooldown > 0
+                  ? `Resend in ${resendCooldown}s`
+                  : 'Resend Email'}
+              </Text>
+            </Pressable>
+
             <GlassButton
               title="Back to Sign In"
               onPress={() => router.replace('/auth/login')}
               style={styles.backButton}
               variant="secondary"
+              fullWidth
+              accessibilityLabel="Back to sign in"
             />
           </Animated.View>
         </View>
@@ -104,28 +163,40 @@ export default function ForgotPasswordScreen() {
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <LinearGradient
-        colors={isDark
-          ? ['#1a1a2e', '#16213e', '#0f0f23']
-          : ['#f8f9ff', '#e8ecff', '#f0f4ff']
-        }
-        style={StyleSheet.absoluteFill}
-      />
+    <View style={[styles.container, { backgroundColor: colors.background }]} accessibilityLabel="Forgot password screen">
+      <StatusBar style={isDark ? 'light' : 'dark'} />
+      <Pressable style={styles.dismissKeyboard} onPress={Keyboard.dismiss} accessibilityElementsHidden>
+        <LinearGradient
+          colors={isDark
+            ? ['#000000', '#0A0A0F', '#0D0D1A']
+            : ['#F2F2F7', '#E8E8F0', '#FFFFFF']}
+          style={StyleSheet.absoluteFill}
+        />
+      </Pressable>
 
       <KeyboardAvoidingView
         style={styles.keyboardView}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
-        <View style={[styles.content, { paddingTop: insets.top + 20 }]}>
+        <ScrollView
+          contentContainerStyle={[
+            styles.scrollContent,
+            { paddingTop: insets.top + Spacing.ml, paddingBottom: insets.bottom + Spacing.ml },
+          ]}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
           {/* Back Button */}
           <Animated.View entering={FadeInDown.delay(50).springify()}>
-            <TouchableOpacity
+            <Pressable
               style={styles.headerBackButton}
-              onPress={() => router.back()}
+              onPress={handleBack}
+              accessibilityRole="button"
+              accessibilityLabel="Go back"
+              hitSlop={8}
             >
               <Ionicons name="arrow-back" size={24} color={colors.text} />
-            </TouchableOpacity>
+            </Pressable>
           </Animated.View>
 
           {/* Header */}
@@ -133,14 +204,17 @@ export default function ForgotPasswordScreen() {
             entering={FadeInDown.delay(100).springify()}
             style={styles.header}
           >
-            <View style={[styles.iconContainer, { backgroundColor: colors.primary + '20' }]}>
-              <Ionicons name="key" size={40} color={colors.primary} />
+            <View style={[styles.iconContainer, { backgroundColor: colors.accentMuted }]}>
+              <Ionicons name="key" size={40} color={colors.accent} />
             </View>
-            <Text style={[styles.title, { color: colors.text }]}>
+            <Text
+              style={[Typography.title1, styles.title, { color: colors.text }]}
+              accessibilityRole="header"
+            >
               Forgot Password?
             </Text>
-            <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-              No worries! Enter your email and we'll send you instructions to reset your password.
+            <Text style={[Typography.callout, styles.subtitle, { color: colors.textSecondary }]}>
+              {"No worries! Enter your email and we'll send you instructions to reset your password."}
             </Text>
           </Animated.View>
 
@@ -153,15 +227,23 @@ export default function ForgotPasswordScreen() {
             {error && (
               <Animated.View
                 entering={FadeInDown.springify()}
-                style={[styles.errorContainer, { backgroundColor: colors.error + '20' }]}
+                style={[styles.errorContainer, { backgroundColor: colors.errorMuted }]}
+                accessibilityRole="alert"
+                accessibilityLiveRegion="assertive"
               >
                 <Ionicons name="alert-circle" size={20} color={colors.error} />
-                <Text style={[styles.errorText, { color: colors.error }]}>
+                <Text style={[Typography.footnote, styles.errorText, { color: colors.error }]}>
                   {error}
                 </Text>
-                <TouchableOpacity onPress={() => setError(null)}>
+                <Pressable
+                  onPress={() => setError(null)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Dismiss error"
+                  hitSlop={8}
+                  style={styles.errorDismiss}
+                >
                   <Ionicons name="close" size={20} color={colors.error} />
-                </TouchableOpacity>
+                </Pressable>
               </Animated.View>
             )}
 
@@ -176,9 +258,10 @@ export default function ForgotPasswordScreen() {
                 size={20}
                 color={colors.textSecondary}
                 style={styles.inputIcon}
+                accessibilityElementsHidden
               />
               <TextInput
-                style={[styles.input, { color: colors.text }]}
+                style={[styles.input, Typography.callout, { color: colors.text }]}
                 placeholder="Enter your email"
                 placeholderTextColor={colors.textTertiary}
                 value={email}
@@ -186,8 +269,11 @@ export default function ForgotPasswordScreen() {
                 autoCapitalize="none"
                 keyboardType="email-address"
                 autoComplete="email"
+                textContentType="emailAddress"
                 returnKeyType="done"
                 onSubmitEditing={handleResetPassword}
+                accessibilityLabel="Email address"
+                accessibilityHint="Enter the email address associated with your account"
               />
             </BlurView>
 
@@ -196,14 +282,15 @@ export default function ForgotPasswordScreen() {
               title={isLoading ? 'Sending...' : 'Send Reset Link'}
               onPress={handleResetPassword}
               disabled={isLoading}
+              loading={isLoading}
               style={styles.resetButton}
               variant="primary"
               size="large"
-              icon={isLoading ? (
-                <ActivityIndicator size="small" color="#fff" />
-              ) : (
-                <Ionicons name="send" size={20} color="#fff" />
-              )}
+              fullWidth
+              icon={!isLoading ? (
+                <Ionicons name="send" size={20} color={colors.textOnPrimary} />
+              ) : undefined}
+              accessibilityLabel="Send password reset link"
             />
           </Animated.View>
 
@@ -212,17 +299,20 @@ export default function ForgotPasswordScreen() {
             entering={FadeInUp.delay(300).springify()}
             style={styles.footer}
           >
-            <TouchableOpacity
+            <Pressable
               style={styles.backToLoginButton}
-              onPress={() => router.back()}
+              onPress={handleBack}
+              accessibilityRole="link"
+              accessibilityLabel="Back to sign in"
+              hitSlop={8}
             >
-              <Ionicons name="arrow-back" size={16} color={colors.primary} />
-              <Text style={[styles.backToLoginText, { color: colors.primary }]}>
+              <Ionicons name="arrow-back" size={16} color={colors.accent} />
+              <Text style={[Typography.calloutMedium, { color: colors.accent }]}>
                 Back to Sign In
               </Text>
-            </TouchableOpacity>
+            </Pressable>
           </Animated.View>
-        </View>
+        </ScrollView>
       </KeyboardAvoidingView>
     </View>
   );
@@ -232,112 +322,138 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  dismissKeyboard: {
+    ...StyleSheet.absoluteFillObject,
+  },
   keyboardView: {
     flex: 1,
   },
   content: {
     flex: 1,
-    paddingHorizontal: 24,
+    paddingHorizontal: Spacing.lg,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    paddingHorizontal: Spacing.lg,
   },
   headerBackButton: {
     width: 44,
     height: 44,
-    borderRadius: 22,
+    borderRadius: BorderRadius.full,
     alignItems: 'center',
     justifyContent: 'center',
   },
   header: {
     alignItems: 'center',
-    marginTop: 32,
-    marginBottom: 40,
+    marginTop: Spacing.xl,
+    marginBottom: Spacing.xxl,
   },
   iconContainer: {
     width: 80,
     height: 80,
-    borderRadius: 40,
+    borderRadius: BorderRadius.full,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 20,
+    marginBottom: Spacing.ml,
   },
   title: {
-    fontSize: 28,
-    fontWeight: '700',
-    marginBottom: 12,
+    marginBottom: Spacing.sm,
+    textAlign: 'center',
   },
   subtitle: {
-    fontSize: 16,
     textAlign: 'center',
     lineHeight: 24,
-    paddingHorizontal: 20,
+    paddingHorizontal: Spacing.ml,
   },
   form: {
-    gap: 16,
+    gap: Spacing.md,
   },
   errorContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 12,
-    borderRadius: 12,
-    gap: 8,
+    padding: Spacing.sm,
+    borderRadius: BorderRadius.input,
+    gap: Spacing.xs,
   },
   errorText: {
     flex: 1,
-    fontSize: 14,
+  },
+  errorDismiss: {
+    minHeight: 44,
+    minWidth: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 16,
+    borderRadius: BorderRadius.lg,
     borderWidth: 1,
     overflow: 'hidden',
+    minHeight: 52,
   },
   inputIcon: {
-    paddingLeft: 16,
+    paddingLeft: Spacing.md,
   },
   input: {
     flex: 1,
-    paddingVertical: 16,
-    paddingHorizontal: 12,
-    fontSize: 16,
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.sm,
   },
   resetButton: {
-    marginTop: 8,
+    marginTop: Spacing.xs,
   },
   footer: {
     alignItems: 'center',
-    marginTop: 32,
+    marginTop: Spacing.xl,
   },
   backToLoginButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-  },
-  backToLoginText: {
-    fontSize: 16,
-    fontWeight: '600',
+    gap: Spacing.xxs + 2,
+    minHeight: 44,
   },
   successContainer: {
     alignItems: 'center',
-    paddingHorizontal: 20,
+    paddingHorizontal: Spacing.ml,
   },
   successIcon: {
     width: 100,
     height: 100,
-    borderRadius: 50,
+    borderRadius: BorderRadius.full,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 24,
+    marginBottom: Spacing.lg,
   },
   successTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    marginBottom: 16,
+    marginBottom: Spacing.md,
+    textAlign: 'center',
   },
   successText: {
-    fontSize: 16,
     textAlign: 'center',
     lineHeight: 24,
-    marginBottom: 32,
+    marginBottom: Spacing.md,
+  },
+  hintContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: Spacing.xs + 2,
+    paddingHorizontal: Spacing.sm + 2,
+    borderRadius: BorderRadius.sm + 2,
+    marginBottom: Spacing.md,
+    gap: Spacing.xs,
+  },
+  hintText: {
+    flex: 1,
+  },
+  resendButton: {
+    paddingVertical: Spacing.sm,
+    marginBottom: Spacing.ml,
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  resendButtonDisabled: {
+    opacity: 0.6,
   },
   backButton: {
     minWidth: 200,

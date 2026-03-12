@@ -3,33 +3,33 @@
  * Detailed cleaning statistics, trends, and progress visualization
  */
 
-import React, { useMemo, useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  Dimensions,
-} from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
-import { useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
-import * as Haptics from 'expo-haptics';
-import Animated, {
-  FadeInDown,
-  FadeInRight,
-  useAnimatedStyle,
-  useSharedValue,
-  withSpring,
-} from 'react-native-reanimated';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { GlassCard } from '@/components/ui/GlassCard';
+import { InsightsScreenSkeleton } from '@/components/ui/Skeleton';
 import { useDeclutter } from '@/context/DeclutterContext';
 import { useTheme } from '@/theme/ThemeProvider';
-import { GlassCard } from '@/components/ui/GlassCard';
-import { ModernCard } from '@/components/ui/ModernCard';
+import { Typography } from '@/theme/typography';
+import { Spacing, BorderRadius } from '@/theme/spacing';
 import { RARITY_COLORS } from '@/types/declutter';
+import { Ionicons } from '@expo/vector-icons';
+import { BlurView } from 'expo-blur';
+import * as Haptics from 'expo-haptics';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useRouter } from 'expo-router';
+import React, { useCallback, useMemo, useState } from 'react';
+import {
+    Dimensions,
+    RefreshControl,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
+} from 'react-native';
+import Animated, {
+    FadeInDown,
+    FadeInRight,
+} from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -50,7 +50,7 @@ function ChartBar({
   color: string;
   delay: number;
 }) {
-  const { colors, isDark } = useTheme();
+  const { colors } = useTheme();
   const height = maxValue > 0 ? (value / maxValue) * 100 : 0;
 
   return (
@@ -149,9 +149,6 @@ function ProgressRing({
   label: string;
 }) {
   const { colors } = useTheme();
-  const radius = (size - strokeWidth) / 2;
-  const circumference = radius * 2 * Math.PI;
-  const strokeDashoffset = circumference - (progress / 100) * circumference;
 
   return (
     <View style={styles.progressRingContainer}>
@@ -197,10 +194,31 @@ function ProgressRing({
 export default function InsightsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { colors, isDark } = useTheme();
-  const { stats, rooms, collection, collectionStats } = useDeclutter();
+  const { colors } = useTheme();
+  const { stats, rooms, collectionStats } = useDeclutter();
 
   const [timePeriod, setTimePeriod] = useState<TimePeriod>('week');
+  const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // Simulate initial loading
+  React.useEffect(() => {
+    const timer = setTimeout(() => setIsLoading(false), 800);
+    return () => clearTimeout(timer);
+  }, []);
+
+  // Pull to refresh handler
+  const onRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    // In a real app, this would re-fetch data from the backend
+    // For now, we just simulate a network request duration
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    setIsRefreshing(false);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  }, []);
+
+  // Check if user has any data
+  const hasData = stats.totalTasksCompleted > 0 || rooms.length > 0;
 
   // Calculate insights
   const insights = useMemo(() => {
@@ -225,18 +243,29 @@ export default function InsightsScreen() {
       (a, b) => b.completed - a.completed
     )[0];
 
-    // Weekly activity (simulated - in production this would come from Firestore)
+    // Weekly activity (derived from room history if available, otherwise 0)
     const weeklyData = [
-      { day: 'Mon', tasks: Math.floor(Math.random() * 5) + 1 },
-      { day: 'Tue', tasks: Math.floor(Math.random() * 5) + 1 },
-      { day: 'Wed', tasks: Math.floor(Math.random() * 5) + 2 },
-      { day: 'Thu', tasks: Math.floor(Math.random() * 5) + 1 },
-      { day: 'Fri', tasks: Math.floor(Math.random() * 5) + 2 },
-      { day: 'Sat', tasks: Math.floor(Math.random() * 8) + 3 },
-      { day: 'Sun', tasks: Math.floor(Math.random() * 6) + 2 },
+      { day: 'Mon', tasks: 0 },
+      { day: 'Tue', tasks: 0 },
+      { day: 'Wed', tasks: 0 },
+      { day: 'Thu', tasks: 0 },
+      { day: 'Fri', tasks: 0 },
+      { day: 'Sat', tasks: 0 },
+      { day: 'Sun', tasks: 0 },
     ];
 
-    const maxWeeklyTasks = Math.max(...weeklyData.map(d => d.tasks));
+    // In a real app, we would aggregate actual task completion dates here
+    // For now, we'll show 0s if no data, or a flat distribution of total tasks if we have them
+    if (stats.totalTasksCompleted > 0) {
+      const baseTasks = Math.floor(stats.totalTasksCompleted / 7);
+      const remainder = stats.totalTasksCompleted % 7;
+      
+      weeklyData.forEach((day, index) => {
+        day.tasks = baseTasks + (index < remainder ? 1 : 0);
+      });
+    }
+
+    const maxWeeklyTasks = Math.max(...weeklyData.map(d => d.tasks), 5); // Minimum scale of 5
 
     // Average time per session
     const avgTimePerSession = stats.totalTasksCompleted > 0
@@ -261,10 +290,7 @@ export default function InsightsScreen() {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <LinearGradient
-        colors={isDark
-          ? ['#0a0a1a', '#1a1a2e', '#0f0f23']
-          : ['#f8f9ff', '#ffffff', '#f0f4ff']
-        }
+        colors={colors.backgroundGradient}
         style={StyleSheet.absoluteFill}
       />
 
@@ -290,12 +316,85 @@ export default function InsightsScreen() {
           styles.scrollContent,
           { paddingBottom: insets.bottom + 20 },
         ]}
+        contentInsetAdjustmentBehavior="automatic"
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.primary}
+            colors={[colors.primary]}
+          />
+        }
       >
+        {/* Loading State */}
+        {isLoading ? (
+          <InsightsScreenSkeleton />
+        ) : !hasData ? (
+          /* Empty State for New Users */
+          <Animated.View
+            entering={FadeInDown.delay(100).springify()}
+            style={styles.emptyStateContainer}
+          >
+            <GlassCard style={styles.emptyStateCard}>
+              <View style={styles.emptyStateIcon}>
+                <Text style={styles.emptyStateEmoji}>📊</Text>
+              </View>
+              <Text style={[styles.emptyStateTitle, { color: colors.text }]}>
+                No Insights Yet
+              </Text>
+              <Text style={[styles.emptyStateSubtitle, { color: colors.textSecondary }]}>
+                Complete tasks and build your streak to unlock detailed analytics
+              </Text>
+              <TouchableOpacity
+                style={[styles.emptyStateButton, { backgroundColor: colors.primary }]}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                  router.push('/(tabs)');
+                }}
+              >
+                <Text style={[styles.emptyStateButtonText, { color: colors.textOnPrimary }]}>Start Decluttering</Text>
+              </TouchableOpacity>
+            </GlassCard>
+
+            {/* Tips for getting started */}
+            <GlassCard style={styles.tipsCard}>
+              <View style={styles.tipsHeader}>
+                <Ionicons name="bulb" size={24} color="#F59E0B" />
+                <Text style={[styles.sectionTitle, { color: colors.text, marginLeft: 8 }]}>
+                  Get Started
+                </Text>
+              </View>
+              <View style={styles.tipsList}>
+                <View style={styles.tipItem}>
+                  <Ionicons name="camera-outline" size={16} color={colors.primary} />
+                  <Text style={[styles.tipText, { color: colors.textSecondary }]}>
+                    Scan a room to get AI-powered cleaning suggestions
+                  </Text>
+                </View>
+                <View style={styles.tipItem}>
+                  <Ionicons name="checkmark-circle-outline" size={16} color={colors.success} />
+                  <Text style={[styles.tipText, { color: colors.textSecondary }]}>
+                    Complete tasks to track your progress here
+                  </Text>
+                </View>
+                <View style={styles.tipItem}>
+                  <Ionicons name="flame-outline" size={16} color={colors.warning} />
+                  <Text style={[styles.tipText, { color: colors.textSecondary }]}>
+                    Build a streak by decluttering daily
+                  </Text>
+                </View>
+              </View>
+            </GlassCard>
+          </Animated.View>
+        ) : (
+          /* Main Insights Content */
+          <>
         {/* Time Period Selector */}
         <Animated.View
           entering={FadeInDown.delay(100).springify()}
           style={styles.periodSelector}
+          accessibilityRole="tablist"
         >
           {(['week', 'month', 'year', 'all'] as TimePeriod[]).map((period) => (
             <TouchableOpacity
@@ -310,11 +409,14 @@ export default function InsightsScreen() {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 setTimePeriod(period);
               }}
+              accessibilityRole="tab"
+              accessibilityLabel={`View ${period === 'all' ? 'all time' : `this ${period}`} insights`}
+              accessibilityState={{ selected: timePeriod === period }}
             >
               <Text
                 style={[
                   styles.periodText,
-                  { color: timePeriod === period ? '#fff' : colors.textSecondary },
+                  { color: timePeriod === period ? colors.textOnPrimary : colors.textSecondary },
                 ]}
               >
                 {period.charAt(0).toUpperCase() + period.slice(1)}
@@ -372,7 +474,13 @@ export default function InsightsScreen() {
                 </Text>
               </View>
             </View>
-            <View style={styles.chartBars}>
+            {/* Accessible data table for screen readers */}
+            <View 
+              accessibilityRole="summary"
+              accessibilityLabel={`Weekly activity summary: ${insights.weeklyData.map(d => `${d.day} ${d.tasks} tasks`).join(', ')}`}
+              style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden' }}
+            />
+            <View style={styles.chartBars} accessibilityElementsHidden={true}>
               {insights.weeklyData.map((day, index) => (
                 <ChartBar
                   key={day.day}
@@ -389,11 +497,14 @@ export default function InsightsScreen() {
 
         {/* Progress Rings */}
         <Animated.View entering={FadeInDown.delay(500).springify()}>
-          <GlassCard style={styles.progressCard}>
+          <GlassCard 
+            style={styles.progressCard}
+            accessibilityLabel={`Overall progress: Task completion ${Math.round(insights.taskCompletionRate)}%, Streak goal ${Math.min(stats.currentStreak * 10, 100)}%, Collection ${Math.round(insights.collectionProgress)}%`}
+          >
             <Text style={[styles.sectionTitle, { color: colors.text }]}>
               Overall Progress
             </Text>
-            <View style={styles.progressRings}>
+            <View style={styles.progressRings} accessibilityElementsHidden={true}>
               <ProgressRing
                 progress={insights.taskCompletionRate}
                 size={80}
@@ -588,6 +699,8 @@ export default function InsightsScreen() {
             </View>
           </GlassCard>
         </Animated.View>
+        </>
+        )}
       </ScrollView>
     </View>
   );
@@ -604,16 +717,15 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
   },
   backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
   },
   headerTitle: {
     flex: 1,
-    fontSize: 20,
-    fontWeight: '700',
+    ...Typography.title3,
     textAlign: 'center',
   },
   headerSpacer: {
@@ -630,13 +742,14 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   periodButton: {
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 20,
+    paddingVertical: Spacing.xs,
+    paddingHorizontal: Spacing.md,
+    borderRadius: BorderRadius.chip,
+    minHeight: 44,
+    justifyContent: 'center',
   },
   periodText: {
-    fontSize: 14,
-    fontWeight: '600',
+    ...Typography.subheadlineMedium,
   },
   statsGrid: {
     flexDirection: 'row',
@@ -661,12 +774,11 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   statValue: {
-    fontSize: 24,
-    fontWeight: '700',
+    ...Typography.title1,
   },
   statLabel: {
-    fontSize: 12,
-    marginTop: 2,
+    ...Typography.caption1,
+    marginTop: Spacing.hairline,
   },
   changeContainer: {
     flexDirection: 'row',
@@ -688,8 +800,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   chartTitle: {
-    fontSize: 16,
-    fontWeight: '600',
+    ...Typography.headline,
   },
   chartLegend: {
     flexDirection: 'row',
@@ -739,9 +850,8 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   sectionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 16,
+    ...Typography.headline,
+    marginBottom: Spacing.md,
   },
   progressRings: {
     flexDirection: 'row',
@@ -782,8 +892,7 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   roomName: {
-    fontSize: 14,
-    fontWeight: '500',
+    ...Typography.subheadlineMedium,
   },
   roomProgress: {
     flex: 1,
@@ -856,5 +965,45 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 13,
     lineHeight: 18,
+  },
+  emptyStateContainer: {
+    gap: 16,
+  },
+  emptyStateCard: {
+    padding: 32,
+    alignItems: 'center',
+  },
+  emptyStateIcon: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: 'rgba(99, 102, 241, 0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+  },
+  emptyStateEmoji: {
+    fontSize: 36,
+  },
+  emptyStateTitle: {
+    ...Typography.title2,
+    marginBottom: Spacing.xs,
+    textAlign: 'center',
+  },
+  emptyStateSubtitle: {
+    ...Typography.body,
+    textAlign: 'center',
+    marginBottom: Spacing.lg,
+  },
+  emptyStateButton: {
+    paddingVertical: 14,
+    paddingHorizontal: Spacing.lg,
+    borderRadius: BorderRadius.lg,
+    minHeight: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  emptyStateButtonText: {
+    ...Typography.buttonMedium,
   },
 });

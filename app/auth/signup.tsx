@@ -1,108 +1,99 @@
 /**
- * Signup Screen
- * Create new account with email/password
+ * Declutterly — Signup Screen (Apple 2026)
+ * Full-bleed gradient, glass form card, password strength, animated entry
  */
 
-import React, { useState, useCallback } from 'react';
+import { Colors } from '@/constants/Colors';
+import { useColorScheme } from '@/hooks/useColorScheme';
+import { Typography } from '@/theme/typography';
+import { Spacing, BorderRadius } from '@/theme/spacing';
+import { PasswordStrengthBar } from '@/components/ui/PasswordRequirements';
+import { LinearGradient } from 'expo-linear-gradient';
+import { router } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
+import * as Haptics from 'expo-haptics';
+import React, { useCallback, useRef, useState } from 'react';
 import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
+  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  Pressable,
   ScrollView,
-  ActivityIndicator,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
-import { useRouter, Link } from 'expo-router';
-import * as Haptics from 'expo-haptics';
-import { Ionicons } from '@expo/vector-icons';
-import Animated, {
-  FadeInDown,
-  FadeInUp,
-} from 'react-native-reanimated';
+import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { BlurView } from 'expo-blur';
 import { useAuth } from '@/context/AuthContext';
-import { useTheme } from '@/theme/ThemeProvider';
-import { GlassButton } from '@/components/ui/GlassButton';
 
 export default function SignupScreen() {
-  const router = useRouter();
+  const rawScheme = useColorScheme();
+  const colorScheme = rawScheme === 'dark' ? 'dark' : 'light';
+  const colors = Colors[colorScheme];
+  const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
-  const { colors, isDark } = useTheme();
-  const { signUp, signInWithApple, isLoading, clearError } = useAuth();
+
+  const { signUp } = useAuth();
 
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [localError, setLocalError] = useState<string | null>(null);
 
-  const validateForm = useCallback(() => {
+  const emailRef = useRef<TextInput>(null);
+  const passwordRef = useRef<TextInput>(null);
+
+  const handleSignup = useCallback(async () => {
     if (!name.trim()) {
-      setLocalError('Please enter your name');
-      return false;
+      setError('Please enter your name.');
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      return;
     }
     if (!email.trim()) {
-      setLocalError('Please enter your email');
-      return false;
-    }
-    if (!email.includes('@')) {
-      setLocalError('Please enter a valid email');
-      return false;
+      setError('Please enter your email.');
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      return;
     }
     if (password.length < 6) {
-      setLocalError('Password must be at least 6 characters');
-      return false;
+      setError('Password must be at least 6 characters.');
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      return;
     }
-    if (password !== confirmPassword) {
-      setLocalError('Passwords do not match');
-      return false;
-    }
-    return true;
-  }, [name, email, password, confirmPassword]);
 
-  const handleSignUp = useCallback(async () => {
-    if (!validateForm()) return;
-
-    setLocalError(null);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-
-    const result = await signUp(email.trim(), password, name.trim());
-
-    if (result.success) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      router.replace('/onboarding');
-    } else {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      setLocalError(result.error || 'Sign up failed');
-    }
-  }, [validateForm, email, password, name, signUp, router]);
-
-  const handleAppleSignIn = useCallback(async () => {
+    setError('');
+    setLoading(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
-    const result = await signInWithApple();
-
-    if (result.success) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    try {
+      await signUp(email.trim(), password, name.trim());
       router.replace('/onboarding');
-    } else if (result.error !== 'Sign-in cancelled') {
-      setLocalError(result.error || 'Apple sign in failed');
+    } catch (e: any) {
+      setError(e?.message ?? 'Sign up failed. Please try again.');
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    } finally {
+      setLoading(false);
     }
-  }, [signInWithApple, router]);
+  }, [name, email, password, signUp]);
+
+  const togglePassword = useCallback(() => {
+    Haptics.selectionAsync();
+    setShowPassword(v => !v);
+  }, []);
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <View style={styles.container} accessibilityLabel="Create account screen">
+      <StatusBar style={isDark ? 'light' : 'dark'} />
+
+      {/* Background gradient */}
       <LinearGradient
         colors={isDark
-          ? ['#1a1a2e', '#16213e', '#0f0f23']
-          : ['#f8f9ff', '#e8ecff', '#f0f4ff']
-        }
+          ? ['#000000', '#0A0A0F', '#0D0D1A']
+          : ['#F2F2F7', '#E8E8F0', '#FFFFFF']}
         style={StyleSheet.absoluteFill}
       />
 
@@ -113,240 +104,216 @@ export default function SignupScreen() {
         <ScrollView
           contentContainerStyle={[
             styles.scrollContent,
-            { paddingTop: insets.top + 20, paddingBottom: insets.bottom + 20 },
+            { paddingTop: insets.top + Spacing.xxl, paddingBottom: insets.bottom + Spacing.xxl },
           ]}
           keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
         >
-          {/* Back Button */}
-          <Animated.View entering={FadeInDown.delay(50).springify()}>
-            <TouchableOpacity
-              style={styles.backButton}
-              onPress={() => router.back()}
+          {/* ── Brand ────────────────────────────────────────────────── */}
+          <Animated.View entering={FadeInDown.delay(0).springify()} style={styles.brandSection}>
+            <View style={[styles.logoContainer, {
+              backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+              borderColor: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)',
+            }]}>
+              <Text style={styles.logoEmoji} accessibilityElementsHidden>{'🧹'}</Text>
+            </View>
+            <Text
+              style={[Typography.displaySmall, { color: colors.text, marginTop: Spacing.md }]}
+              accessibilityRole="header"
             >
-              <Ionicons name="arrow-back" size={24} color={colors.text} />
-            </TouchableOpacity>
-          </Animated.View>
-
-          {/* Header */}
-          <Animated.View
-            entering={FadeInDown.delay(100).springify()}
-            style={styles.header}
-          >
-            <Text style={[styles.logo, { color: colors.primary }]}>🌟</Text>
-            <Text style={[styles.title, { color: colors.text }]}>
-              Create Account
+              Create account
             </Text>
-            <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
+            <Text style={[Typography.subheadline, { color: colors.textSecondary, marginTop: Spacing.xxs + 2 }]}>
               Start your decluttering journey
             </Text>
           </Animated.View>
 
-          {/* Form */}
-          <Animated.View
-            entering={FadeInDown.delay(200).springify()}
-            style={styles.form}
-          >
-            {/* Error */}
-            {localError && (
-              <Animated.View
-                entering={FadeInDown.springify()}
-                style={[styles.errorContainer, { backgroundColor: colors.error + '20' }]}
-              >
-                <Ionicons name="alert-circle" size={20} color={colors.error} />
-                <Text style={[styles.errorText, { color: colors.error }]}>
-                  {localError}
+          {/* ── Form Card ────────────────────────────────────────────── */}
+          <Animated.View entering={FadeInDown.delay(80).springify()} style={styles.formSection}>
+            <View style={[styles.formCard, {
+              backgroundColor: isDark ? 'rgba(28,28,30,0.85)' : 'rgba(255,255,255,0.90)',
+              borderColor: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.06)',
+            }]}>
+              <BlurView
+                intensity={isDark ? 60 : 40}
+                tint={isDark ? 'dark' : 'light'}
+                style={StyleSheet.absoluteFill}
+              />
+
+              {/* Name */}
+              <View style={styles.inputGroup}>
+                <Text style={[Typography.footnoteMedium, styles.inputLabel, { color: colors.textSecondary }]}>
+                  Name
                 </Text>
-                <TouchableOpacity onPress={() => setLocalError(null)}>
-                  <Ionicons name="close" size={20} color={colors.error} />
-                </TouchableOpacity>
-              </Animated.View>
-            )}
+                <View style={[styles.inputContainer, {
+                  backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+                  borderColor: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.08)',
+                }]}>
+                  <Text style={styles.inputIcon} accessibilityElementsHidden>{'👤'}</Text>
+                  <TextInput
+                    style={[styles.input, Typography.callout, { color: colors.text }]}
+                    placeholder="Your name"
+                    placeholderTextColor={colors.textTertiary}
+                    value={name}
+                    onChangeText={setName}
+                    autoCapitalize="words"
+                    autoComplete="name"
+                    textContentType="name"
+                    returnKeyType="next"
+                    onSubmitEditing={() => emailRef.current?.focus()}
+                    accessibilityLabel="Your name"
+                    accessibilityHint="Enter your full name"
+                  />
+                </View>
+              </View>
 
-            {/* Name Input */}
-            <BlurView
-              intensity={isDark ? 20 : 40}
-              tint={isDark ? 'dark' : 'light'}
-              style={[styles.inputContainer, { borderColor: colors.border }]}
-            >
-              <Ionicons
-                name="person-outline"
-                size={20}
-                color={colors.textSecondary}
-                style={styles.inputIcon}
-              />
-              <TextInput
-                style={[styles.input, { color: colors.text }]}
-                placeholder="Your name"
-                placeholderTextColor={colors.textTertiary}
-                value={name}
-                onChangeText={setName}
-                autoCapitalize="words"
-                autoComplete="name"
-                returnKeyType="next"
-              />
-            </BlurView>
+              <View style={[styles.inputDivider, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)' }]} />
 
-            {/* Email Input */}
-            <BlurView
-              intensity={isDark ? 20 : 40}
-              tint={isDark ? 'dark' : 'light'}
-              style={[styles.inputContainer, { borderColor: colors.border }]}
-            >
-              <Ionicons
-                name="mail-outline"
-                size={20}
-                color={colors.textSecondary}
-                style={styles.inputIcon}
-              />
-              <TextInput
-                style={[styles.input, { color: colors.text }]}
-                placeholder="Email"
-                placeholderTextColor={colors.textTertiary}
-                value={email}
-                onChangeText={setEmail}
-                autoCapitalize="none"
-                keyboardType="email-address"
-                autoComplete="email"
-                returnKeyType="next"
-              />
-            </BlurView>
+              {/* Email */}
+              <View style={styles.inputGroup}>
+                <Text style={[Typography.footnoteMedium, styles.inputLabel, { color: colors.textSecondary }]}>
+                  Email
+                </Text>
+                <View style={[styles.inputContainer, {
+                  backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+                  borderColor: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.08)',
+                }]}>
+                  <Text style={styles.inputIcon} accessibilityElementsHidden>{'✉️'}</Text>
+                  <TextInput
+                    ref={emailRef}
+                    style={[styles.input, Typography.callout, { color: colors.text }]}
+                    placeholder="you@example.com"
+                    placeholderTextColor={colors.textTertiary}
+                    value={email}
+                    onChangeText={setEmail}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    autoComplete="email"
+                    textContentType="emailAddress"
+                    returnKeyType="next"
+                    onSubmitEditing={() => passwordRef.current?.focus()}
+                    accessibilityLabel="Email address"
+                  />
+                </View>
+              </View>
 
-            {/* Password Input */}
-            <BlurView
-              intensity={isDark ? 20 : 40}
-              tint={isDark ? 'dark' : 'light'}
-              style={[styles.inputContainer, { borderColor: colors.border }]}
+              <View style={[styles.inputDivider, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)' }]} />
+
+              {/* Password */}
+              <View style={styles.inputGroup}>
+                <Text style={[Typography.footnoteMedium, styles.inputLabel, { color: colors.textSecondary }]}>
+                  Password
+                </Text>
+                <View style={[styles.inputContainer, {
+                  backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+                  borderColor: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.08)',
+                }]}>
+                  <Text style={styles.inputIcon} accessibilityElementsHidden>{'🔒'}</Text>
+                  <TextInput
+                    ref={passwordRef}
+                    style={[styles.input, Typography.callout, { color: colors.text }]}
+                    placeholder="Min. 6 characters"
+                    placeholderTextColor={colors.textTertiary}
+                    value={password}
+                    onChangeText={setPassword}
+                    secureTextEntry={!showPassword}
+                    autoComplete="new-password"
+                    textContentType="newPassword"
+                    returnKeyType="done"
+                    onSubmitEditing={handleSignup}
+                    accessibilityLabel="Password"
+                  />
+                  <Pressable
+                    onPress={togglePassword}
+                    accessibilityRole="button"
+                    accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
+                    hitSlop={12}
+                    style={styles.showPasswordButton}
+                  >
+                    <Text style={[Typography.calloutMedium, { color: colors.accent }]}>
+                      {showPassword ? 'Hide' : 'Show'}
+                    </Text>
+                  </Pressable>
+                </View>
+
+                {/* Password Strength Indicator */}
+                <PasswordStrengthBar password={password} />
+              </View>
+            </View>
+          </Animated.View>
+
+          {/* ── Error ────────────────────────────────────────────────── */}
+          {error ? (
+            <Animated.View
+              entering={FadeInDown.springify()}
+              style={[styles.errorBanner, {
+                backgroundColor: colors.errorMuted,
+                borderColor: colors.error,
+              }]}
+              accessibilityRole="alert"
+              accessibilityLiveRegion="assertive"
             >
-              <Ionicons
-                name="lock-closed-outline"
-                size={20}
-                color={colors.textSecondary}
-                style={styles.inputIcon}
-              />
-              <TextInput
-                style={[styles.input, { color: colors.text }]}
-                placeholder="Password (min 6 characters)"
-                placeholderTextColor={colors.textTertiary}
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry={!showPassword}
-                autoCapitalize="none"
-                returnKeyType="next"
-              />
-              <TouchableOpacity
-                onPress={() => setShowPassword(!showPassword)}
-                style={styles.eyeButton}
+              <Text style={[Typography.footnote, { color: colors.error }]}>{error}</Text>
+            </Animated.View>
+          ) : null}
+
+          {/* ── CTA ──────────────────────────────────────────────────── */}
+          <Animated.View entering={FadeInDown.delay(160).springify()} style={styles.ctaSection}>
+            <Pressable
+              onPress={handleSignup}
+              disabled={loading}
+              accessibilityRole="button"
+              accessibilityLabel="Create account"
+              accessibilityState={{ disabled: loading, busy: loading }}
+              style={({ pressed }) => ({
+                opacity: loading ? 0.7 : pressed ? 0.85 : 1,
+              })}
+            >
+              <LinearGradient
+                colors={[...colors.gradientAccent]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.signUpButton}
               >
-                <Ionicons
-                  name={showPassword ? 'eye-outline' : 'eye-off-outline'}
-                  size={20}
-                  color={colors.textSecondary}
-                />
-              </TouchableOpacity>
-            </BlurView>
-
-            {/* Confirm Password Input */}
-            <BlurView
-              intensity={isDark ? 20 : 40}
-              tint={isDark ? 'dark' : 'light'}
-              style={[styles.inputContainer, { borderColor: colors.border }]}
-            >
-              <Ionicons
-                name="shield-checkmark-outline"
-                size={20}
-                color={colors.textSecondary}
-                style={styles.inputIcon}
-              />
-              <TextInput
-                style={[styles.input, { color: colors.text }]}
-                placeholder="Confirm password"
-                placeholderTextColor={colors.textTertiary}
-                value={confirmPassword}
-                onChangeText={setConfirmPassword}
-                secureTextEntry={!showPassword}
-                autoCapitalize="none"
-                returnKeyType="done"
-                onSubmitEditing={handleSignUp}
-              />
-            </BlurView>
-
-            {/* Sign Up Button */}
-            <GlassButton
-              title={isLoading ? 'Creating account...' : 'Create Account'}
-              onPress={handleSignUp}
-              disabled={isLoading}
-              style={styles.signUpButton}
-              variant="primary"
-              size="large"
-              icon={isLoading ? (
-                <ActivityIndicator size="small" color="#fff" />
-              ) : undefined}
-            />
+                {loading ? (
+                  <ActivityIndicator color="#FFFFFF" accessibilityLabel="Creating account" />
+                ) : (
+                  <Text style={[Typography.headline, { color: '#FFFFFF' }]}>
+                    Create Account
+                  </Text>
+                )}
+              </LinearGradient>
+            </Pressable>
 
             {/* Terms */}
-            <Text style={[styles.terms, { color: colors.textTertiary }]}>
-              By signing up, you agree to our{' '}
-              <Text style={{ color: colors.primary }}>Terms of Service</Text>
-              {' '}and{' '}
-              <Text style={{ color: colors.primary }}>Privacy Policy</Text>
+            <Text style={[Typography.caption1, { color: colors.textSecondary, textAlign: 'center', lineHeight: 18 }]}>
+              {'By signing up, you agree to our '}
+              <Text style={{ color: colors.accent }}>Terms</Text>
+              {' and '}
+              <Text style={{ color: colors.accent }}>Privacy Policy</Text>
             </Text>
-          </Animated.View>
 
-          {/* Divider */}
-          <Animated.View
-            entering={FadeInDown.delay(300).springify()}
-            style={styles.divider}
-          >
-            <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
-            <Text style={[styles.dividerText, { color: colors.textSecondary }]}>
-              or
-            </Text>
-            <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
-          </Animated.View>
-
-          {/* Apple Sign In */}
-          {Platform.OS === 'ios' && (
-            <Animated.View entering={FadeInDown.delay(400).springify()}>
-              <TouchableOpacity
-                style={[
-                  styles.appleButton,
-                  { backgroundColor: isDark ? '#fff' : '#000' },
-                ]}
-                onPress={handleAppleSignIn}
-                disabled={isLoading}
+            {/* Sign In Link */}
+            <View style={styles.signInRow}>
+              <Text style={[Typography.subheadline, { color: colors.textSecondary }]}>
+                {'Already have an account? '}
+              </Text>
+              <Pressable
+                onPress={() => {
+                  Haptics.selectionAsync();
+                  router.push('/auth/login');
+                }}
+                accessibilityRole="link"
+                accessibilityLabel="Sign in to existing account"
+                hitSlop={8}
+                style={styles.signInLink}
               >
-                <Ionicons
-                  name="logo-apple"
-                  size={24}
-                  color={isDark ? '#000' : '#fff'}
-                />
-                <Text
-                  style={[
-                    styles.appleButtonText,
-                    { color: isDark ? '#000' : '#fff' },
-                  ]}
-                >
-                  Sign up with Apple
-                </Text>
-              </TouchableOpacity>
-            </Animated.View>
-          )}
-
-          {/* Sign In Link */}
-          <Animated.View
-            entering={FadeInUp.delay(500).springify()}
-            style={styles.footer}
-          >
-            <Text style={[styles.footerText, { color: colors.textSecondary }]}>
-              Already have an account?{' '}
-            </Text>
-            <Link href="/auth/login" asChild>
-              <TouchableOpacity>
-                <Text style={[styles.footerLink, { color: colors.primary }]}>
+                <Text style={[Typography.subheadlineMedium, { color: colors.accent }]}>
                   Sign In
                 </Text>
-              </TouchableOpacity>
-            </Link>
+              </Pressable>
+            </View>
           </Animated.View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -355,117 +322,88 @@ export default function SignupScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  keyboardView: {
-    flex: 1,
-  },
+  container: { flex: 1 },
+  keyboardView: { flex: 1 },
   scrollContent: {
+    paddingHorizontal: Spacing.lg,
     flexGrow: 1,
-    paddingHorizontal: 24,
-  },
-  backButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: 'center',
     justifyContent: 'center',
   },
-  header: {
+
+  brandSection: {
     alignItems: 'center',
-    marginBottom: 32,
-    marginTop: 8,
+    marginBottom: Spacing.xl,
   },
-  logo: {
-    fontSize: 56,
-    marginBottom: 12,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: '700',
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: 16,
-    textAlign: 'center',
-  },
-  form: {
-    gap: 14,
-  },
-  errorContainer: {
-    flexDirection: 'row',
+  logoContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: BorderRadius.xxl,
     alignItems: 'center',
-    padding: 12,
-    borderRadius: 12,
-    gap: 8,
+    justifyContent: 'center',
+    borderWidth: 1,
   },
-  errorText: {
-    flex: 1,
-    fontSize: 14,
+  logoEmoji: { fontSize: 40 },
+
+  formSection: { marginBottom: Spacing.md },
+  formCard: {
+    borderRadius: BorderRadius.card,
+    borderWidth: 0.5,
+    overflow: 'hidden',
+    padding: Spacing.ml,
+    gap: Spacing.md,
+  },
+  inputGroup: { gap: Spacing.xs },
+  inputLabel: {
+    marginLeft: Spacing.xxs,
   },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 16,
-    borderWidth: 1,
-    overflow: 'hidden',
+    borderRadius: BorderRadius.input,
+    borderWidth: 0.5,
+    paddingHorizontal: Spacing.sm + 2,
+    minHeight: 48,
+    gap: Spacing.xs + 2,
   },
-  inputIcon: {
-    paddingLeft: 16,
-  },
+  inputIcon: { fontSize: 16 },
   input: {
     flex: 1,
-    paddingVertical: 16,
-    paddingHorizontal: 12,
-    fontSize: 16,
+    paddingVertical: Spacing.sm,
   },
-  eyeButton: {
-    padding: 12,
+  showPasswordButton: {
+    minHeight: 44,
+    minWidth: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
+  inputDivider: {
+    height: StyleSheet.hairlineWidth,
+    marginHorizontal: -Spacing.ml,
+  },
+
+  errorBanner: {
+    borderRadius: BorderRadius.input,
+    borderWidth: 0.5,
+    padding: Spacing.sm,
+    marginBottom: Spacing.md,
+  },
+
+  ctaSection: { gap: Spacing.md },
   signUpButton: {
-    marginTop: 8,
-  },
-  terms: {
-    fontSize: 12,
-    textAlign: 'center',
-    lineHeight: 18,
-  },
-  divider: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginVertical: 24,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-  },
-  dividerText: {
-    paddingHorizontal: 16,
-    fontSize: 14,
-  },
-  appleButton: {
-    flexDirection: 'row',
+    borderRadius: BorderRadius.lg,
+    paddingVertical: Spacing.md,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 16,
-    borderRadius: 16,
-    gap: 12,
+    minHeight: 56,
   },
-  appleButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  footer: {
+  signInRow: {
     flexDirection: 'row',
     justifyContent: 'center',
-    marginTop: 24,
+    alignItems: 'center',
+    minHeight: 44,
   },
-  footerText: {
-    fontSize: 16,
-  },
-  footerLink: {
-    fontSize: 16,
-    fontWeight: '600',
+  signInLink: {
+    minHeight: 44,
+    justifyContent: 'center',
   },
 });

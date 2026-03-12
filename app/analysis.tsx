@@ -3,58 +3,123 @@
  * Cinematic AI analysis with Apple TV style results reveal
  */
 
-import React, { useEffect, useState, useRef, useMemo } from 'react';
+import { BlurView } from 'expo-blur';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Haptics from 'expo-haptics';
+import { Image } from 'expo-image';
+import { LinearGradient } from 'expo-linear-gradient';
+import { router, useLocalSearchParams } from 'expo-router';
+import React, { useEffect, useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  Pressable,
-  useColorScheme,
-  Dimensions,
+    Pressable,
+    ScrollView,
+    StyleSheet,
+    Text,
+    View,
+    useColorScheme,
 } from 'react-native';
 import Animated, {
-  FadeIn,
-  FadeInDown,
-  FadeInUp,
-  FadeInRight,
-  FadeOut,
-  SlideInUp,
-  SlideOutDown,
-  ZoomIn,
-  useSharedValue,
-  useAnimatedStyle,
-  withSpring,
-  withTiming,
-  withSequence,
-  withDelay,
-  withRepeat,
-  Easing,
-  interpolate,
-  runOnJS,
-  cancelAnimation,
+    Easing,
+    FadeIn,
+    FadeInDown,
+    FadeInRight,
+    FadeInUp,
+    SlideInUp,
+    ZoomIn,
+    cancelAnimation,
+    interpolate,
+    useAnimatedStyle,
+    useSharedValue,
+    withRepeat,
+    withSequence,
+    withTiming,
 } from 'react-native-reanimated';
-import { BlurView } from 'expo-blur';
-import { LinearGradient } from 'expo-linear-gradient';
-import { Image } from 'expo-image';
-import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import * as FileSystem from 'expo-file-system';
-import * as Haptics from 'expo-haptics';
 
-import { Colors, PriorityColors } from '@/constants/Colors';
-import { Typography } from '@/theme/typography';
-import { useDeclutter } from '@/context/DeclutterContext';
-import { analyzeRoomImage, analyzeProgress, getMotivation } from '@/services/gemini';
-import { AIAnalysisResult, CleaningTask } from '@/types/declutter';
-import { GlassCard } from '@/components/ui/GlassCard';
+import { ScreenErrorBoundary } from '@/components/ErrorBoundary';
 import { SingleRing } from '@/components/ui/ActivityRings';
+import { Confetti } from '@/components/ui/Confetti';
+import { GlassCard } from '@/components/ui/GlassCard';
+import { Colors, PriorityColors } from '@/constants/Colors';
+import { useDeclutter } from '@/context/DeclutterContext';
 import { useCardPress } from '@/hooks/useAnimatedPress';
+import { analyzeProgress, analyzeRoomImage, getMotivation } from '@/services/ai';
+import { Typography } from '@/theme/typography';
+import { Spacing, BorderRadius } from '@/theme/spacing';
+import { AIAnalysisResult, CleaningTask, MASCOT_PERSONALITIES, RoomType, Zone } from '@/types/declutter';
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+// Fallback task templates when AI is unavailable
+type FallbackTask = {
+  title: string;
+  description: string;
+  emoji: string;
+  priority: 'high' | 'medium' | 'low';
+  difficulty: 'quick' | 'medium' | 'challenging';
+  estimatedMinutes: number;
+};
+
+const FALLBACK_TASKS: Record<RoomType, FallbackTask[]> = {
+  bedroom: [
+    { title: 'Make the bed', description: 'Straighten sheets and arrange pillows', emoji: '🛏️', priority: 'high', difficulty: 'quick', estimatedMinutes: 3 },
+    { title: 'Pick up clothes from floor', description: 'Gather clothes and put in hamper or closet', emoji: '👕', priority: 'high', difficulty: 'quick', estimatedMinutes: 5 },
+    { title: 'Clear nightstand clutter', description: 'Organize items on nightstand', emoji: '🪴', priority: 'medium', difficulty: 'quick', estimatedMinutes: 5 },
+    { title: 'Put away clean laundry', description: 'Fold and store clean clothes', emoji: '🧺', priority: 'medium', difficulty: 'medium', estimatedMinutes: 10 },
+    { title: 'Dust surfaces', description: 'Wipe down dresser and nightstands', emoji: '✨', priority: 'low', difficulty: 'quick', estimatedMinutes: 8 },
+  ],
+  kitchen: [
+    { title: 'Wash dishes in sink', description: 'Clean and dry dishes', emoji: '🍽️', priority: 'high', difficulty: 'medium', estimatedMinutes: 10 },
+    { title: 'Wipe down counters', description: 'Clean all counter surfaces', emoji: '🧽', priority: 'high', difficulty: 'quick', estimatedMinutes: 5 },
+    { title: 'Put away items on counter', description: 'Store loose items in cabinets', emoji: '📦', priority: 'medium', difficulty: 'quick', estimatedMinutes: 8 },
+    { title: 'Take out trash', description: 'Empty trash and recycling bins', emoji: '🗑️', priority: 'medium', difficulty: 'quick', estimatedMinutes: 3 },
+    { title: 'Organize one cabinet or drawer', description: 'Sort and arrange items', emoji: '🗄️', priority: 'low', difficulty: 'medium', estimatedMinutes: 15 },
+  ],
+  bathroom: [
+    { title: 'Wipe down sink and counter', description: 'Clean sink and counter area', emoji: '🚰', priority: 'high', difficulty: 'quick', estimatedMinutes: 5 },
+    { title: 'Put away toiletries', description: 'Organize personal care items', emoji: '🧴', priority: 'medium', difficulty: 'quick', estimatedMinutes: 5 },
+    { title: 'Clean mirror', description: 'Wipe mirror until streak-free', emoji: '🪞', priority: 'medium', difficulty: 'quick', estimatedMinutes: 3 },
+    { title: 'Empty trash', description: 'Take out bathroom trash', emoji: '🗑️', priority: 'low', difficulty: 'quick', estimatedMinutes: 2 },
+    { title: 'Organize under-sink cabinet', description: 'Sort items under sink', emoji: '📦', priority: 'low', difficulty: 'medium', estimatedMinutes: 10 },
+  ],
+  livingRoom: [
+    { title: 'Pick up items from floor', description: 'Clear floor of clutter', emoji: '🧹', priority: 'high', difficulty: 'quick', estimatedMinutes: 5 },
+    { title: 'Fluff and arrange pillows', description: 'Tidy up couch cushions', emoji: '🛋️', priority: 'medium', difficulty: 'quick', estimatedMinutes: 3 },
+    { title: 'Clear coffee table', description: 'Remove items and wipe surface', emoji: '☕', priority: 'medium', difficulty: 'quick', estimatedMinutes: 5 },
+    { title: 'Organize remote controls', description: 'Gather and store remotes', emoji: '📺', priority: 'low', difficulty: 'quick', estimatedMinutes: 3 },
+    { title: 'Put away books and magazines', description: 'Shelve or recycle reading material', emoji: '📚', priority: 'low', difficulty: 'quick', estimatedMinutes: 8 },
+  ],
+  office: [
+    { title: 'Clear desk surface', description: 'Remove items and organize', emoji: '🖥️', priority: 'high', difficulty: 'medium', estimatedMinutes: 10 },
+    { title: 'Organize papers and files', description: 'Sort and file documents', emoji: '📄', priority: 'high', difficulty: 'medium', estimatedMinutes: 15 },
+    { title: 'Untangle and organize cables', description: 'Bundle and route cables neatly', emoji: '🔌', priority: 'medium', difficulty: 'medium', estimatedMinutes: 10 },
+    { title: 'Empty trash/recycling', description: 'Clear waste bins', emoji: '🗑️', priority: 'medium', difficulty: 'quick', estimatedMinutes: 3 },
+    { title: 'Dust monitor and keyboard', description: 'Clean electronics', emoji: '💻', priority: 'low', difficulty: 'quick', estimatedMinutes: 5 },
+  ],
+  garage: [
+    { title: 'Clear walkway', description: 'Remove obstacles from path', emoji: '🚗', priority: 'high', difficulty: 'medium', estimatedMinutes: 10 },
+    { title: 'Return tools to storage', description: 'Put tools back in place', emoji: '🔧', priority: 'medium', difficulty: 'medium', estimatedMinutes: 15 },
+    { title: 'Organize one shelf or bin', description: 'Sort items on one shelf', emoji: '📦', priority: 'medium', difficulty: 'medium', estimatedMinutes: 20 },
+    { title: 'Sweep floor', description: 'Clean garage floor', emoji: '🧹', priority: 'low', difficulty: 'medium', estimatedMinutes: 10 },
+    { title: 'Take recycling out', description: 'Move recyclables to bin', emoji: '♻️', priority: 'low', difficulty: 'quick', estimatedMinutes: 5 },
+  ],
+  closet: [
+    { title: 'Pick up items from floor', description: 'Clear closet floor', emoji: '👟', priority: 'high', difficulty: 'quick', estimatedMinutes: 5 },
+    { title: 'Hang up loose clothes', description: 'Put clothes on hangers', emoji: '👔', priority: 'high', difficulty: 'quick', estimatedMinutes: 10 },
+    { title: 'Fold and organize one shelf', description: 'Tidy one shelf area', emoji: '👕', priority: 'medium', difficulty: 'quick', estimatedMinutes: 10 },
+    { title: 'Match and pair shoes', description: 'Organize footwear', emoji: '👠', priority: 'medium', difficulty: 'quick', estimatedMinutes: 8 },
+    { title: 'Donate pile - bag up 5 items', description: 'Select items to donate', emoji: '🎁', priority: 'low', difficulty: 'quick', estimatedMinutes: 10 },
+  ],
+  other: [
+    { title: 'Pick up items from floor', description: 'Clear floor space', emoji: '🧹', priority: 'high', difficulty: 'quick', estimatedMinutes: 5 },
+    { title: 'Clear main surfaces', description: 'Declutter tables and counters', emoji: '✨', priority: 'high', difficulty: 'quick', estimatedMinutes: 8 },
+    { title: 'Put items in their homes', description: 'Return items to proper places', emoji: '🏠', priority: 'medium', difficulty: 'quick', estimatedMinutes: 10 },
+    { title: 'Wipe down surfaces', description: 'Clean all surfaces', emoji: '🧽', priority: 'medium', difficulty: 'quick', estimatedMinutes: 8 },
+    { title: 'Quick organization pass', description: 'General tidying', emoji: '📋', priority: 'low', difficulty: 'quick', estimatedMinutes: 10 },
+  ],
+};
+
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
-export default function AnalysisScreen() {
+function AnalysisScreenContent() {
   const colorScheme = useColorScheme() ?? 'dark';
   const colors = Colors[colorScheme];
   const insets = useSafeAreaInsets();
@@ -71,6 +136,7 @@ export default function AnalysisScreen() {
     setAnalyzing,
     analysisError,
     setAnalysisError,
+    mascot,
   } = useDeclutter();
 
   const [result, setResult] = useState<AIAnalysisResult | null>(null);
@@ -82,7 +148,10 @@ export default function AnalysisScreen() {
   } | null>(null);
   const [motivation, setMotivation] = useState<string>('');
   const [loadingStage, setLoadingStage] = useState(0);
-  const [showResults, setShowResults] = useState(false);
+  // Results are shown when 'result' state is populated and celebration is done
+  const [showCelebration, setShowCelebration] = useState(false);
+  const [loadingProgress, setLoadingProgress] = useState(0);
+  const [retryCount, setRetryCount] = useState(0);
 
   const room = rooms.find(r => r.id === roomId);
 
@@ -135,14 +204,27 @@ export default function AnalysisScreen() {
         );
       }, 2500);
 
+      // Animate progress percentage
+      const progressInterval = setInterval(() => {
+        setLoadingProgress(prev => {
+          // Progress more slowly as we approach completion
+          if (prev < 60) return prev + Math.random() * 8 + 2;
+          if (prev < 85) return prev + Math.random() * 4 + 1;
+          if (prev < 95) return prev + Math.random() * 2 + 0.5;
+          return Math.min(prev + 0.3, 98); // Cap at 98% until actual completion
+        });
+      }, 400);
+
       return () => {
         clearInterval(stageInterval);
+        clearInterval(progressInterval);
         cancelAnimation(scanProgress);
         cancelAnimation(pulseScale);
         cancelAnimation(glowOpacity);
         scanProgress.value = 0;
         pulseScale.value = 1;
         glowOpacity.value = 0.3;
+        setLoadingProgress(0);
       };
     }
   }, [isAnalyzing, scanProgress, pulseScale, glowOpacity]);
@@ -153,7 +235,9 @@ export default function AnalysisScreen() {
     } else if (imageUri) {
       runAnalysis();
     }
-  }, [roomId, imageUri, mode]);
+    // Note: room is included to catch photo count changes for compare mode
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roomId, imageUri, mode, room?.photos.length]);
 
   const scanLineStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: interpolate(scanProgress.value, [0, 1], [0, 300]) }],
@@ -197,11 +281,14 @@ export default function AnalysisScreen() {
       );
       setMotivation(motivationalMessage);
 
-      // Show results with animation delay
+      // Show celebration phase first, then results
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setShowCelebration(true);
+
+      // Transition to results after celebration
       setTimeout(() => {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        setShowResults(true);
-      }, 500);
+        setShowCelebration(false);
+      }, 2500);
     } catch (error) {
       console.error('Analysis error:', error);
       setAnalysisError(
@@ -258,11 +345,65 @@ export default function AnalysisScreen() {
 
   const handleRetry = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setRetryCount(prev => prev + 1);
+    setAnalysisError(null);
     if (mode === 'compare') {
       runProgressAnalysis();
     } else {
       runAnalysis();
     }
+  };
+
+  // Use fallback tasks when AI fails
+  const handleUseFallbackTasks = async () => {
+    if (!room) return;
+    
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    
+    const roomType = room.type || 'other';
+    const fallbackTemplates = FALLBACK_TASKS[roomType] || FALLBACK_TASKS.other;
+    
+    // Generate tasks from templates
+    const tasks: CleaningTask[] = fallbackTemplates.map((template, index) => ({
+      id: `fallback-${Date.now()}-${index}`,
+      title: template.title,
+      description: template.description,
+      emoji: template.emoji,
+      priority: template.priority,
+      difficulty: template.difficulty,
+      estimatedMinutes: template.estimatedMinutes,
+      completed: false,
+    }));
+    
+    // Update room with fallback tasks
+    await setTasksForRoom(roomId, tasks);
+    
+    // Update room with fallback data
+    if (imageUri && room) {
+      updateRoom(roomId, {
+        currentProgress: 0,
+        lastAnalyzedAt: new Date(),
+      });
+    }
+    
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    router.replace(`/room/${roomId}`);
+  };
+
+  const getErrorDetails = (error: string) => {
+    if (error.includes('API key') || error.includes('configuration')) {
+      return { emoji: '🔑', hint: 'Check your API key in Settings' };
+    }
+    if (error.includes('network') || error.includes('connection') || error.includes('internet')) {
+      return { emoji: '📡', hint: 'Check your internet connection' };
+    }
+    if (error.includes('rate limit') || error.includes('Too many')) {
+      return { emoji: '⏱️', hint: 'Wait a moment before trying again' };
+    }
+    if (error.includes('timeout')) {
+      return { emoji: '⏳', hint: 'The request took too long. Try again.' };
+    }
+    return { emoji: '😕', hint: null };
   };
 
   // Cinematic Loading State
@@ -340,6 +481,28 @@ export default function AnalysisScreen() {
               {currentStage.subtitle}
             </Text>
 
+            {/* Progress percentage */}
+            <View style={styles.progressPercentContainer}>
+              <Text style={styles.progressPercentText}>
+                {Math.round(loadingProgress)}%
+              </Text>
+              <View style={styles.progressBarBg}>
+                <Animated.View
+                  style={[
+                    styles.progressBarFill,
+                    { width: `${Math.min(loadingProgress, 100)}%` },
+                  ]}
+                >
+                  <LinearGradient
+                    colors={['#A78BFA', '#818CF8', '#6366F1']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={StyleSheet.absoluteFill}
+                  />
+                </Animated.View>
+              </View>
+            </View>
+
             {/* Progress indicators */}
             <View style={styles.stageIndicators}>
               {loadingStages.map((_, index) => (
@@ -364,6 +527,23 @@ export default function AnalysisScreen() {
                 💡 The more visible your room, the better the analysis!
               </Text>
             </View>
+
+            {/* Time estimate */}
+            <Text style={[Typography.caption2, { color: 'rgba(255,255,255,0.5)', marginTop: 12, textAlign: 'center' }]}>
+              Usually takes about 30 seconds
+            </Text>
+
+            {/* Mascot encouragement */}
+            {mascot && (
+              <View style={styles.mascotEncouragement}>
+                <Text style={styles.mascotLoadingEmoji}>
+                  {MASCOT_PERSONALITIES[mascot.personality]?.emoji || '🧹'}
+                </Text>
+                <Text style={[Typography.caption1, { color: 'rgba(255,255,255,0.7)', marginLeft: 8, flex: 1 }]}>
+                  {mascot.name || 'Your buddy'} is analyzing your space...
+                </Text>
+              </View>
+            )}
           </View>
         </Animated.View>
 
@@ -375,6 +555,8 @@ export default function AnalysisScreen() {
           <Pressable
             onPress={() => router.back()}
             style={styles.glassButton}
+            accessibilityRole="button"
+            accessibilityLabel="Close analysis"
           >
             <BlurView intensity={60} tint="dark" style={StyleSheet.absoluteFill} />
             <Text style={{ color: '#FFFFFF', fontSize: 18 }}>✕</Text>
@@ -384,8 +566,78 @@ export default function AnalysisScreen() {
     );
   }
 
+  // Celebration phase - brief moment of joy before results
+  if (showCelebration && result) {
+    return (
+      <View style={[styles.container, styles.celebrationContainer]}>
+        <LinearGradient
+          colors={colorScheme === 'dark'
+            ? ['#1a1a2e', '#16213e', '#0f3460']
+            : ['#f8f9fa', '#e9ecef', '#dee2e6']}
+          style={StyleSheet.absoluteFill}
+        />
+
+        {/* Confetti */}
+        <Confetti visible={showCelebration} intensity="heavy" />
+
+        {/* Celebration content */}
+        <Animated.View
+          entering={ZoomIn.springify()}
+          style={styles.celebrationContent}
+        >
+          <Text style={styles.celebrationEmoji}>🎉</Text>
+          <Text style={[Typography.largeTitle, { color: colors.text, marginTop: 16 }]}>
+            Analysis Complete!
+          </Text>
+          <Text style={[Typography.body, { color: colors.textSecondary, marginTop: 8, textAlign: 'center' }]}>
+            Found {result.tasks.length} tasks to transform your space
+          </Text>
+
+          {/* Quick stats preview */}
+          <View style={styles.celebrationStats}>
+            <View style={styles.celebrationStat}>
+              <Text style={[styles.celebrationStatValue, { color: colors.primary }]}>
+                {result.messLevel}%
+              </Text>
+              <Text style={[Typography.caption1, { color: colors.textSecondary }]}>
+                Clutter
+              </Text>
+            </View>
+            <View style={[styles.celebrationStatDivider, { backgroundColor: colors.border }]} />
+            <View style={styles.celebrationStat}>
+              <Text style={[styles.celebrationStatValue, { color: colors.success }]}>
+                {result.tasks.length}
+              </Text>
+              <Text style={[Typography.caption1, { color: colors.textSecondary }]}>
+                Tasks
+              </Text>
+            </View>
+            <View style={[styles.celebrationStatDivider, { backgroundColor: colors.border }]} />
+            <View style={styles.celebrationStat}>
+              <Text style={[styles.celebrationStatValue, { color: colors.warning }]}>
+                {result.quickWins.length}
+              </Text>
+              <Text style={[Typography.caption1, { color: colors.textSecondary }]}>
+                Quick Wins
+              </Text>
+            </View>
+          </View>
+
+          {/* Loading to results indicator */}
+          <View style={styles.celebrationLoader}>
+            <Text style={[Typography.caption1, { color: colors.textTertiary }]}>
+              Preparing your plan...
+            </Text>
+          </View>
+        </Animated.View>
+      </View>
+    );
+  }
+
   // Error state
   if (analysisError) {
+    const { emoji, hint } = getErrorDetails(analysisError);
+    
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
         <LinearGradient
@@ -399,13 +651,27 @@ export default function AnalysisScreen() {
           entering={ZoomIn.springify()}
           style={styles.errorContent}
         >
-          <Text style={styles.errorEmoji}>😕</Text>
+          <Text style={styles.errorEmoji}>{emoji}</Text>
           <Text style={[Typography.title1, { color: colors.text, marginTop: 20 }]}>
             Oops!
           </Text>
           <Text style={[Typography.body, { color: colors.textSecondary, textAlign: 'center', marginTop: 8, maxWidth: 280 }]}>
             {analysisError}
           </Text>
+          
+          {hint && (
+            <Animated.View entering={FadeIn.delay(200)}>
+              <Text style={[Typography.caption1, { color: colors.primary, textAlign: 'center', marginTop: 12 }]}>
+                💡 {hint}
+              </Text>
+            </Animated.View>
+          )}
+          
+          {retryCount > 0 && (
+            <Text style={[Typography.caption2, { color: colors.textTertiary, marginTop: 8 }]}>
+              Attempt {retryCount + 1}
+            </Text>
+          )}
 
           <View style={styles.errorButtons}>
             <Pressable
@@ -418,6 +684,25 @@ export default function AnalysisScreen() {
               />
               <Text style={[Typography.headline, { color: '#FFFFFF' }]}>Try Again</Text>
             </Pressable>
+
+            {/* Fallback option - use default tasks */}
+            {mode !== 'compare' && room && (
+              <Pressable
+                onPress={handleUseFallbackTasks}
+                style={({ pressed }) => [styles.fallbackButton, { 
+                  opacity: pressed ? 0.8 : 1,
+                  backgroundColor: colors.success + '20',
+                  borderColor: colors.success,
+                }]}
+              >
+                <Text style={[Typography.headline, { color: colors.success }]}>
+                  Use Default Tasks
+                </Text>
+                <Text style={[Typography.caption2, { color: colors.textSecondary, marginTop: 2 }]}>
+                  Start with common {room.type || 'room'} tasks
+                </Text>
+              </Pressable>
+            )}
 
             <Pressable
               onPress={() => router.back()}
@@ -441,6 +726,7 @@ export default function AnalysisScreen() {
             styles.scrollContent,
             { paddingTop: insets.top + 60, paddingBottom: insets.bottom + 100 },
           ]}
+          contentInsetAdjustmentBehavior="automatic"
           showsVerticalScrollIndicator={false}
         >
           {/* Hero section */}
@@ -460,11 +746,11 @@ export default function AnalysisScreen() {
                   progress={progressResult.progressPercentage}
                   size={140}
                   strokeWidth={12}
-                  color="#22C55E"
+                  color={colors.success}
                   backgroundColor="rgba(255,255,255,0.1)"
                 />
                 <View style={styles.progressRingCenter}>
-                  <Text style={[Typography.display1, { color: '#FFFFFF' }]}>
+                  <Text style={[Typography.displayMedium, { color: '#FFFFFF' }]}>
                     {progressResult.progressPercentage}%
                   </Text>
                   <Text style={[Typography.caption1, { color: 'rgba(255,255,255,0.7)' }]}>
@@ -489,7 +775,7 @@ export default function AnalysisScreen() {
                     style={styles.completedTask}
                   >
                     <View style={styles.taskCheckmark}>
-                      <Text style={{ color: '#22C55E' }}>✓</Text>
+                      <Text style={{ color: colors.success }}>✓</Text>
                     </View>
                     <Text style={[Typography.body, { color: colors.text, flex: 1 }]}>
                       {task}
@@ -553,9 +839,14 @@ export default function AnalysisScreen() {
           entering={FadeIn}
           style={[styles.backButton, { top: insets.top + 12 }]}
         >
-          <Pressable onPress={() => router.back()} style={styles.glassButtonDark}>
+          <Pressable
+            onPress={() => router.back()}
+            style={styles.glassButtonDark}
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
+          >
             <BlurView intensity={60} tint={colorScheme} style={StyleSheet.absoluteFill} />
-            <Text style={{ color: colors.text }}>← Back</Text>
+            <Text style={[Typography.body, { color: colors.text }]}>← Back</Text>
           </Pressable>
         </Animated.View>
       </View>
@@ -577,6 +868,7 @@ export default function AnalysisScreen() {
             styles.scrollContent,
             { paddingTop: insets.top + 60, paddingBottom: insets.bottom + 100 },
           ]}
+          contentInsetAdjustmentBehavior="automatic"
           showsVerticalScrollIndicator={false}
         >
           {/* Hero with image preview */}
@@ -609,7 +901,7 @@ export default function AnalysisScreen() {
                 progress={100 - result.messLevel}
                 size={80}
                 strokeWidth={8}
-                color={result.messLevel > 70 ? '#EF4444' : result.messLevel > 40 ? '#F59E0B' : '#22C55E'}
+                color={result.messLevel > 70 ? colors.error : result.messLevel > 40 ? colors.warning : colors.success}
                 backgroundColor={colorScheme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'}
               />
               <View style={styles.statCenter}>
@@ -641,7 +933,23 @@ export default function AnalysisScreen() {
             </View>
           </Animated.View>
 
-          {/* Summary */}
+          {result.zones && result.zones.length > 0 && (
+            <Animated.View entering={FadeInDown.delay(250).springify()} style={styles.section}>
+              <Text style={[Typography.title3, { color: colors.text, marginBottom: 12 }]}>
+                🗺️ Room Zones
+              </Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.zonesScroll}
+              >
+                {result.zones.map((zone, i) => (
+                  <ZoneCard key={zone.id || i} zone={zone} index={i} />
+                ))}
+              </ScrollView>
+            </Animated.View>
+          )}
+
           <Animated.View entering={FadeInDown.delay(300).springify()} style={styles.section}>
             <GlassCard style={styles.summaryCard}>
               <Text style={[Typography.body, { color: colors.text }]}>
@@ -661,9 +969,15 @@ export default function AnalysisScreen() {
                 showsHorizontalScrollIndicator={false}
                 contentContainerStyle={styles.quickWinsScroll}
               >
-                {result.quickWins.slice(0, 4).map((win, i) => (
-                  <QuickWinCard key={i} text={win} delay={i * 50} />
-                ))}
+                {result.quickWins.slice(0, 4).map((win, i) => {
+                  let displayText: string;
+                  if (typeof win === 'string') {
+                    displayText = win;
+                  } else {
+                    displayText = win.task ?? win.reason ?? 'Quick win';
+                  }
+                  return <QuickWinCard key={i} text={displayText} delay={i * 50} />;
+                })}
               </ScrollView>
             </Animated.View>
           )}
@@ -726,9 +1040,14 @@ export default function AnalysisScreen() {
           entering={FadeIn}
           style={[styles.backButton, { top: insets.top + 12 }]}
         >
-          <Pressable onPress={() => router.back()} style={styles.glassButtonDark}>
+          <Pressable
+            onPress={() => router.back()}
+            style={styles.glassButtonDark}
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
+          >
             <BlurView intensity={60} tint={colorScheme} style={StyleSheet.absoluteFill} />
-            <Text style={{ color: colors.text }}>← Back</Text>
+            <Text style={[Typography.body, { color: colors.text }]}>← Back</Text>
           </Pressable>
         </Animated.View>
       </View>
@@ -739,7 +1058,7 @@ export default function AnalysisScreen() {
   return (
     <View style={[styles.container, styles.fallbackContainer, { backgroundColor: colors.background }]}>
       <Text style={[Typography.title2, { color: colors.text }]}>No analysis data</Text>
-      <Pressable onPress={() => router.back()} style={styles.fallbackButton}>
+      <Pressable onPress={() => router.back()} style={styles.fallbackGoBackButton}>
         <Text style={[Typography.body, { color: colors.primary }]}>Go Back</Text>
       </Pressable>
     </View>
@@ -749,7 +1068,6 @@ export default function AnalysisScreen() {
 // Quick Win Card
 function QuickWinCard({ text, delay }: { text: string; delay: number }) {
   const colorScheme = useColorScheme() ?? 'dark';
-  const colors = Colors[colorScheme];
   const { animatedStyle, onPressIn, onPressOut } = useCardPress();
 
   return (
@@ -782,7 +1100,6 @@ function QuickWinCard({ text, delay }: { text: string; delay: number }) {
   );
 }
 
-// Task Preview Card
 function TaskPreviewCard({ task, index }: { task: CleaningTask; index: number }) {
   const colorScheme = useColorScheme() ?? 'dark';
   const colors = Colors[colorScheme];
@@ -808,8 +1125,69 @@ function TaskPreviewCard({ task, index }: { task: CleaningTask; index: number })
             </Text>
           </View>
           {task.difficulty === 'quick' && (
-            <Text style={[Typography.caption2, { color: '#22C55E' }]}>Quick!</Text>
+            <Text style={[Typography.caption2, { color: colors.success }]}>Quick!</Text>
           )}
+        </View>
+      </View>
+    </Animated.View>
+  );
+}
+
+function ZoneCard({ zone, index }: { zone: Zone; index: number }) {
+  const colorScheme = useColorScheme() ?? 'dark';
+  const colors = Colors[colorScheme];
+  const priorityColor = PriorityColors[zone.priority];
+  
+  const densityEmoji = {
+    low: '🟢',
+    medium: '🟡',
+    high: '🟠',
+    extreme: '🔴',
+  }[zone.clutterDensity] || '⚪';
+
+  const typeEmoji = {
+    floor: '🚶',
+    surface: '🪑',
+    storage: '📦',
+    fixture: '🛁',
+  }[zone.type] || '📍';
+
+  return (
+    <Animated.View entering={FadeInRight.delay(index * 80)}>
+      <View
+        style={[
+          styles.zoneCard,
+          {
+            backgroundColor: colorScheme === 'dark'
+              ? 'rgba(255, 255, 255, 0.08)'
+              : 'rgba(0, 0, 0, 0.04)',
+            borderColor: priorityColor + '40',
+          },
+        ]}
+      >
+        <View style={styles.zoneHeader}>
+          <Text style={styles.zoneTypeEmoji}>{typeEmoji}</Text>
+          <View style={[styles.zonePriorityDot, { backgroundColor: priorityColor }]} />
+        </View>
+        <Text
+          style={[Typography.headline, { color: colors.text, marginBottom: 4 }]}
+          numberOfLines={1}
+        >
+          {zone.name}
+        </Text>
+        <Text
+          style={[Typography.caption1, { color: colors.textSecondary, marginBottom: 8 }]}
+          numberOfLines={2}
+        >
+          {zone.description}
+        </Text>
+        <View style={styles.zoneStats}>
+          <Text style={[Typography.caption2, { color: colors.textTertiary }]}>
+            {densityEmoji} {zone.itemCount} items
+          </Text>
+          <Text style={[Typography.caption2, { color: colors.textTertiary }]}>
+            ~{zone.estimatedClearTime} min
+          </Text>
         </View>
       </View>
     </Animated.View>
@@ -863,11 +1241,11 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    borderTopLeftRadius: 32,
-    borderTopRightRadius: 32,
+    borderTopLeftRadius: BorderRadius.card + 12,
+    borderTopRightRadius: BorderRadius.card + 12,
     overflow: 'hidden',
-    paddingTop: 32,
-    paddingHorizontal: 24,
+    paddingTop: Spacing.xl,
+    paddingHorizontal: Spacing.lg,
   },
   loadingContent: {
     alignItems: 'center',
@@ -887,21 +1265,57 @@ const styles = StyleSheet.create({
   stageEmoji: {
     fontSize: 36,
   },
+  progressPercentContainer: {
+    alignItems: 'center',
+    marginTop: 20,
+    width: '100%',
+  },
+  progressPercentText: {
+    ...Typography.monoHero,
+    fontSize: 42,
+    color: '#FFFFFF',
+    letterSpacing: -1,
+    marginBottom: Spacing.sm,
+  },
+  progressBarBg: {
+    width: '100%',
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    overflow: 'hidden',
+  },
+  progressBarFill: {
+    height: '100%',
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
   stageIndicators: {
     flexDirection: 'row',
     gap: 8,
-    marginTop: 24,
+    marginTop: 20,
   },
   stageIndicator: {
     height: 4,
     borderRadius: 2,
   },
   tipBadge: {
-    marginTop: 24,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 16,
+    marginTop: Spacing.lg,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.chip,
     backgroundColor: 'rgba(255,255,255,0.1)',
+  },
+  mascotEncouragement: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: Spacing.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.chip,
+    backgroundColor: 'rgba(167, 139, 250, 0.15)',
+  },
+  mascotLoadingEmoji: {
+    fontSize: 24,
   },
   backButton: {
     position: 'absolute',
@@ -917,40 +1331,55 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   glassButtonDark: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 20,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.card,
     overflow: 'hidden',
+    minHeight: 44,
+    justifyContent: 'center',
   },
   // Error styles
   errorContent: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 32,
+    padding: Spacing.xl,
   },
   errorEmoji: {
     fontSize: 64,
   },
   errorButtons: {
-    marginTop: 32,
-    gap: 12,
+    marginTop: Spacing.xl,
+    gap: Spacing.sm,
     width: '100%',
     maxWidth: 280,
   },
   primaryButton: {
-    paddingVertical: 16,
-    borderRadius: 16,
+    paddingVertical: Spacing.md,
+    borderRadius: BorderRadius.button,
     overflow: 'hidden',
     alignItems: 'center',
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  fallbackButton: {
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.lg,
+    borderRadius: BorderRadius.button,
+    alignItems: 'center',
+    borderWidth: 2,
+    minHeight: 44,
+    justifyContent: 'center',
   },
   secondaryButton: {
-    paddingVertical: 12,
+    paddingVertical: Spacing.sm,
     alignItems: 'center',
+    minHeight: 44,
+    justifyContent: 'center',
   },
   // Progress results
   progressHero: {
-    padding: 32,
+    padding: Spacing.xl,
     alignItems: 'center',
   },
   heroEmoji: {
@@ -969,9 +1398,9 @@ const styles = StyleSheet.create({
   // Result styles
   resultHero: {
     height: 200,
-    borderRadius: 24,
+    borderRadius: BorderRadius.card,
     overflow: 'hidden',
-    marginBottom: 20,
+    marginBottom: Spacing.ml,
   },
   resultHeroImage: {
     ...StyleSheet.absoluteFillObject,
@@ -993,7 +1422,7 @@ const styles = StyleSheet.create({
   statsRow: {
     flexDirection: 'row',
     justifyContent: 'space-around',
-    marginBottom: 24,
+    marginBottom: Spacing.lg,
   },
   statItem: {
     alignItems: 'center',
@@ -1017,28 +1446,26 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   statNumber: {
-    fontSize: 28,
-    fontWeight: 'bold',
+    ...Typography.title1,
     color: '#A78BFA',
   },
   statTime: {
-    fontSize: 16,
-    fontWeight: '600',
+    ...Typography.subheadlineMedium,
     color: '#A78BFA',
   },
   section: {
-    marginBottom: 24,
+    marginBottom: Spacing.lg,
   },
   summaryCard: {
-    padding: 16,
+    padding: Spacing.md,
   },
   quickWinsScroll: {
     gap: 12,
   },
   quickWinCard: {
     width: 140,
-    padding: 16,
-    borderRadius: 16,
+    padding: Spacing.md,
+    borderRadius: BorderRadius.lg,
     alignItems: 'center',
   },
   tasksList: {
@@ -1099,7 +1526,7 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   encouragementCard: {
-    padding: 24,
+    padding: Spacing.lg,
     alignItems: 'center',
   },
   encouragementEmoji: {
@@ -1111,16 +1538,90 @@ const styles = StyleSheet.create({
   },
   actionButton: {
     paddingVertical: 18,
-    borderRadius: 16,
+    borderRadius: BorderRadius.button,
     overflow: 'hidden',
     alignItems: 'center',
+    minHeight: 44,
+    justifyContent: 'center',
   },
   fallbackContainer: {
     alignItems: 'center',
     justifyContent: 'center',
   },
-  fallbackButton: {
+  fallbackGoBackButton: {
     marginTop: 16,
     padding: 12,
   },
+  zonesScroll: {
+    gap: 12,
+    paddingRight: 16,
+  },
+  zoneCard: {
+    width: 180,
+    padding: Spacing.md,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+  },
+  zoneHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  zoneTypeEmoji: {
+    fontSize: 20,
+  },
+  zonePriorityDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  zoneStats: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 4,
+  },
+  celebrationContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  celebrationContent: {
+    alignItems: 'center',
+    paddingHorizontal: 40,
+  },
+  celebrationEmoji: {
+    fontSize: 72,
+  },
+  celebrationStats: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 32,
+    paddingHorizontal: 24,
+    paddingVertical: 16,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+  },
+  celebrationStat: {
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  celebrationStatValue: {
+    ...Typography.title1,
+  },
+  celebrationStatDivider: {
+    width: 1,
+    height: 40,
+  },
+  celebrationLoader: {
+    marginTop: 32,
+    opacity: 0.6,
+  },
 });
+
+export default function AnalysisScreen() {
+  return (
+    <ScreenErrorBoundary screenName="Analysis">
+      <AnalysisScreenContent />
+    </ScreenErrorBoundary>
+  );
+}

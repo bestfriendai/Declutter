@@ -1,6 +1,19 @@
-import * as Haptics from 'expo-haptics';
+/**
+ * Declutterly — Progress Screen (Apple 2026)
+ * Apple Fitness-style rings, animated weekly chart, badge cards
+ */
+
+import { Colors, ColorTokens, RingColors } from '@/constants/Colors';
+import { GlassCard } from '@/components/ui/GlassCard';
+import { useDeclutter } from '@/context/DeclutterContext';
+import { useColorScheme } from '@/hooks/useColorScheme';
+import { Typography } from '@/theme/typography';
+import { Spacing, BorderRadius } from '@/theme/spacing';
+import { Badge } from '@/types/declutter';
+import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
-import React, { useMemo } from 'react';
+import * as Haptics from 'expo-haptics';
+import React, { useEffect, useMemo } from 'react';
 import {
   Dimensions,
   Pressable,
@@ -8,890 +21,612 @@ import {
   StyleSheet,
   Text,
   View,
-  useColorScheme,
 } from 'react-native';
 import Animated, {
   FadeInDown,
-  FadeInRight,
-  useAnimatedStyle,
   useSharedValue,
   withDelay,
-  withSpring
+  withTiming,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-
-import { DeclutterRings } from '@/components/ui/ActivityRings';
-import { ContentRow } from '@/components/ui/ContentRow';
-import { ModernCard } from '@/components/ui/ModernCard';
-import { ScreenLayout } from '@/components/ui/ScreenLayout';
-import { StatCard } from '@/components/ui/StatCard';
-import { Colors, RingColors } from '@/constants/Colors';
-import { useDeclutter } from '@/context/DeclutterContext';
-import { useCardPress } from '@/hooks/useAnimatedPress';
-import { Typography } from '@/theme/typography';
-import { BADGES, Badge, UserStats, Room } from '@/types/declutter';
+import Svg, { Circle } from 'react-native-svg';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
-export default function ProgressScreen() {
-  const colorScheme = useColorScheme() ?? 'light';
-  const colors = Colors[colorScheme];
-  const insets = useSafeAreaInsets();
-  const { stats, rooms } = useDeclutter();
+// ─────────────────────────────────────────────────────────────────────────────
+// Activity Ring Component — Apple Fitness style
+// ─────────────────────────────────────────────────────────────────────────────
+interface ActivityRingProps {
+  progress: number; // 0-1
+  color: string;
+  trackColor: string;
+  size: number;
+  strokeWidth: number;
+}
 
-  // Calculate progress metrics
-  const xpForNextLevel = stats.level * 100;
-  const xpProgress = (stats.xp % 100);
+function ActivityRing({ progress, color, trackColor, size, strokeWidth }: ActivityRingProps) {
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const clampedProgress = Math.min(progress, 1);
 
-  // Ring calculations (0-100)
-  const tasksProgress = Math.min(100, stats.totalTasksCompleted * 5);
-  const timeProgress = Math.min(100, (stats.totalMinutesCleaned / 60) * 10);
-  const streakProgress = Math.min(100, stats.currentStreak * 14.28); // 7 days = 100%
+  const animatedProgress = useSharedValue(0);
 
-  // Get badges
-  const unlockedBadges = stats.badges;
-  const lockedBadges = BADGES.filter(
-    b => !unlockedBadges.some(ub => ub.id === b.id)
-  );
+  useEffect(() => {
+    animatedProgress.value = withDelay(300, withTiming(clampedProgress, { duration: 1200 }));
+  }, [clampedProgress]);
 
-  // Calculate time spent
-  const hours = Math.floor(stats.totalMinutesCleaned / 60);
-  const minutes = stats.totalMinutesCleaned % 60;
-  const timeString = hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
-
-  // Generate weekly activity data
-  const weeklyData = useMemo(() => {
-    const days = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
-    const today = new Date().getDay();
-    const adjustedToday = today === 0 ? 6 : today - 1;
-
-    return days.map((day, index) => {
-      let value = 0;
-      if (index <= adjustedToday && stats.currentStreak > 0) {
-        const daysFromToday = adjustedToday - index;
-        if (daysFromToday < stats.currentStreak) {
-          value = Math.max(20, Math.min(100, stats.totalTasksCompleted * 5 - daysFromToday * 10));
-        }
-      }
-      return {
-        day,
-        value: Math.max(0, value),
-        isToday: index === adjustedToday,
-      };
-    });
-  }, [stats.currentStreak, stats.totalTasksCompleted]);
-
-  const maxWeeklyValue = Math.max(...weeklyData.map(d => d.value), 1);
+  // We use a static SVG with the progress value directly for simplicity
+  const strokeDashoffset = circumference * (1 - clampedProgress);
 
   return (
-    <ScreenLayout>
+    <Svg width={size} height={size} style={{ transform: [{ rotate: '-90deg' }] }}>
+      {/* Track */}
+      <Circle
+        cx={size / 2}
+        cy={size / 2}
+        r={radius}
+        stroke={trackColor}
+        strokeWidth={strokeWidth}
+        fill="none"
+      />
+      {/* Progress */}
+      <Circle
+        cx={size / 2}
+        cy={size / 2}
+        r={radius}
+        stroke={color}
+        strokeWidth={strokeWidth}
+        fill="none"
+        strokeDasharray={circumference}
+        strokeDashoffset={strokeDashoffset}
+        strokeLinecap="round"
+      />
+    </Svg>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Triple Activity Rings
+// ─────────────────────────────────────────────────────────────────────────────
+interface TripleRingsProps {
+  tasksProgress: number;
+  timeProgress: number;
+  streakProgress: number;
+  colors: ColorTokens;
+  isDark: boolean;
+}
+
+function TripleRings({ tasksProgress, timeProgress, streakProgress, isDark }: TripleRingsProps) {
+  const trackOpacity = isDark ? 0.15 : 0.12;
+  const outerSize = 180;
+  const middleSize = 140;
+  const innerSize = 100;
+  const strokeWidth = 16;
+
+  return (
+    <View style={styles.ringsContainer}>
+      {/* Outer ring — Tasks */}
+      <View style={styles.ringLayer}>
+        <ActivityRing
+          progress={tasksProgress}
+          color={RingColors.tasks}
+          trackColor={`rgba(255, 55, 95, ${trackOpacity})`}
+          size={outerSize}
+          strokeWidth={strokeWidth}
+        />
+      </View>
+      {/* Middle ring — Time */}
+      <View style={[styles.ringLayer, { position: 'absolute', top: (outerSize - middleSize) / 2, left: (outerSize - middleSize) / 2 }]}>
+        <ActivityRing
+          progress={timeProgress}
+          color={RingColors.time}
+          trackColor={`rgba(48, 209, 88, ${trackOpacity})`}
+          size={middleSize}
+          strokeWidth={strokeWidth}
+        />
+      </View>
+      {/* Inner ring — Streak */}
+      <View style={[styles.ringLayer, { position: 'absolute', top: (outerSize - innerSize) / 2, left: (outerSize - innerSize) / 2 }]}>
+        <ActivityRing
+          progress={streakProgress}
+          color={RingColors.streak}
+          trackColor={`rgba(10, 132, 255, ${trackOpacity})`}
+          size={innerSize}
+          strokeWidth={strokeWidth}
+        />
+      </View>
+    </View>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Weekly Bar Chart
+// ─────────────────────────────────────────────────────────────────────────────
+interface WeeklyChartProps {
+  data: number[];
+  maxValue: number;
+  colors: ColorTokens;
+  isDark: boolean;
+}
+
+function WeeklyChart({ data, maxValue, colors, isDark }: WeeklyChartProps) {
+  const today = new Date().getDay(); // 0=Sun, 1=Mon...
+  const todayIndex = today === 0 ? 6 : today - 1; // Convert to Mon=0
+
+  return (
+    <View style={styles.chartContainer}>
+      {data.map((value, index) => {
+        const isToday = index === todayIndex;
+        const barHeight = maxValue > 0 ? (value / maxValue) * 80 : 0;
+
+        return (
+          <View key={index} style={styles.chartBar}>
+            <View style={[styles.chartBarTrack, { backgroundColor: isDark ? colors.fillTertiary : colors.surfaceTertiary }]}>
+              <Animated.View
+                entering={FadeInDown.delay(index * 80).springify()}
+                style={[
+                  styles.chartBarFill,
+                  {
+                    height: `${Math.max(barHeight, value > 0 ? 8 : 0)}%`,
+                    backgroundColor: isToday ? colors.accent : colors.success,
+                    opacity: isToday ? 1 : 0.6,
+                  },
+                ]}
+              />
+            </View>
+            <Text style={[styles.chartDayLabel, {
+              color: isToday ? colors.accent : colors.textSecondary,
+              fontWeight: isToday ? '700' : '400',
+            }]}>
+              {DAYS[index]}
+            </Text>
+            {value > 0 && (
+              <Text style={[styles.chartValueLabel, { color: isToday ? colors.accent : colors.textTertiary }]}>
+                {value}
+              </Text>
+            )}
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Badge Card
+// ─────────────────────────────────────────────────────────────────────────────
+interface BadgeCardProps {
+  badge: Badge;
+  colors: ColorTokens;
+  isDark: boolean;
+}
+
+function BadgeCard({ badge, colors }: BadgeCardProps) {
+  const earned = !!badge.unlockedAt;
+
+  return (
+    <GlassCard
+      variant={earned ? 'tinted' : 'subtle'}
+      tintColor={earned ? colors.warning : undefined}
+      tintOpacity={0.08}
+      style={styles.badgeCard}
+    >
+      <View style={styles.badgeContent}>
+        <Text style={[styles.badgeEmoji, { opacity: earned ? 1 : 0.4 }]}>
+          {badge.emoji}
+        </Text>
+        <View style={styles.badgeInfo}>
+          <Text style={[Typography.footnoteMedium, { color: earned ? colors.text : colors.textSecondary }]}>
+            {badge.name}
+          </Text>
+          {earned && (
+            <Text style={[Typography.caption2, { color: colors.warning }]}>Earned</Text>
+          )}
+        </View>
+      </View>
+    </GlassCard>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Main Screen
+// ─────────────────────────────────────────────────────────────────────────────
+export default function ProgressScreen() {
+  const rawScheme = useColorScheme();
+  const colorScheme = rawScheme === 'dark' ? 'dark' : 'light';
+  const colors = Colors[colorScheme];
+  const isDark = colorScheme === 'dark';
+  const insets = useSafeAreaInsets();
+
+  const { stats, rooms } = useDeclutter();
+
+  const streak = stats?.currentStreak ?? 0;
+  const badges = stats?.badges ?? [];
+
+  // Compute weekly data (tasks completed per day this week)
+  const weeklyData = useMemo(() => {
+    const data = [0, 0, 0, 0, 0, 0, 0];
+    const now = new Date();
+    const startOfWeek = new Date(now);
+    startOfWeek.setDate(now.getDate() - ((now.getDay() + 6) % 7)); // Monday
+    startOfWeek.setHours(0, 0, 0, 0);
+
+    rooms.forEach(room => {
+      room.tasks.forEach(task => {
+        if (task.completed && task.completedAt) {
+          const completedDate = new Date(task.completedAt);
+          if (completedDate >= startOfWeek) {
+            const dayIndex = (completedDate.getDay() + 6) % 7; // Mon=0
+            data[dayIndex]++;
+          }
+        }
+      });
+    });
+
+    return data;
+  }, [rooms]);
+
+  const weeklyMax = Math.max(...weeklyData, 1);
+  const weeklyTotal = weeklyData.reduce((a, b) => a + b, 0);
+
+  // Progress calculations
+  const totalTasks = rooms.reduce((a, r) => a + r.tasks.length, 0);
+  const completedTasks = rooms.reduce((a, r) => a + r.tasks.filter(t => t.completed).length, 0);
+  const tasksGoal = Math.max(totalTasks, 10);
+  const tasksProgress = tasksGoal > 0 ? completedTasks / tasksGoal : 0;
+
+  const focusMinutes = stats?.totalMinutesCleaned ?? 0;
+  const focusGoal = 120; // 2 hours/week goal
+  const timeProgress = Math.min(focusMinutes / focusGoal, 1);
+
+  const streakGoal = 7;
+  const streakProgress = Math.min(streak / streakGoal, 1);
+
+  const earnedBadges = (badges ?? []).filter((b: Badge) => !!b.unlockedAt);
+  const pendingBadges = (badges ?? []).filter((b: Badge) => !b.unlockedAt).slice(0, 4);
+
+  return (
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={[
           styles.scrollContent,
-          { paddingTop: 20, paddingBottom: 100 },
+          { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 100 },
         ]}
         showsVerticalScrollIndicator={false}
+        contentInsetAdjustmentBehavior="automatic"
       >
-        {/* Header */}
-        <Animated.View
-          entering={FadeInDown.delay(100).springify()}
-          style={styles.header}
-        >
-          <Text style={[Typography.largeTitle, { color: colors.text }]}>
-            Progress
-          </Text>
-          <Text style={[Typography.subheadline, { color: colors.textSecondary, marginTop: 4 }]}>
-            Your decluttering journey
-          </Text>
+        {/* ── Header ──────────────────────────────────────────────────── */}
+        <Animated.View entering={FadeInDown.delay(0).springify()} style={styles.header}>
+          <Text style={[Typography.largeTitle, { color: colors.text }]}>Progress</Text>
+          <Pressable
+            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push('/achievements'); }}
+            accessibilityRole="button"
+            accessibilityLabel="View all achievements"
+          >
+            <Text style={[Typography.subheadlineMedium, { color: colors.accent }]}>
+              Achievements →
+            </Text>
+          </Pressable>
         </Animated.View>
 
-        {/* Activity Rings Hero Section */}
-        <Animated.View
-          entering={FadeInDown.delay(200).springify()}
-          style={styles.ringsSection}
-        >
-          <ModernCard style={styles.ringsCard}>
-            <View style={styles.ringsContent}>
-              <DeclutterRings
+        {/* ── Activity Rings ───────────────────────────────────────────── */}
+        <Animated.View entering={FadeInDown.delay(60).springify()}>
+          <GlassCard variant="elevated" style={styles.ringsCard} showHighlight>
+            <Text style={[Typography.title3, { color: colors.text, marginBottom: Spacing.ml }]}>
+              This Week
+            </Text>
+
+            <View style={styles.ringsRow}>
+              <TripleRings
                 tasksProgress={tasksProgress}
                 timeProgress={timeProgress}
                 streakProgress={streakProgress}
-                size={180}
+                colors={colors}
+                isDark={isDark}
               />
 
+              {/* Ring Legend */}
               <View style={styles.ringsLegend}>
-                <RingLegendItem
-                  color={RingColors.tasks}
-                  label="Tasks"
-                  value={`${Math.round(tasksProgress)}%`}
-                  description={`${stats.totalTasksCompleted} completed`}
-                />
-                <RingLegendItem
-                  color={RingColors.time}
-                  label="Time"
-                  value={`${Math.round(timeProgress)}%`}
-                  description={timeString}
-                />
-                <RingLegendItem
-                  color={RingColors.streak}
-                  label="Streak"
-                  value={`${Math.round(streakProgress)}%`}
-                  description={`${stats.currentStreak} days`}
-                />
-              </View>
-            </View>
-          </ModernCard>
-        </Animated.View>
-
-        {/* Level Progress */}
-        <Animated.View
-          entering={FadeInDown.delay(300).springify()}
-          style={styles.levelSection}
-        >
-          <ModernCard style={styles.levelCard}>
-            <View style={styles.levelContent}>
-              <View style={styles.levelBadge}>
-                <View style={[styles.levelBadgeCircle, { backgroundColor: colors.primary }]}>
-                  <Text style={styles.levelNumber}>{stats.level}</Text>
+                <View style={styles.legendItem}>
+                  <View style={[styles.legendDot, { backgroundColor: RingColors.tasks }]} />
+                  <View>
+                    <Text style={[Typography.footnoteMedium, { color: colors.text }]}>Tasks</Text>
+                    <Text style={[Typography.caption2, { color: colors.textSecondary }]}>
+                      {completedTasks}/{tasksGoal}
+                    </Text>
+                  </View>
                 </View>
-              </View>
-              <View style={styles.levelInfo}>
-                <Text style={[Typography.headline, { color: colors.text }]}>
-                  Level {stats.level}
-                </Text>
-                <Text style={[Typography.caption1, { color: colors.textSecondary, marginTop: 2 }]}>
-                  {xpProgress} / 100 XP to Level {stats.level + 1}
-                </Text>
-                <View style={styles.xpBarContainer}>
-                  <View style={[styles.xpBarBg, { backgroundColor: colors.surfaceSecondary }]}>
-                    <Animated.View
-                      style={[
-                        styles.xpBarFill,
-                        { width: `${xpProgress}%`, backgroundColor: colors.primary },
-                      ]}
-                    />
+                <View style={styles.legendItem}>
+                  <View style={[styles.legendDot, { backgroundColor: RingColors.time }]} />
+                  <View>
+                    <Text style={[Typography.footnoteMedium, { color: colors.text }]}>Focus</Text>
+                    <Text style={[Typography.caption2, { color: colors.textSecondary }]}>
+                      {focusMinutes}/{focusGoal}m
+                    </Text>
+                  </View>
+                </View>
+                <View style={styles.legendItem}>
+                  <View style={[styles.legendDot, { backgroundColor: RingColors.streak }]} />
+                  <View>
+                    <Text style={[Typography.footnoteMedium, { color: colors.text }]}>Streak</Text>
+                    <Text style={[Typography.caption2, { color: colors.textSecondary }]}>
+                      {streak}/{streakGoal} days
+                    </Text>
                   </View>
                 </View>
               </View>
             </View>
-          </ModernCard>
+          </GlassCard>
         </Animated.View>
 
-        {/* Weekly Activity Chart */}
-        <Animated.View
-          entering={FadeInDown.delay(400).springify()}
-          style={styles.weeklySection}
-        >
-          <Text style={[Typography.title3, { color: colors.text, marginBottom: 12, paddingHorizontal: 20 }]}>
-            This Week
-          </Text>
-          <ModernCard style={styles.weeklyCard}>
-            <View style={styles.weeklyChart}>
-              {weeklyData.map((item, index) => (
-                <WeeklyBarItem
-                  key={index}
-                  day={item.day}
-                  value={item.value}
-                  maxValue={maxWeeklyValue}
-                  isToday={item.isToday}
-                  delay={index * 50}
-                  colors={colors}
-                />
-              ))}
-            </View>
-            {stats.currentStreak > 0 && (
-              <View style={[styles.streakBanner, { backgroundColor: 'rgba(251, 146, 60, 0.15)' }]}>
-                <Text style={styles.streakEmoji}>🔥</Text>
-                <Text style={[Typography.subheadlineMedium, { color: '#FB923C' }]}>
-                  {stats.currentStreak} day streak! Keep it going!
+        {/* ── Weekly Chart ─────────────────────────────────────────────── */}
+        <Animated.View entering={FadeInDown.delay(120).springify()} style={styles.section}>
+          <GlassCard variant="flat" style={styles.chartCard}>
+            <View style={styles.chartHeader}>
+              <Text style={[Typography.title3, { color: colors.text }]}>Daily Tasks</Text>
+              <View style={[styles.weeklyBadge, { backgroundColor: colors.accentMuted }]}>
+                <Text style={[Typography.caption1Medium, { color: colors.accent }]}>
+                  {weeklyTotal} this week
                 </Text>
               </View>
-            )}
-          </ModernCard>
+            </View>
+            <WeeklyChart
+              data={weeklyData}
+              maxValue={weeklyMax}
+              colors={colors}
+              isDark={isDark}
+            />
+          </GlassCard>
         </Animated.View>
 
-        {/* Statistics Bento Grid */}
-        <Animated.View
-          entering={FadeInDown.delay(500).springify()}
-          style={styles.statsSection}
-        >
-          <Text style={[Typography.title3, { color: colors.text, marginBottom: 12, paddingHorizontal: 20 }]}>
-            Statistics
+        {/* ── Stats Grid ───────────────────────────────────────────────── */}
+        <Animated.View entering={FadeInDown.delay(160).springify()} style={styles.section}>
+          <Text style={[Typography.title3, { color: colors.text, marginBottom: Spacing.sm }]}>
+            All Time
           </Text>
-          <View style={styles.bentoContainer}>
-            <View style={styles.bentoRow}>
-              <StatCard
-                value={stats.totalTasksCompleted}
-                label="Tasks Done"
-                icon={<Text style={{ fontSize: 24 }}>✅</Text>}
-                variant="default"
-                size="medium"
-                style={styles.bentoItem}
-                animationDelay={100}
-              />
-              <StatCard
-                value={stats.totalRoomsCleaned}
-                label="Rooms Cleaned"
-                icon={<Text style={{ fontSize: 24 }}>🏠</Text>}
-                variant="default"
-                size="medium"
-                style={styles.bentoItem}
-                animationDelay={150}
-              />
-            </View>
-            <View style={styles.bentoRow}>
-              <StatCard
-                value={stats.longestStreak}
-                label="Best Streak"
-                icon={<Text style={{ fontSize: 24 }}>🏆</Text>}
-                trend={stats.currentStreak >= stats.longestStreak ? { direction: 'up', value: 'Record!' } : undefined}
-                variant="default"
-                size="medium"
-                style={styles.bentoItem}
-                animationDelay={200}
-              />
-              <StatCard
-                value={unlockedBadges.length}
-                label="Badges"
-                icon={<Text style={{ fontSize: 24 }}>🎖️</Text>}
-                variant="default"
-                size="medium"
-                style={styles.bentoItem}
-                animationDelay={250}
-              />
-            </View>
-          </View>
-        </Animated.View>
-
-        {/* Achievements Carousel */}
-        {unlockedBadges.length > 0 && (
-          <Animated.View
-            entering={FadeInDown.delay(600).springify()}
-            style={styles.achievementsSection}
-          >
-            <ContentRow
-              title="Achievements"
-              subtitle={`${unlockedBadges.length} badges earned`}
-              showSeeAll={true}
-              onSeeAllPress={() => router.push('/achievements')}
-              itemWidth={140}
-            >
-              {unlockedBadges.map((badge, index) => (
-                <BadgeCard
-                  key={badge.id}
-                  badge={badge}
-                  unlocked={true}
-                  delay={index * 50}
-                  colors={colors}
-                />
-              ))}
-            </ContentRow>
-          </Animated.View>
-        )}
-
-        {/* Locked Badges */}
-        <Animated.View
-          entering={FadeInDown.delay(700).springify()}
-          style={styles.lockedSection}
-        >
-          <Text style={[Typography.title3, { color: colors.text, marginBottom: 12, paddingHorizontal: 20 }]}>
-            Next Goals
-          </Text>
-          <View style={styles.lockedBadges}>
-            {lockedBadges.slice(0, 3).map((badge, index) => (
-              <LockedBadgeRow
-                key={badge.id}
-                badge={badge}
-                stats={stats}
-                index={index}
-                colors={colors}
-              />
+          <View style={styles.statsGrid}>
+            {[
+              { label: 'Tasks Done', value: completedTasks, emoji: '✅', color: colors.success },
+              { label: 'Rooms Cleaned', value: rooms.filter(r => r.currentProgress >= 100).length, emoji: '🏠', color: colors.accent },
+              { label: 'Focus Minutes', value: focusMinutes, emoji: '🎯', color: colors.warning },
+              { label: 'Day Streak', value: streak, emoji: '🔥', color: colors.error },
+              { label: 'Total XP', value: stats?.xp ?? 0, emoji: '⭐', color: '#FFD700' },
+              { label: 'Badges', value: earnedBadges.length, emoji: '🏆', color: colors.warning },
+            ].map((stat, index) => (
+              <Animated.View
+                key={stat.label}
+                entering={FadeInDown.delay(160 + index * 50).springify()}
+                style={[styles.statCard, {
+                  backgroundColor: isDark ? colors.surface : colors.backgroundSecondary,
+                  borderColor: isDark ? colors.cardBorder : colors.borderLight,
+                }]}
+              >
+                <Text style={styles.statEmoji}>{stat.emoji}</Text>
+                <Text style={[styles.statValue, { color: stat.color }]}>
+                  {stat.value.toLocaleString()}
+                </Text>
+                <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
+                  {stat.label}
+                </Text>
+              </Animated.View>
             ))}
           </View>
         </Animated.View>
 
-        {/* Room Progress */}
-        {rooms.length > 0 && (
-          <Animated.View
-            entering={FadeInDown.delay(800).springify()}
-            style={styles.roomsSection}
-          >
-            <Text style={[Typography.title3, { color: colors.text, marginBottom: 12, paddingHorizontal: 20 }]}>
-              Room Progress
-            </Text>
-            <View style={styles.roomsList}>
-              {rooms.map((room, index) => (
-                <RoomProgressItem
-                  key={room.id}
-                  room={room}
-                  index={index}
-                  colors={colors}
-                  onPress={() => router.push(`/room/${room.id}`)}
-                />
+        {/* ── Badges ───────────────────────────────────────────────────── */}
+        {(badges ?? []).length > 0 && (
+          <Animated.View entering={FadeInDown.delay(240).springify()} style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={[Typography.title3, { color: colors.text }]}>
+                Badges {earnedBadges.length > 0 && `(${earnedBadges.length})`}
+              </Text>
+              <Pressable
+                onPress={() => router.push('/achievements')}
+                accessibilityRole="button"
+              >
+                <Text style={[Typography.caption1Medium, { color: colors.accent }]}>See all</Text>
+              </Pressable>
+            </View>
+            <View style={styles.badgesGrid}>
+              {[...earnedBadges.slice(0, 2), ...pendingBadges.slice(0, 2)].map((badge, index) => (
+                <Animated.View
+                  key={badge.id}
+                  entering={FadeInDown.delay(240 + index * 60).springify()}
+                  style={{ width: (SCREEN_WIDTH - 52) / 2 }}
+                >
+                  <BadgeCard badge={badge} colors={colors} isDark={isDark} />
+                </Animated.View>
               ))}
             </View>
           </Animated.View>
         )}
 
-        {/* Motivation Card */}
-        <Animated.View
-          entering={FadeInDown.delay(900).springify()}
-          style={styles.motivationSection}
-        >
-          <ModernCard style={styles.motivationCard}>
-            <Text style={styles.motivationEmoji}>
-              {stats.totalTasksCompleted === 0 ? '💪' :
-                stats.totalTasksCompleted < 10 ? '🚀' :
-                  stats.totalTasksCompleted < 50 ? '🌟' : '👑'}
-            </Text>
-            <Text style={[Typography.body, { color: colors.text, textAlign: 'center', marginTop: 8 }]}>
-              {stats.totalTasksCompleted === 0
-                ? "Your journey begins with a single task. You've got this!"
-                : stats.totalTasksCompleted < 10
-                  ? "Great start! Keep the momentum going!"
-                  : stats.totalTasksCompleted < 50
-                    ? "You're making amazing progress!"
-                    : "You're a decluttering superstar!"}
-            </Text>
-          </ModernCard>
-        </Animated.View>
-      </ScrollView>
-    </ScreenLayout>
-  );
-}
-
-// Ring Legend Item
-function RingLegendItem({
-  color,
-  label,
-  value,
-  description,
-}: {
-  color: string;
-  label: string;
-  value: string;
-  description: string;
-}) {
-  const colorScheme = useColorScheme() ?? 'dark';
-  const colors = Colors[colorScheme];
-
-  return (
-    <View style={styles.legendItem}>
-      <View style={[styles.legendDot, { backgroundColor: color }]} />
-      <View style={styles.legendText}>
-        <Text style={[Typography.caption1Medium, { color: colors.text }]}>
-          {label}
-        </Text>
-        <Text style={[Typography.caption1, { color: colors.textSecondary }]}>
-          {description}
-        </Text>
-      </View>
-      <Text style={[Typography.headline, { color }]}>{value}</Text>
-    </View>
-  );
-}
-
-// Weekly Bar Item
-function WeeklyBarItem({
-  day,
-  value,
-  maxValue,
-  isToday,
-  delay,
-  colors,
-}: {
-  day: string;
-  value: number;
-  maxValue: number;
-  isToday: boolean;
-  delay: number;
-  colors: typeof Colors.dark;
-}) {
-  const height = useSharedValue(0);
-  const barHeight = Math.max(4, (value / Math.max(maxValue, 100)) * 80);
-
-  React.useEffect(() => {
-    height.value = withDelay(
-      delay + 400,
-      withSpring(barHeight, { damping: 12, stiffness: 100 })
-    );
-  }, [value, maxValue]);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    height: height.value,
-  }));
-
-  return (
-    <View style={styles.barItem}>
-      <View style={styles.barContainer}>
-        <Animated.View style={[styles.bar, animatedStyle]}>
-          <View
-            style={[StyleSheet.absoluteFill, { backgroundColor: isToday ? '#818CF8' : 'rgba(255,255,255,0.2)' }]}
-          />
-        </Animated.View>
-      </View>
-      <Text
-        style={[
-          Typography.caption2,
-          {
-            color: isToday ? colors.primary : colors.textSecondary,
-            fontWeight: isToday ? '600' : '400',
-            marginTop: 6,
-          },
-        ]}
-      >
-        {day}
-      </Text>
-    </View>
-  );
-}
-
-// Badge Card Component
-function BadgeCard({
-  badge,
-  unlocked,
-  delay,
-  colors,
-}: {
-  badge: Badge;
-  unlocked: boolean;
-  delay: number;
-  colors: typeof Colors.dark;
-}) {
-  const { animatedStyle, onPressIn, onPressOut } = useCardPress();
-  const colorScheme = useColorScheme() ?? 'dark';
-
-  return (
-    <AnimatedPressable
-      onPressIn={onPressIn}
-      onPressOut={onPressOut}
-      style={animatedStyle}
-    >
-      <View
-        style={[
-          styles.badgeCard,
-          {
-            backgroundColor: colorScheme === 'dark'
-              ? 'rgba(255, 255, 255, 0.08)'
-              : 'rgba(0, 0, 0, 0.04)',
-          },
-        ]}
-      >
-        <Text style={styles.badgeEmoji}>{badge.emoji}</Text>
-        <Text
-          style={[Typography.caption1Medium, { color: colors.text, textAlign: 'center' }]}
-          numberOfLines={2}
-        >
-          {badge.name}
-        </Text>
-        <View style={[styles.rarityBadge, { backgroundColor: getTypeColor(badge.type) }]}>
-          <Text style={[Typography.caption2, { color: '#FFFFFF' }]}>
-            {badge.type}
-          </Text>
-        </View>
-      </View>
-    </AnimatedPressable>
-  );
-}
-
-// Locked Badge Row
-function LockedBadgeRow({
-  badge,
-  stats,
-  index,
-  colors,
-}: {
-  badge: Badge;
-  stats: UserStats;
-  index: number;
-  colors: typeof Colors.dark;
-}) {
-  const colorScheme = useColorScheme() ?? 'dark';
-
-  // Calculate progress
-  let progress = 0;
-  let current = 0;
-  switch (badge.type) {
-    case 'tasks':
-      current = stats.totalTasksCompleted;
-      progress = Math.min(1, current / badge.requirement);
-      break;
-    case 'rooms':
-      current = stats.totalRoomsCleaned;
-      progress = Math.min(1, current / badge.requirement);
-      break;
-    case 'streak':
-      current = stats.currentStreak;
-      progress = Math.min(1, current / badge.requirement);
-      break;
-    case 'time':
-      current = stats.totalMinutesCleaned;
-      progress = Math.min(1, current / badge.requirement);
-      break;
-  }
-
-  return (
-    <Animated.View
-      entering={FadeInRight.delay(index * 100 + 500)}
-      style={[
-        styles.lockedBadgeRow,
-        {
-          backgroundColor: colorScheme === 'dark'
-            ? 'rgba(255, 255, 255, 0.05)'
-            : 'rgba(0, 0, 0, 0.03)',
-        },
-      ]}
-    >
-      <Text style={[styles.lockedBadgeEmoji, { opacity: 0.5 }]}>{badge.emoji}</Text>
-      <View style={styles.lockedBadgeInfo}>
-        <Text style={[Typography.body, { color: colors.textSecondary }]}>
-          {badge.name}
-        </Text>
-        <Text style={[Typography.caption1, { color: colors.textTertiary, marginTop: 2 }]}>
-          {current} / {badge.requirement} {badge.type}
-        </Text>
-        <View style={styles.progressBarBg}>
-          <View
-            style={[
-              styles.progressBarFill,
-              { width: `${progress * 100}%`, backgroundColor: getTypeColor(badge.type) },
-            ]}
-          />
-        </View>
-      </View>
-      <Text style={[Typography.caption1, { color: colors.textTertiary }]}>
-        {Math.round(progress * 100)}%
-      </Text>
-    </Animated.View>
-  );
-}
-
-// Room Progress Item
-function RoomProgressItem({
-  room,
-  index,
-  colors,
-  onPress,
-}: {
-  room: Room;
-  index: number;
-  colors: typeof Colors.dark;
-  onPress: () => void;
-}) {
-  const colorScheme = useColorScheme() ?? 'dark';
-  const { animatedStyle, onPressIn, onPressOut } = useCardPress();
-
-  return (
-    <AnimatedPressable
-      entering={FadeInRight.delay(index * 100 + 600)}
-      onPress={() => {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        onPress();
-      }}
-      onPressIn={onPressIn}
-      onPressOut={onPressOut}
-      style={animatedStyle}
-    >
-      <View
-        style={[
-          styles.roomProgressRow,
-          {
-            backgroundColor: colorScheme === 'dark'
-              ? 'rgba(255, 255, 255, 0.05)'
-              : 'rgba(0, 0, 0, 0.03)',
-          },
-        ]}
-      >
-        <Text style={styles.roomEmoji}>{room.emoji}</Text>
-        <View style={styles.roomInfo}>
-          <Text style={[Typography.body, { color: colors.text }]}>{room.name}</Text>
-          <View style={styles.roomProgressBar}>
-            <View
-              style={[
-                styles.roomProgressFill,
-                { width: `${room.currentProgress}%` },
-              ]}
+        {/* ── Streak Info ──────────────────────────────────────────────── */}
+        {streak > 0 && (
+          <Animated.View entering={FadeInDown.delay(300).springify()} style={styles.section}>
+            <LinearGradient
+              colors={['#FF9F0A', '#FF6B00']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.streakCard}
             >
-              <View
-                style={[StyleSheet.absoluteFill, { backgroundColor: colors.primary }]}
-              />
-            </View>
-          </View>
-        </View>
-        <Text style={[Typography.headline, { color: colors.primary }]}>
-          {room.currentProgress}%
-        </Text>
-        <Text style={[styles.chevron, { color: colors.textTertiary }]}>›</Text>
-      </View>
-    </AnimatedPressable>
+              <Text style={styles.streakCardEmoji}>🔥</Text>
+              <View style={styles.streakCardInfo}>
+                <Text style={[Typography.title2, { color: '#FFFFFF' }]}>
+                  {streak} Day Streak!
+                </Text>
+                <Text style={[Typography.subheadline, { color: 'rgba(255,255,255,0.85)' }]}>
+                  {streak >= 7 ? 'You\'re on fire! Keep it up!' :
+                   streak >= 3 ? `${7 - streak} more days for a week streak!` :
+                   'Keep going to build your streak!'}
+                </Text>
+              </View>
+            </LinearGradient>
+          </Animated.View>
+        )}
+      </ScrollView>
+    </View>
   );
 }
 
-function getTypeColor(type: string): string {
-  switch (type) {
-    case 'tasks':
-      return '#F87171'; // Red
-    case 'rooms':
-      return '#34D399'; // Green
-    case 'streak':
-      return '#FBBF24'; // Amber
-    case 'time':
-      return '#60A5FA'; // Blue
-    default:
-      return '#A78BFA'; // Purple
-  }
-}
-
+// ─────────────────────────────────────────────────────────────────────────────
+// Styles
+// ─────────────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingHorizontal: 0,
-  },
+  container: { flex: 1 },
+  scrollView: { flex: 1 },
+  scrollContent: { paddingHorizontal: Spacing.ml },
+
   header: {
-    paddingHorizontal: 20,
-    marginBottom: 24,
-  },
-  ringsSection: {
-    paddingHorizontal: 20,
-    marginBottom: 20,
-  },
-  ringsCard: {
-    padding: 24,
-  },
-  ringsContent: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: Spacing.ml,
   },
+
+  section: { marginBottom: Spacing.lg },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: Spacing.sm,
+  },
+
+  // Rings
+  ringsCard: { padding: Spacing.ml, marginBottom: Spacing.lg },
+  ringsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  ringsContainer: {
+    width: 180,
+    height: 180,
+    position: 'relative',
+  },
+  ringLayer: {},
   ringsLegend: {
-    marginTop: 24,
-    width: '100%',
-    gap: 12,
+    flex: 1,
+    paddingLeft: Spacing.ml,
+    gap: Spacing.md,
   },
   legendItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 8,
+    gap: 10,
   },
   legendDot: {
     width: 12,
     height: 12,
     borderRadius: 6,
-    marginRight: 12,
   },
-  legendText: {
-    flex: 1,
-  },
-  levelSection: {
-    paddingHorizontal: 20,
-    marginBottom: 20,
-  },
-  levelCard: {
-    padding: 16,
-  },
-  levelContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  levelBadge: {
-    marginRight: 16,
-  },
-  levelBadgeCircle: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  levelBadgeGradient: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  levelNumber: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
-  },
-  levelInfo: {
-    flex: 1,
-  },
-  xpBarContainer: {
-    marginTop: 8,
-  },
-  xpBarBg: {
-    height: 8,
-    borderRadius: 4,
-    overflow: 'hidden',
-  },
-  xpBarFill: {
-    height: '100%',
-    borderRadius: 4,
-    overflow: 'hidden',
-  },
-  weeklySection: {
-    marginBottom: 20,
-  },
-  weeklyCard: {
-    marginHorizontal: 20,
-    padding: 20,
-  },
-  weeklyChart: {
+
+  // Chart
+  chartCard: { padding: Spacing.ml },
+  chartHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-end',
-    height: 120,
-  },
-  barItem: {
     alignItems: 'center',
+    marginBottom: Spacing.ml,
+  },
+  weeklyBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: BorderRadius.md,
+  },
+  chartContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    height: 120,
+    gap: 4,
+  },
+  chartBar: {
     flex: 1,
+    alignItems: 'center',
+    gap: 4,
   },
-  barContainer: {
-    width: 24,
-    height: 80,
-    justifyContent: 'flex-end',
-    borderRadius: 12,
-    overflow: 'hidden',
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-  },
-  bar: {
+  chartBarTrack: {
     width: '100%',
-    borderRadius: 12,
+    height: 80,
+    borderRadius: 6,
+    justifyContent: 'flex-end',
     overflow: 'hidden',
+  },
+  chartBarFill: {
+    width: '100%',
+    borderRadius: 6,
     minHeight: 4,
   },
-  streakBanner: {
+  chartDayLabel: {
+    fontSize: 10,
+    fontWeight: '500',
+  },
+  chartValueLabel: {
+    fontSize: 9,
+    fontWeight: '600',
+  },
+
+  // Stats Grid
+  statsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  statCard: {
+    width: (SCREEN_WIDTH - 60) / 3,
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.sm,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 0.5,
+    alignItems: 'center',
+    gap: Spacing.xxs,
+  },
+  statEmoji: { fontSize: 24 },
+  statValue: {
+    ...Typography.title3,
+  },
+  statLabel: {
+    ...Typography.caption2,
+    textAlign: 'center',
+  },
+
+  // Badges
+  badgesGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.sm,
+  },
+  badgeCard: { padding: Spacing.sm },
+  badgeContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    marginTop: 16,
+    gap: 10,
   },
-  streakEmoji: {
-    fontSize: 18,
-    marginRight: 8,
-  },
-  statsSection: {
-    marginBottom: 24,
-  },
-  bentoContainer: {
-    paddingHorizontal: 20,
-    gap: 12,
-  },
-  bentoRow: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  bentoItem: {
-    flex: 1,
-  },
-  achievementsSection: {
-    marginBottom: 24,
-  },
-  badgeCard: {
-    width: 140,
-    height: 160,
-    borderRadius: 16,
-    padding: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  badgeEmoji: {
-    fontSize: 40,
-    marginBottom: 8,
-  },
-  rarityBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 8,
-    marginTop: 8,
-  },
-  lockedSection: {
-    marginBottom: 24,
-  },
-  lockedBadges: {
-    paddingHorizontal: 20,
-    gap: 8,
-  },
-  lockedBadgeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    borderRadius: 16,
-  },
-  lockedBadgeEmoji: {
-    fontSize: 32,
-    marginRight: 16,
-  },
-  lockedBadgeInfo: {
-    flex: 1,
-  },
-  progressBarBg: {
-    height: 4,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+  badgeEmoji: { fontSize: 28 },
+  badgeInfo: { flex: 1, gap: 4 },
+  badgeProgressBar: {
+    height: 3,
+    backgroundColor: 'rgba(120,120,128,0.2)',
     borderRadius: 2,
-    marginTop: 8,
     overflow: 'hidden',
+    marginTop: 4,
   },
-  progressBarFill: {
+  badgeProgressFill: {
     height: '100%',
     borderRadius: 2,
   },
-  roomsSection: {
-    marginBottom: 24,
-  },
-  roomsList: {
-    paddingHorizontal: 20,
-    gap: 8,
-  },
-  roomProgressRow: {
+
+  // Streak Card
+  streakCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
-    borderRadius: 16,
+    padding: Spacing.ml,
+    borderRadius: BorderRadius.card,
+    gap: Spacing.md,
   },
-  roomEmoji: {
-    fontSize: 28,
-    marginRight: 12,
-  },
-  roomInfo: {
-    flex: 1,
-  },
-  roomProgressBar: {
-    height: 6,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    borderRadius: 3,
-    marginTop: 6,
-    overflow: 'hidden',
-  },
-  roomProgressFill: {
-    height: '100%',
-    borderRadius: 3,
-    overflow: 'hidden',
-  },
-  chevron: {
-    fontSize: 24,
-    fontWeight: '300',
-    marginLeft: 8,
-  },
-  motivationSection: {
-    paddingHorizontal: 20,
-    marginBottom: 24,
-  },
-  motivationCard: {
-    padding: 24,
-    alignItems: 'center',
-  },
-  motivationEmoji: {
-    fontSize: 48,
-  },
+  streakCardEmoji: { fontSize: 40 },
+  streakCardInfo: { flex: 1 },
 });

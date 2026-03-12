@@ -13,24 +13,21 @@ import {
   useColorScheme,
   Alert,
   ScrollView,
+  Linking,
 } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   FadeIn,
   FadeInDown,
   FadeInUp,
   FadeOut,
   ZoomIn,
-  ZoomOut,
   SlideInUp,
-  SlideOutDown,
   useSharedValue,
   useAnimatedStyle,
   withSpring,
   withTiming,
   withSequence,
-  withDelay,
-  runOnJS,
-  Easing,
 } from 'react-native-reanimated';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -43,15 +40,16 @@ import * as Haptics from 'expo-haptics';
 
 import { Colors } from '@/constants/Colors';
 import { Typography } from '@/theme/typography';
+import { Spacing, BorderRadius } from '@/theme/spacing';
 import { useDeclutter } from '@/context/DeclutterContext';
 import { ROOM_TYPE_INFO, RoomType } from '@/types/declutter';
-import { GlassCard } from '@/components/ui/GlassCard';
 import { useCardPress } from '@/hooks/useAnimatedPress';
+import { ScreenErrorBoundary } from '@/components/ErrorBoundary';
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
-export default function CameraScreen() {
+function CameraScreenContent() {
   const colorScheme = useColorScheme() ?? 'dark';
   const colors = Colors[colorScheme];
   const insets = useSafeAreaInsets();
@@ -63,7 +61,9 @@ export default function CameraScreen() {
   const [isCapturing, setIsCapturing] = useState(false);
   const [showRoomSelector, setShowRoomSelector] = useState(false);
   const [selectedRoomType, setSelectedRoomType] = useState<RoomType | null>(null);
-  const [showFlash, setShowFlash] = useState(false);
+  const [flashEnabled, setFlashEnabled] = useState(false);
+  const [countdownActive, setCountdownActive] = useState(false);
+  const [countdownValue, setCountdownValue] = useState(0);
 
   const activeRoom = activeRoomId ? rooms.find(r => r.id === activeRoomId) : null;
 
@@ -71,6 +71,86 @@ export default function CameraScreen() {
   const captureScale = useSharedValue(1);
   const flashOpacity = useSharedValue(0);
   const cornerScale = useSharedValue(1);
+
+  // Pinch-to-zoom for preview
+  const previewScale = useSharedValue(1);
+  const savedScale = useSharedValue(1);
+  const previewTranslateX = useSharedValue(0);
+  const previewTranslateY = useSharedValue(0);
+  const savedTranslateX = useSharedValue(0);
+  const savedTranslateY = useSharedValue(0);
+
+  // Reset zoom when media changes
+  useEffect(() => {
+    previewScale.value = 1;
+    savedScale.value = 1;
+    previewTranslateX.value = 0;
+    previewTranslateY.value = 0;
+    savedTranslateX.value = 0;
+    savedTranslateY.value = 0;
+  }, [capturedMedia]);
+
+  // Pinch gesture for zooming
+  const pinchGesture = Gesture.Pinch()
+    .onUpdate((e) => {
+      previewScale.value = Math.min(Math.max(savedScale.value * e.scale, 1), 4);
+    })
+    .onEnd(() => {
+      savedScale.value = previewScale.value;
+      // Snap back to 1 if close
+      if (previewScale.value < 1.1) {
+        previewScale.value = withSpring(1);
+        savedScale.value = 1;
+        previewTranslateX.value = withSpring(0);
+        previewTranslateY.value = withSpring(0);
+        savedTranslateX.value = 0;
+        savedTranslateY.value = 0;
+      }
+    });
+
+  // Pan gesture for moving zoomed image
+  const panGesture = Gesture.Pan()
+    .onUpdate((e) => {
+      if (savedScale.value > 1) {
+        previewTranslateX.value = savedTranslateX.value + e.translationX;
+        previewTranslateY.value = savedTranslateY.value + e.translationY;
+      }
+    })
+    .onEnd(() => {
+      savedTranslateX.value = previewTranslateX.value;
+      savedTranslateY.value = previewTranslateY.value;
+    });
+
+  // Double tap to reset zoom
+  const doubleTapGesture = Gesture.Tap()
+    .numberOfTaps(2)
+    .onEnd(() => {
+      if (savedScale.value > 1) {
+        previewScale.value = withSpring(1);
+        savedScale.value = 1;
+        previewTranslateX.value = withSpring(0);
+        previewTranslateY.value = withSpring(0);
+        savedTranslateX.value = 0;
+        savedTranslateY.value = 0;
+      } else {
+        previewScale.value = withSpring(2);
+        savedScale.value = 2;
+      }
+    });
+
+  const composedGesture = Gesture.Simultaneous(
+    pinchGesture,
+    panGesture,
+    doubleTapGesture
+  );
+
+  const previewAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [
+      { scale: previewScale.value },
+      { translateX: previewTranslateX.value },
+      { translateY: previewTranslateY.value },
+    ],
+  }));
 
   // Pulsing animation for capture button
   useEffect(() => {
@@ -113,6 +193,17 @@ export default function CameraScreen() {
   }
 
   if (!permission.granted) {
+    const isPermanentlyDenied = permission.canAskAgain === false;
+
+    const openSettings = () => {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      if (process.env.EXPO_OS === 'ios') {
+        Linking.openURL('app-settings:');
+      } else {
+        Linking.openSettings();
+      }
+    };
+
     return (
       <View style={[styles.container, styles.permissionContainer]}>
         <LinearGradient
@@ -120,31 +211,56 @@ export default function CameraScreen() {
           style={StyleSheet.absoluteFill}
         />
         <Animated.View entering={FadeInDown.springify()} style={styles.permissionContent}>
-          <Text style={styles.permissionEmoji}>📸</Text>
-          <Text style={[Typography.title1, { color: '#FFFFFF', marginTop: 20 }]}>
+          <Text style={styles.permissionEmoji} accessibilityElementsHidden>📸</Text>
+          <Text style={[Typography.title1, { color: '#FFFFFF', marginTop: 20 }]} accessibilityRole="header">
             Camera Access Needed
           </Text>
           <Text style={[Typography.body, { color: 'rgba(255,255,255,0.7)', textAlign: 'center', marginTop: 12, maxWidth: 280 }]}>
-            We need camera access to capture photos of your spaces for AI analysis.
+            {isPermanentlyDenied
+              ? 'Camera access was denied. Please enable it in your device settings to capture photos.'
+              : 'We need camera access to capture photos of your spaces for AI analysis.'}
           </Text>
 
           <View style={styles.permissionButtons}>
-            <Pressable
-              onPress={requestPermission}
-              style={({ pressed }) => [styles.primaryButton, { opacity: pressed ? 0.8 : 1 }]}
-            >
-              <LinearGradient
-                colors={[...colors.gradientPrimary]}
-                style={StyleSheet.absoluteFill}
-              />
-              <Text style={[Typography.headline, { color: '#FFFFFF' }]}>
-                Grant Permission
-              </Text>
-            </Pressable>
+            {isPermanentlyDenied ? (
+              <Pressable
+                onPress={openSettings}
+                style={({ pressed }) => [styles.primaryButton, { opacity: pressed ? 0.8 : 1 }]}
+                accessibilityRole="button"
+                accessibilityLabel="Open device settings"
+                accessibilityHint="Opens settings to enable camera permission"
+              >
+                <LinearGradient
+                  colors={[...colors.gradientPrimary]}
+                  style={StyleSheet.absoluteFill}
+                />
+                <Text style={[Typography.headline, { color: '#FFFFFF' }]}>
+                  Open Settings
+                </Text>
+              </Pressable>
+            ) : (
+              <Pressable
+                onPress={requestPermission}
+                style={({ pressed }) => [styles.primaryButton, { opacity: pressed ? 0.8 : 1 }]}
+                accessibilityRole="button"
+                accessibilityLabel="Grant camera permission"
+                accessibilityHint="Opens system dialog to allow camera access"
+              >
+                <LinearGradient
+                  colors={[...colors.gradientPrimary]}
+                  style={StyleSheet.absoluteFill}
+                />
+                <Text style={[Typography.headline, { color: '#FFFFFF' }]}>
+                  Grant Permission
+                </Text>
+              </Pressable>
+            )}
 
             <Pressable
               onPress={() => router.back()}
               style={({ pressed }) => [styles.secondaryButton, { opacity: pressed ? 0.8 : 1 }]}
+              accessibilityRole="button"
+              accessibilityLabel="Go back"
             >
               <Text style={[Typography.body, { color: 'rgba(255,255,255,0.7)' }]}>
                 Go Back
@@ -156,7 +272,30 @@ export default function CameraScreen() {
     );
   }
 
-  const takePicture = async () => {
+  const startCountdown = () => {
+    if (isCapturing || countdownActive) return;
+
+    setCountdownActive(true);
+    setCountdownValue(3);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
+    // Countdown sequence
+    let count = 3;
+    const countdownInterval = setInterval(() => {
+      count--;
+      if (count > 0) {
+        setCountdownValue(count);
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      } else {
+        clearInterval(countdownInterval);
+        setCountdownActive(false);
+        setCountdownValue(0);
+        takePictureNow();
+      }
+    }, 1000);
+  };
+
+  const takePictureNow = async () => {
     if (!cameraRef.current || isCapturing) return;
 
     try {
@@ -192,6 +331,11 @@ export default function CameraScreen() {
     }
   };
 
+  const takePicture = async () => {
+    // Use countdown for more deliberate capture
+    startCountdown();
+  };
+
   const pickMedia = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     try {
@@ -224,21 +368,22 @@ export default function CameraScreen() {
     setSelectedRoomType(null);
   };
 
-  const handleAnalyze = async () => {
+  const handleAnalyze = async (roomTypeOverride?: RoomType) => {
     if (!capturedMedia) return;
 
     let roomId = activeRoomId;
+    const effectiveRoomType = roomTypeOverride ?? selectedRoomType;
 
     if (!roomId) {
-      if (!selectedRoomType) {
+      if (!effectiveRoomType) {
         setShowRoomSelector(true);
         return;
       }
 
-      const info = ROOM_TYPE_INFO[selectedRoomType];
+      const info = ROOM_TYPE_INFO[effectiveRoomType];
       const newRoom = addRoom({
         name: info.label,
-        type: selectedRoomType,
+        type: effectiveRoomType,
         emoji: info.emoji,
         messLevel: 0,
       });
@@ -255,7 +400,7 @@ export default function CameraScreen() {
       return;
     }
 
-    addPhotoToRoom(roomId, {
+    await addPhotoToRoom(roomId, {
       uri: capturedMedia.uri,
       timestamp: new Date(),
       type: photoType,
@@ -275,20 +420,22 @@ export default function CameraScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setSelectedRoomType(type);
     setShowRoomSelector(false);
-    setTimeout(() => handleAnalyze(), 100);
+    // Pass type directly to avoid race condition with state update
+    handleAnalyze(type);
   };
 
   // Room selector modal
   if (showRoomSelector && capturedMedia) {
     return (
-      <View style={styles.container}>
+      <View style={styles.container} accessibilityViewIsModal>
         <Image
           source={{ uri: capturedMedia.uri }}
           style={StyleSheet.absoluteFill}
           contentFit="cover"
           blurRadius={20}
+          accessibilityElementsHidden
         />
-        <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.6)' }]} />
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.6)' }]} accessibilityElementsHidden />
 
         <Animated.View
           entering={SlideInUp.springify()}
@@ -298,12 +445,14 @@ export default function CameraScreen() {
           <Pressable
             onPress={() => setShowRoomSelector(false)}
             style={styles.selectorBackButton}
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
           >
             <BlurView intensity={60} tint="dark" style={StyleSheet.absoluteFill} />
             <Text style={[Typography.body, { color: '#FFFFFF' }]}>← Back</Text>
           </Pressable>
 
-          <Text style={[Typography.largeTitle, { color: '#FFFFFF', textAlign: 'center', marginTop: 24 }]}>
+          <Text style={[Typography.largeTitle, { color: '#FFFFFF', textAlign: 'center', marginTop: 24 }]} accessibilityRole="header">
             What type of space?
           </Text>
           <Text style={[Typography.body, { color: 'rgba(255,255,255,0.7)', textAlign: 'center', marginTop: 8 }]}>
@@ -315,6 +464,7 @@ export default function CameraScreen() {
             style={styles.roomTypeScroll}
             contentContainerStyle={styles.roomTypeGrid}
             showsVerticalScrollIndicator={false}
+            accessibilityRole="list"
           >
             {(Object.keys(ROOM_TYPE_INFO) as RoomType[]).map((type, index) => (
               <RoomTypeCard
@@ -335,12 +485,24 @@ export default function CameraScreen() {
   if (capturedMedia) {
     return (
       <View style={styles.container}>
-        {/* Full screen preview */}
-        <Image
-          source={{ uri: capturedMedia.uri }}
-          style={StyleSheet.absoluteFill}
-          contentFit="cover"
-        />
+        {/* Full screen preview with pinch-to-zoom */}
+        <GestureDetector gesture={composedGesture}>
+          <Animated.View style={[StyleSheet.absoluteFill, previewAnimatedStyle]}>
+            <Image
+              source={{ uri: capturedMedia.uri }}
+              style={StyleSheet.absoluteFill}
+              contentFit="cover"
+            />
+          </Animated.View>
+        </GestureDetector>
+
+        {/* Zoom hint */}
+        <Animated.View entering={FadeIn.delay(500)} exiting={FadeOut} style={styles.zoomHint}>
+          <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFill} />
+          <Text style={[Typography.caption2, { color: 'rgba(255,255,255,0.8)' }]}>
+            Pinch to zoom • Double-tap to reset
+          </Text>
+        </Animated.View>
 
         {/* Top gradient overlay */}
         <LinearGradient
@@ -390,16 +552,22 @@ export default function CameraScreen() {
                 styles.retakeButton,
                 { opacity: pressed ? 0.8 : 1 },
               ]}
+              accessibilityRole="button"
+              accessibilityLabel="Retake photo"
+              accessibilityHint="Discard this photo and take a new one"
             >
               <Text style={[Typography.headline, { color: '#FFFFFF' }]}>Retake</Text>
             </Pressable>
 
             <Pressable
-              onPress={handleAnalyze}
+              onPress={() => handleAnalyze()}
               style={({ pressed }) => [
                 styles.analyzeButton,
                 { opacity: pressed ? 0.8 : 1 },
               ]}
+              accessibilityRole="button"
+              accessibilityLabel="Analyze photo"
+              accessibilityHint="Send this photo to AI for analysis and get cleaning tasks"
             >
               <LinearGradient
                 colors={[...colors.gradientPrimary]}
@@ -425,6 +593,9 @@ export default function CameraScreen() {
               setCapturedMedia(null);
             }}
             style={styles.glassButton}
+            accessibilityRole="button"
+            accessibilityLabel="Discard photo"
+            accessibilityHint="Remove this photo and return to camera"
           >
             <BlurView intensity={60} tint="dark" style={StyleSheet.absoluteFill} />
             <Text style={{ color: '#FFFFFF', fontSize: 18 }}>✕</Text>
@@ -434,10 +605,19 @@ export default function CameraScreen() {
     );
   }
 
-  // Camera view
+  // Camera view - CameraView doesn't support children, so overlay is a sibling
   return (
     <View style={styles.container}>
-      <CameraView ref={cameraRef} style={styles.camera} facing="back">
+      {/* Camera - no children allowed */}
+      <CameraView
+        ref={cameraRef}
+        style={styles.camera}
+        facing="back"
+        flash={flashEnabled ? 'on' : 'off'}
+      />
+
+      {/* Overlay container - positioned absolutely over camera */}
+      <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
         {/* Flash overlay */}
         <Animated.View
           style={[
@@ -465,6 +645,9 @@ export default function CameraScreen() {
               router.back();
             }}
             style={styles.glassButton}
+            accessibilityRole="button"
+            accessibilityLabel="Close camera"
+            accessibilityHint="Go back to previous screen"
           >
             <BlurView intensity={60} tint="dark" style={StyleSheet.absoluteFill} />
             <Text style={{ color: '#FFFFFF', fontSize: 18 }}>✕</Text>
@@ -491,12 +674,27 @@ export default function CameraScreen() {
             <View style={[styles.corner, styles.cornerBR]} />
           </Animated.View>
 
-          <Animated.View entering={FadeIn.delay(400)} style={styles.guideBadge}>
-            <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFill} />
-            <Text style={[Typography.caption1, { color: 'rgba(255,255,255,0.9)' }]}>
-              Position the room in frame
-            </Text>
-          </Animated.View>
+          {/* Countdown overlay */}
+          {countdownActive && countdownValue > 0 && (
+            <Animated.View
+              entering={ZoomIn.springify()}
+              style={styles.countdownOverlay}
+              accessibilityLiveRegion="polite"
+              accessibilityLabel={`Taking photo in ${countdownValue}`}
+            >
+              <BlurView intensity={80} tint="dark" style={StyleSheet.absoluteFill} />
+              <Text style={styles.countdownText} accessibilityElementsHidden>{countdownValue}</Text>
+            </Animated.View>
+          )}
+
+          {!countdownActive && (
+            <Animated.View entering={FadeIn.delay(400)} style={styles.guideBadge}>
+              <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFill} />
+              <Text style={[Typography.caption1, { color: 'rgba(255,255,255,0.9)' }]}>
+                Position the room in frame
+              </Text>
+            </Animated.View>
+          )}
         </View>
 
         {/* Bottom gradient */}
@@ -527,6 +725,9 @@ export default function CameraScreen() {
                 styles.sideControlButton,
                 { transform: [{ scale: pressed ? 0.9 : 1 }] },
               ]}
+              accessibilityRole="button"
+              accessibilityLabel="Open gallery"
+              accessibilityHint="Choose a photo from your gallery instead"
             >
               <BlurView intensity={60} tint="dark" style={StyleSheet.absoluteFill} />
               <Text style={{ fontSize: 24 }}>🖼️</Text>
@@ -537,27 +738,45 @@ export default function CameraScreen() {
               onPress={takePicture}
               disabled={isCapturing}
               style={[styles.captureButton, captureAnimatedStyle, isCapturing && { opacity: 0.6 }]}
+              accessibilityRole="button"
+              accessibilityLabel={isCapturing ? "Taking photo" : "Take photo"}
+              accessibilityHint="Capture a photo of the room"
+              accessibilityState={{ disabled: isCapturing }}
             >
               <View style={styles.captureButtonOuter}>
                 <View style={styles.captureButtonInner} />
               </View>
             </AnimatedPressable>
 
-            {/* Flip camera placeholder */}
-            <View style={styles.sideControlButton}>
+            {/* Flash toggle */}
+            <Pressable
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setFlashEnabled(prev => !prev);
+              }}
+              style={({ pressed }) => [
+                styles.sideControlButton,
+                flashEnabled && styles.flashEnabledButton,
+                { transform: [{ scale: pressed ? 0.9 : 1 }] },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel={`Flash ${flashEnabled ? 'on' : 'off'}`}
+              accessibilityHint="Toggle camera flash"
+            >
               <BlurView intensity={60} tint="dark" style={StyleSheet.absoluteFill} />
-              <Text style={{ fontSize: 24 }}>🔄</Text>
-            </View>
+              <Text style={{ fontSize: 20 }}>{flashEnabled ? '⚡' : '🔦'}</Text>
+              <Text style={[styles.flashLabel, flashEnabled && styles.flashLabelEnabled]}>{flashEnabled ? 'On' : 'Off'}</Text>
+            </Pressable>
           </View>
         </Animated.View>
-      </CameraView>
+      </View>
     </View>
   );
 }
 
 // Room Type Card Component
 function RoomTypeCard({
-  type,
+  type: _type,
   info,
   onPress,
   delay,
@@ -575,14 +794,17 @@ function RoomTypeCard({
       onPressIn={onPressIn}
       onPressOut={onPressOut}
       style={animatedStyle}
+      accessibilityRole="button"
+      accessibilityLabel={`${info.label} room`}
+      accessibilityHint={`Double tap to create a ${info.label.toLowerCase()} room`}
     >
       <Animated.View
         entering={FadeInDown.delay(delay).springify()}
         style={styles.roomTypeCard}
       >
         <BlurView intensity={60} tint="dark" style={StyleSheet.absoluteFill} />
-        <Text style={styles.roomTypeEmoji}>{info.emoji}</Text>
-        <Text style={[Typography.headline, { color: '#FFFFFF', marginTop: 8 }]}>
+        <Text style={styles.roomTypeEmoji} accessibilityElementsHidden>{info.emoji}</Text>
+        <Text style={[Typography.headline, { color: '#FFFFFF', marginTop: 8 }]} accessibilityElementsHidden>
           {info.label}
         </Text>
       </Animated.View>
@@ -604,26 +826,30 @@ const styles = StyleSheet.create({
   },
   permissionContent: {
     alignItems: 'center',
-    padding: 32,
+    padding: Spacing.xl,
   },
   permissionEmoji: {
     fontSize: 64,
   },
   permissionButtons: {
-    marginTop: 32,
-    gap: 12,
+    marginTop: Spacing.xl,
+    gap: Spacing.sm,
     width: '100%',
   },
   primaryButton: {
-    paddingVertical: 16,
-    paddingHorizontal: 32,
-    borderRadius: 16,
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.xl,
+    borderRadius: BorderRadius.button,
     overflow: 'hidden',
     alignItems: 'center',
+    minHeight: 44,
+    justifyContent: 'center',
   },
   secondaryButton: {
-    paddingVertical: 12,
+    paddingVertical: Spacing.sm,
     alignItems: 'center',
+    minHeight: 44,
+    justifyContent: 'center',
   },
   topGradient: {
     position: 'absolute',
@@ -717,6 +943,41 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     overflow: 'hidden',
   },
+  countdownOverlay: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  countdownText: {
+    ...Typography.monoHero,
+    fontSize: 64,
+    color: '#FFFFFF',
+  },
+  flashLabel: {
+    ...Typography.caption2,
+    color: 'rgba(255,255,255,0.9)',
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  flashEnabledButton: {
+    borderWidth: 2,
+    borderColor: '#FFD700',
+  },
+  flashLabelEnabled: {
+    color: '#FFD700',
+  },
+  zoomHint: {
+    position: 'absolute',
+    top: 100,
+    alignSelf: 'center',
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs,
+    borderRadius: BorderRadius.chip,
+    overflow: 'hidden',
+  },
   controls: {
     position: 'absolute',
     bottom: 0,
@@ -726,10 +987,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   tipContainer: {
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 20,
-    marginBottom: 24,
+    paddingHorizontal: Spacing.ml,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.card,
+    marginBottom: Spacing.lg,
     overflow: 'hidden',
   },
   captureRow: {
@@ -785,8 +1046,8 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   videoIndicatorText: {
+    ...Typography.caption2,
     color: '#EF4444',
-    fontSize: 11,
     fontWeight: '700',
     letterSpacing: 1,
   },
@@ -809,10 +1070,10 @@ const styles = StyleSheet.create({
     fontSize: 40,
   },
   roomTag: {
-    marginTop: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 16,
+    marginTop: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs,
+    borderRadius: BorderRadius.chip,
     backgroundColor: 'rgba(255,255,255,0.15)',
   },
   previewButtons: {
@@ -821,18 +1082,21 @@ const styles = StyleSheet.create({
   },
   retakeButton: {
     flex: 1,
-    paddingVertical: 16,
-    borderRadius: 16,
+    paddingVertical: Spacing.md,
+    borderRadius: BorderRadius.button,
     backgroundColor: 'rgba(255,255,255,0.15)',
     alignItems: 'center',
+    minHeight: 44,
+    justifyContent: 'center',
   },
   analyzeButton: {
     flex: 2,
-    paddingVertical: 16,
-    borderRadius: 16,
+    paddingVertical: Spacing.md,
+    borderRadius: BorderRadius.button,
     overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
+    minHeight: 44,
   },
   // Room selector styles
   roomSelectorContainer: {
@@ -841,10 +1105,12 @@ const styles = StyleSheet.create({
   },
   selectorBackButton: {
     alignSelf: 'flex-start',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 20,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.card,
     overflow: 'hidden',
+    minHeight: 44,
+    justifyContent: 'center',
   },
   roomTypeScroll: {
     flex: 1,
@@ -859,7 +1125,7 @@ const styles = StyleSheet.create({
   roomTypeCard: {
     width: (SCREEN_WIDTH - 52) / 2,
     height: 120,
-    borderRadius: 20,
+    borderRadius: BorderRadius.card,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
@@ -868,3 +1134,11 @@ const styles = StyleSheet.create({
     fontSize: 36,
   },
 });
+
+export default function CameraScreen() {
+  return (
+    <ScreenErrorBoundary screenName="Camera">
+      <CameraScreenContent />
+    </ScreenErrorBoundary>
+  );
+}

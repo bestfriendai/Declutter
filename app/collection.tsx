@@ -3,30 +3,42 @@
  * View all collected items with rarity, stats, and animations
  */
 
-import { router } from 'expo-router';
-import React, { useState, useMemo } from 'react';
-import {
-  useColorScheme,
-  View,
-  StyleSheet,
-  ScrollView,
-  Pressable,
-  Text as RNText,
-  Dimensions,
-} from 'react-native';
-import * as Haptics from 'expo-haptics';
-import { useDeclutter } from '@/context/DeclutterContext';
 import { Colors } from '@/constants/Colors';
+import { useDeclutter } from '@/context/DeclutterContext';
+import { Typography } from '@/theme/typography';
+import { Spacing, BorderRadius } from '@/theme/spacing';
 import {
-  COLLECTIBLES,
-  RARITY_COLORS,
-  CollectibleRarity,
-  CollectibleCategory,
-  Collectible,
+    Collectible,
+    CollectibleCategory,
+    CollectibleRarity,
+    COLLECTIBLES,
+    RARITY_COLORS,
 } from '@/types/declutter';
+import { FlashList } from '@shopify/flash-list';
+import * as Haptics from 'expo-haptics';
+import { router } from 'expo-router';
+import React, { useMemo, useState } from 'react';
+import {
+    Pressable,
+    Text as RNText,
+    ScrollView,
+    StyleSheet,
+    useColorScheme,
+    useWindowDimensions,
+    View,
+} from 'react-native';
+import Animated, {
+    FadeIn,
+    FadeInDown,
+    FadeOut,
+    LinearTransition,
+    SlideInDown,
+    ZoomIn,
+    ZoomOut
+} from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-const { width } = Dimensions.get('window');
-const ITEM_SIZE = (width - 60) / 4;
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 type FilterType = 'all' | CollectibleCategory;
 
@@ -34,6 +46,9 @@ export default function CollectionScreen() {
   const rawColorScheme = useColorScheme();
   const colorScheme = rawColorScheme === 'dark' ? 'dark' : 'light';
   const colors = Colors[colorScheme];
+  const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
+  const ITEM_SIZE = (width - 60) / 4;
 
   const { collection, collectionStats, stats } = useDeclutter();
   const [filter, setFilter] = useState<FilterType>('all');
@@ -91,58 +106,72 @@ export default function CollectionScreen() {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Header */}
-      <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.backButton}>
-          <RNText style={[styles.backText, { color: colors.primary }]}>Back</RNText>
+      <Animated.View
+        entering={FadeInDown.delay(50).springify()}
+        style={[styles.header, { paddingTop: insets.top + Spacing.sm }]}
+      >
+        <Pressable
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            router.back();
+          }}
+          style={styles.backButton}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+          hitSlop={8}
+        >
+          <RNText style={[Typography.body, { color: colors.primary }]}>Back</RNText>
         </Pressable>
-        <RNText style={[styles.title, { color: colors.text }]}>Collection</RNText>
+        <RNText style={[Typography.title3, { color: colors.text }]} accessibilityRole="header">Collection</RNText>
         <View style={styles.placeholder} />
-      </View>
+      </Animated.View>
 
       {/* Stats Overview */}
-      <View style={[styles.statsCard, { backgroundColor: colors.card }]}>
-        <View style={styles.statsRow}>
-          <View style={styles.statItem}>
-            <RNText style={[styles.statValue, { color: colors.text }]}>
-              {collectionStats.totalCollected}
-            </RNText>
-            <RNText style={[styles.statLabel, { color: colors.textSecondary }]}>
-              Total
-            </RNText>
+      <Animated.View entering={FadeInDown.delay(100).springify()}>
+        <View style={[styles.statsCard, { backgroundColor: colors.card }]}>
+          <View style={styles.statsRow} accessibilityRole="summary" accessibilityLabel={`${collectionStats.totalCollected} total collected, ${uniqueOwned} of ${totalCollectibles} unique, ${completionPercent}% complete`}>
+            <View style={styles.statItem}>
+              <RNText style={[Typography.title1, { color: colors.text }]}>
+                {collectionStats.totalCollected}
+              </RNText>
+              <RNText style={[Typography.caption1, { color: colors.textSecondary }]}>
+                Total
+              </RNText>
+            </View>
+            <View style={styles.statItem}>
+              <RNText style={[Typography.title1, { color: colors.text }]}>
+                {uniqueOwned}/{totalCollectibles}
+              </RNText>
+              <RNText style={[Typography.caption1, { color: colors.textSecondary }]}>
+                Unique
+              </RNText>
+            </View>
+            <View style={styles.statItem}>
+              <RNText style={[Typography.title1, { color: colors.primary }]}>
+                {completionPercent}%
+              </RNText>
+              <RNText style={[Typography.caption1, { color: colors.textSecondary }]}>
+                Complete
+              </RNText>
+            </View>
           </View>
-          <View style={styles.statItem}>
-            <RNText style={[styles.statValue, { color: colors.text }]}>
-              {uniqueOwned}/{totalCollectibles}
-            </RNText>
-            <RNText style={[styles.statLabel, { color: colors.textSecondary }]}>
-              Unique
-            </RNText>
-          </View>
-          <View style={styles.statItem}>
-            <RNText style={[styles.statValue, { color: colors.primary }]}>
-              {completionPercent}%
-            </RNText>
-            <RNText style={[styles.statLabel, { color: colors.textSecondary }]}>
-              Complete
-            </RNText>
-          </View>
-        </View>
 
-        {/* Rarity Breakdown */}
-        <View style={styles.rarityRow}>
-          {(['common', 'uncommon', 'rare', 'epic', 'legendary'] as CollectibleRarity[]).map(rarity => {
-            const countKey = `${rarity}Count` as 'commonCount' | 'uncommonCount' | 'rareCount' | 'epicCount' | 'legendaryCount';
-            return (
-              <View key={rarity} style={styles.rarityItem}>
-                <View style={[styles.rarityDot, { backgroundColor: RARITY_COLORS[rarity] }]} />
-                <RNText style={[styles.rarityCount, { color: colors.textSecondary }]}>
-                  {collectionStats[countKey]}
-                </RNText>
-              </View>
-            );
-          })}
+          {/* Rarity Breakdown */}
+          <View style={styles.rarityRow}>
+            {(['common', 'uncommon', 'rare', 'epic', 'legendary'] as CollectibleRarity[]).map(rarity => {
+              const countKey = `${rarity}Count` as 'commonCount' | 'uncommonCount' | 'rareCount' | 'epicCount' | 'legendaryCount';
+              return (
+                <View key={rarity} style={styles.rarityItem} accessibilityLabel={`${rarity}: ${collectionStats[countKey]}`}>
+                  <View style={[styles.rarityDot, { backgroundColor: RARITY_COLORS[rarity] }]} />
+                  <RNText style={[Typography.caption1Medium, { color: colors.textSecondary }]}>
+                    {collectionStats[countKey]}
+                  </RNText>
+                </View>
+              );
+            })}
+          </View>
         </View>
-      </View>
+      </Animated.View>
 
       {/* Category Filter */}
       <ScrollView
@@ -164,12 +193,15 @@ export default function CollectionScreen() {
                 backgroundColor: filter === cat.key ? colors.primary : colors.card,
               },
             ]}
+            accessibilityRole="button"
+            accessibilityLabel={`Filter by ${cat.label}`}
+            accessibilityState={{ selected: filter === cat.key }}
           >
-            <RNText style={styles.filterEmoji}>{cat.emoji}</RNText>
+            <RNText style={styles.filterEmoji} accessibilityElementsHidden>{cat.emoji}</RNText>
             <RNText
               style={[
                 styles.filterText,
-                { color: filter === cat.key ? '#fff' : colors.text },
+                { color: filter === cat.key ? colors.textOnPrimary : colors.text },
               ]}
             >
               {cat.label}
@@ -205,7 +237,7 @@ export default function CollectionScreen() {
               style={[styles.emptyStateCTA, { backgroundColor: colors.primary }]}
               onPress={() => router.push('/camera')}
             >
-              <RNText style={styles.emptyStateCTAText}>Start Cleaning</RNText>
+              <RNText style={[styles.emptyStateCTAText, { color: colors.textOnPrimary }]}>Start Cleaning</RNText>
             </Pressable>
           </View>
         </View>
@@ -213,20 +245,26 @@ export default function CollectionScreen() {
 
       {/* Collection Grid */}
       {collectionStats.totalCollected > 0 && (
-      <ScrollView style={styles.gridScroll} contentContainerStyle={styles.gridContent}>
-        <View style={styles.grid}>
-          {filteredCollectibles.map(item => {
+      <FlashList
+        data={filteredCollectibles}
+        numColumns={4}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={styles.gridContent}
+        renderItem={({ item }) => {
             const owned = isOwned(item.id);
             const unlockable = canUnlock(item);
             const count = collectibleCounts[item.id] || 0;
 
             return (
-              <Pressable
-                key={item.id}
+              <AnimatedPressable
                 onPress={() => handleItemPress(item)}
+                layout={LinearTransition.springify()}
+                entering={ZoomIn.delay(50).springify()}
                 style={[
                   styles.gridItem,
                   {
+                    width: ITEM_SIZE,
+                    height: ITEM_SIZE,
                     backgroundColor: owned
                       ? getRarityGlow(item.rarity)
                       : colors.card,
@@ -234,43 +272,59 @@ export default function CollectionScreen() {
                     opacity: unlockable ? 1 : 0.5,
                   },
                 ]}
+                accessibilityRole="button"
+                accessibilityLabel={owned
+                  ? `${item.name}, ${item.rarity} rarity${count > 1 ? `, owned ${count} times` : ''}`
+                  : unlockable ? 'Unknown collectible, tap to view requirements' : 'Locked collectible'}
+                accessibilityHint="Double tap to view details"
               >
-                <RNText style={[styles.itemEmoji, { opacity: owned ? 1 : 0.3 }]}>
+                <RNText style={[styles.itemEmoji, { opacity: owned ? 1 : 0.3 }]} accessibilityElementsHidden>
                   {owned ? item.emoji : '❓'}
                 </RNText>
                 {count > 1 && (
-                  <View style={[styles.countBadge, { backgroundColor: RARITY_COLORS[item.rarity] }]}>
-                    <RNText style={styles.countText}>x{count}</RNText>
+                  <View style={[styles.countBadge, { backgroundColor: RARITY_COLORS[item.rarity] }]} accessibilityElementsHidden>
+                    <RNText style={[styles.countText, { color: colors.textOnPrimary }]}>x{count}</RNText>
                   </View>
                 )}
                 {!unlockable && (
-                  <View style={styles.lockBadge}>
+                  <View style={styles.lockBadge} accessibilityElementsHidden>
                     <RNText style={styles.lockText}>🔒</RNText>
                   </View>
                 )}
-              </Pressable>
+              </AnimatedPressable>
             );
-          })}
-        </View>
-      </ScrollView>
+          }}
+      />
       )}
 
       {/* Item Detail Modal */}
       {selectedItem && (
-        <Pressable
-          style={styles.modalOverlay}
-          onPress={() => setSelectedItem(null)}
+        <Animated.View
+          style={StyleSheet.absoluteFill}
+          pointerEvents="box-none"
+          entering={FadeIn.duration(200)}
+          exiting={FadeOut.duration(200)}
+          accessibilityViewIsModal
         >
           <Pressable
-            style={[styles.modalContent, { backgroundColor: colors.card }]}
-            onPress={e => e.stopPropagation()}
+            style={styles.modalOverlay}
+            onPress={() => setSelectedItem(null)}
+            accessibilityRole="button"
+            accessibilityLabel="Close details"
           >
-            <View
-              style={[
-                styles.modalHeader,
-                { backgroundColor: RARITY_COLORS[selectedItem.rarity] + '30' },
-              ]}
+            <AnimatedPressable
+              entering={SlideInDown.springify().damping(15)}
+              exiting={ZoomOut.duration(200)}
+              style={[styles.modalContent, { backgroundColor: colors.card, width: width * 0.85 }]}
+              onPress={(e) => e.stopPropagation()}
+              accessibilityRole="none"
             >
+              <View
+                style={[
+                  styles.modalHeader,
+                  { backgroundColor: RARITY_COLORS[selectedItem.rarity] + '30' },
+                ]}
+              >
               <RNText style={styles.modalEmoji}>{selectedItem.emoji}</RNText>
               <View
                 style={[
@@ -278,7 +332,7 @@ export default function CollectionScreen() {
                   { backgroundColor: RARITY_COLORS[selectedItem.rarity] },
                 ]}
               >
-                <RNText style={styles.rarityBadgeText}>
+                <RNText style={[styles.rarityBadgeText, { color: colors.textOnPrimary }]}>
                   {selectedItem.rarity.toUpperCase()}
                 </RNText>
               </View>
@@ -330,14 +384,17 @@ export default function CollectionScreen() {
               )}
             </View>
 
-            <Pressable
-              style={[styles.closeButton, { backgroundColor: colors.primary }]}
-              onPress={() => setSelectedItem(null)}
-            >
-              <RNText style={styles.closeButtonText}>Close</RNText>
-            </Pressable>
+              <Pressable
+                style={[styles.closeButton, { backgroundColor: colors.primary }]}
+                onPress={() => setSelectedItem(null)}
+                accessibilityRole="button"
+                accessibilityLabel="Close details"
+              >
+                <RNText style={[styles.closeButtonText, { color: colors.textOnPrimary }]}>Close</RNText>
+              </Pressable>
+            </AnimatedPressable>
           </Pressable>
-        </Pressable>
+        </Animated.View>
       )}
     </View>
   );
@@ -351,45 +408,31 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingTop: 60,
-    paddingBottom: 16,
+    paddingHorizontal: Spacing.md,
+    paddingBottom: Spacing.md,
   },
   backButton: {
-    padding: 8,
-  },
-  backText: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  title: {
-    fontSize: 20,
-    fontWeight: '700',
+    padding: Spacing.xs,
+    minHeight: 44,
+    minWidth: 44,
+    justifyContent: 'center',
   },
   placeholder: {
     width: 50,
   },
   statsCard: {
-    marginHorizontal: 16,
-    padding: 16,
-    borderRadius: 16,
-    marginBottom: 16,
+    marginHorizontal: Spacing.md,
+    padding: Spacing.md,
+    borderRadius: BorderRadius.card,
+    marginBottom: Spacing.md,
   },
   statsRow: {
     flexDirection: 'row',
     justifyContent: 'space-around',
-    marginBottom: 16,
+    marginBottom: Spacing.md,
   },
   statItem: {
     alignItems: 'center',
-  },
-  statValue: {
-    fontSize: 24,
-    fontWeight: '700',
-  },
-  statLabel: {
-    fontSize: 12,
-    marginTop: 2,
   },
   rarityRow: {
     flexDirection: 'row',
@@ -398,39 +441,35 @@ const styles = StyleSheet.create({
   rarityItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: Spacing.xxs,
   },
   rarityDot: {
     width: 10,
     height: 10,
     borderRadius: 5,
   },
-  rarityCount: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
   filterScroll: {
     maxHeight: 50,
-    marginBottom: 16,
+    marginBottom: Spacing.md,
   },
   filterContent: {
-    paddingHorizontal: 16,
-    gap: 8,
+    paddingHorizontal: Spacing.md,
+    gap: Spacing.xs,
   },
   filterButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 20,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.xs,
+    borderRadius: BorderRadius.chip,
     gap: 6,
+    minHeight: 44,
   },
   filterEmoji: {
     fontSize: 16,
   },
   filterText: {
-    fontSize: 13,
-    fontWeight: '600',
+    ...Typography.caption1Medium,
   },
   gridScroll: {
     flex: 1,
@@ -445,9 +484,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   gridItem: {
-    width: ITEM_SIZE,
-    height: ITEM_SIZE,
-    borderRadius: 12,
+    borderRadius: BorderRadius.md,
     borderWidth: 2,
     alignItems: 'center',
     justifyContent: 'center',
@@ -464,7 +501,6 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   countText: {
-    color: '#fff',
     fontSize: 10,
     fontWeight: '700',
   },
@@ -483,13 +519,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   modalContent: {
-    width: width * 0.85,
-    borderRadius: 20,
+    borderRadius: BorderRadius.card,
     overflow: 'hidden',
   },
   modalHeader: {
     alignItems: 'center',
-    paddingVertical: 24,
+    paddingVertical: Spacing.lg,
   },
   modalEmoji: {
     fontSize: 64,
@@ -501,71 +536,67 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   rarityBadgeText: {
-    color: '#fff',
     fontSize: 10,
     fontWeight: '700',
     letterSpacing: 1,
   },
   modalBody: {
-    padding: 20,
+    padding: Spacing.ml,
   },
   modalName: {
-    fontSize: 22,
-    fontWeight: '700',
+    ...Typography.title2,
     textAlign: 'center',
   },
   modalDescription: {
-    fontSize: 14,
+    ...Typography.subheadline,
     textAlign: 'center',
-    marginTop: 8,
-    lineHeight: 20,
+    marginTop: Spacing.xs,
   },
   modalStats: {
     flexDirection: 'row',
     justifyContent: 'space-around',
-    marginTop: 20,
-    paddingTop: 20,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(0,0,0,0.1)',
+    marginTop: Spacing.ml,
+    paddingTop: Spacing.ml,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(128,128,128,0.2)',
   },
   modalStatItem: {
     alignItems: 'center',
   },
   modalStatValue: {
-    fontSize: 20,
-    fontWeight: '700',
+    ...Typography.title3,
   },
   modalStatLabel: {
-    fontSize: 11,
-    marginTop: 2,
+    ...Typography.caption2,
+    marginTop: Spacing.hairline,
   },
   requirementBox: {
-    marginTop: 16,
-    padding: 12,
-    borderRadius: 10,
+    marginTop: Spacing.md,
+    padding: Spacing.sm,
+    borderRadius: BorderRadius.sm,
     alignItems: 'center',
   },
   requirementText: {
-    fontSize: 13,
+    ...Typography.footnote,
   },
   closeButton: {
-    margin: 20,
+    margin: Spacing.ml,
     marginTop: 0,
-    padding: 14,
-    borderRadius: 12,
+    padding: Spacing.sm,
+    borderRadius: BorderRadius.input,
     alignItems: 'center',
+    minHeight: 44,
+    justifyContent: 'center',
   },
   closeButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
+    ...Typography.buttonMedium,
   },
   // Empty State Styles
   emptyStateContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 32,
+    paddingHorizontal: Spacing.xl,
   },
   emptyStateContent: {
     alignItems: 'center',
@@ -573,7 +604,7 @@ const styles = StyleSheet.create({
   },
   emptyStateIllustration: {
     position: 'relative',
-    marginBottom: 24,
+    marginBottom: Spacing.lg,
   },
   emptyStateMainEmoji: {
     fontSize: 80,
@@ -604,36 +635,34 @@ const styles = StyleSheet.create({
     fontSize: 22,
   },
   emptyStateTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    marginBottom: 12,
+    ...Typography.title1,
+    marginBottom: Spacing.sm,
     textAlign: 'center',
   },
   emptyStateSubtitle: {
-    fontSize: 15,
+    ...Typography.body,
     textAlign: 'center',
-    lineHeight: 22,
-    marginBottom: 24,
+    marginBottom: Spacing.lg,
   },
   emptyStateTip: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 12,
-    marginBottom: 24,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.input,
+    marginBottom: Spacing.lg,
   },
   emptyStateTipText: {
-    fontSize: 14,
+    ...Typography.calloutMedium,
     textAlign: 'center',
-    fontWeight: '500',
   },
   emptyStateCTA: {
-    paddingHorizontal: 32,
+    paddingHorizontal: Spacing.xl,
     paddingVertical: 14,
-    borderRadius: 14,
+    borderRadius: BorderRadius.button,
+    minHeight: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   emptyStateCTAText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '700',
+    ...Typography.buttonMedium,
   },
 });

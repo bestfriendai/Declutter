@@ -86,7 +86,7 @@ export function AnimatedListItem({
   const titleColor = destructive
     ? colors.danger
     : disabled
-    ? colors.textTertiary
+    ? colors.disabled
     : colors.text;
 
   // Build accessible label from title and subtitle
@@ -167,6 +167,10 @@ interface ToggleListItemProps {
   onValueChange: (value: boolean) => void;
   index?: number;
   disabled?: boolean;
+  // Accessibility
+  accessibilityLabel?: string;
+  accessibilityHint?: string;
+  testID?: string;
 }
 
 export function ToggleListItem({
@@ -177,6 +181,9 @@ export function ToggleListItem({
   onValueChange,
   index = 0,
   disabled = false,
+  accessibilityLabel,
+  accessibilityHint,
+  testID,
 }: ToggleListItemProps) {
   const colorScheme = useColorScheme() ?? 'dark';
   const colors = Colors[colorScheme];
@@ -186,6 +193,10 @@ export function ToggleListItem({
     onValueChange(newValue);
   };
 
+  // Build accessible label with toggle state
+  const toggleAccessibilityLabel = accessibilityLabel ||
+    `${title}${subtitle ? `, ${subtitle}` : ''}, ${value ? 'on' : 'off'}`;
+
   return (
     <AnimatedListItem
       title={title}
@@ -193,6 +204,9 @@ export function ToggleListItem({
       leftIcon={leftIcon}
       index={index}
       disabled={disabled}
+      accessibilityLabel={toggleAccessibilityLabel}
+      accessibilityHint={accessibilityHint ?? 'Double tap to toggle'}
+      testID={testID}
       rightElement={
         <Switch
           value={value}
@@ -204,6 +218,7 @@ export function ToggleListItem({
           }}
           thumbColor="#FFFFFF"
           ios_backgroundColor={colorScheme === 'dark' ? '#3A3A3C' : '#E5E5EA'}
+          accessibilityLabel={`Toggle ${title}`}
         />
       }
     />
@@ -274,7 +289,7 @@ export function GroupedList({ children, header, footer }: GroupedListProps) {
               : '#FFFFFF',
             borderColor: colorScheme === 'dark'
               ? 'rgba(255, 255, 255, 0.08)'
-              : 'rgba(0, 0, 0, 0.05)',
+              : 'rgba(0, 0, 0, 0.08)',
           },
         ]}
       >
@@ -288,7 +303,7 @@ export function GroupedList({ children, header, footer }: GroupedListProps) {
                   {
                     backgroundColor: colorScheme === 'dark'
                       ? 'rgba(255, 255, 255, 0.08)'
-                      : 'rgba(0, 0, 0, 0.05)',
+                      : 'rgba(0, 0, 0, 0.08)',
                   },
                 ]}
               />
@@ -321,6 +336,10 @@ export function GroupedListItem({
   onPress,
   disabled = false,
   destructive = false,
+  accessibilityLabel,
+  accessibilityHint,
+  accessibilityRole = 'button',
+  testID,
 }: Omit<ListItemProps, 'index' | 'style'>) {
   const colorScheme = useColorScheme() ?? 'dark';
   const colors = Colors[colorScheme];
@@ -347,8 +366,12 @@ export function GroupedListItem({
   const titleColor = destructive
     ? colors.danger
     : disabled
-    ? colors.textTertiary
+    ? colors.disabled
     : colors.text;
+
+  // Build accessible label from title and subtitle
+  const computedAccessibilityLabel = accessibilityLabel ||
+    (subtitle ? `${title}, ${subtitle}` : title);
 
   return (
     <AnimatedPressable
@@ -356,6 +379,11 @@ export function GroupedListItem({
       onPressIn={handlePressIn}
       onPressOut={handlePressOut}
       disabled={disabled || !onPress}
+      accessibilityRole={onPress ? accessibilityRole : 'none'}
+      accessibilityLabel={computedAccessibilityLabel}
+      accessibilityHint={accessibilityHint}
+      accessibilityState={{ disabled }}
+      testID={testID}
       style={[animatedStyle, styles.groupedItem]}
     >
       {leftIcon && <View style={styles.leftIcon}>{leftIcon}</View>}

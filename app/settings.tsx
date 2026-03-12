@@ -1,489 +1,234 @@
 /**
- * Declutterly - Settings Screen
- * Apple TV style with iOS Settings grouped lists
+ * Declutterly — Settings Screen (Apple 2026)
+ * iOS 26 grouped settings with adaptive colors, toggles, and haptics
  */
 
-import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  Pressable,
-  Alert,
-  Linking,
-  useColorScheme,
-  Switch,
-} from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
-import Animated, {
-  FadeInDown,
-  FadeInRight,
-  SlideInUp,
-  useSharedValue,
-  useAnimatedStyle,
-  withSpring,
-} from 'react-native-reanimated';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Colors, ColorTokens } from '@/constants/Colors';
+import { useColorScheme } from '@/hooks/useColorScheme';
+import { Typography } from '@/theme/typography';
+import { Spacing, BorderRadius } from '@/theme/spacing';
 import { router } from 'expo-router';
 import * as Haptics from 'expo-haptics';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-
-import { Colors } from '@/constants/Colors';
-import { Typography } from '@/theme/typography';
+import React, { useState } from 'react';
+import {
+  Alert,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  View,
+} from 'react-native';
+import Animated, { FadeInDown } from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useAuth } from '@/context/AuthContext';
 import { useDeclutter } from '@/context/DeclutterContext';
-import { isApiKeyConfigured } from '@/services/gemini';
 
-// =============================================================================
-// Types
-// =============================================================================
-
-type SettingsSectionProps = {
-  title: string;
-  children: React.ReactNode;
-  index?: number;
-  footer?: string;
-};
-
-type SettingsItemProps = {
-  icon: React.ReactNode;
-  title: string;
-  subtitle?: string;
-  onPress?: () => void;
-  rightElement?: React.ReactNode;
-  showChevron?: boolean;
-  destructive?: boolean;
-  index?: number;
-};
-
-type ToggleItemProps = {
-  icon: React.ReactNode;
-  title: string;
-  subtitle?: string;
-  value: boolean;
-  onValueChange: (value: boolean) => void;
-  index?: number;
-};
-
-type PickerOption = {
+// ─────────────────────────────────────────────────────────────────────────────
+// Settings Row
+// ─────────────────────────────────────────────────────────────────────────────
+interface RowProps {
+  emoji: string;
   label: string;
-  value: string;
-};
+  sublabel?: string;
+  value?: string;
+  onPress?: () => void;
+  toggle?: boolean;
+  toggleValue?: boolean;
+  onToggle?: (v: boolean) => void;
+  destructive?: boolean;
+  colors: ColorTokens;
+  isDark: boolean;
+  isFirst?: boolean;
+  isLast?: boolean;
+}
 
-type PickerItemProps = {
-  icon: React.ReactNode;
-  title: string;
-  subtitle?: string;
-  options: PickerOption[];
-  selectedValue: string;
-  onValueChange: (value: string) => void;
-  index?: number;
-};
-
-// =============================================================================
-// Reusable Components
-// =============================================================================
-
-function SettingsSection({ title, children, index = 0, footer }: SettingsSectionProps) {
-  const colorScheme = useColorScheme() ?? 'dark';
-  const colors = Colors[colorScheme];
+function Row({
+  emoji, label, sublabel, value, onPress, toggle, toggleValue, onToggle,
+  destructive, colors, isDark, isFirst, isLast,
+}: RowProps) {
+  const isInteractive = !!(onPress || toggle);
 
   return (
-    <Animated.View
-      entering={FadeInDown.delay(index * 100).springify()}
-      style={styles.sectionContainer}
+    <Pressable
+      onPress={() => {
+        if (onPress) {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          onPress();
+        }
+      }}
+      disabled={!isInteractive}
+      accessibilityRole={toggle ? 'switch' : onPress ? 'button' : 'none'}
+      accessibilityLabel={label}
+      accessibilityState={toggle ? { checked: toggleValue } : undefined}
+      style={({ pressed }) => [
+        styles.row,
+        {
+          backgroundColor: isDark ? colors.surface : '#FFFFFF',
+          opacity: pressed && onPress ? 0.7 : 1,
+        },
+        isFirst && styles.rowFirst,
+        isLast && styles.rowLast,
+        !isLast && {
+          borderBottomWidth: StyleSheet.hairlineWidth,
+          borderBottomColor: isDark ? colors.divider : colors.borderLight,
+        },
+      ]}
     >
+      {/* Icon */}
+      <View style={[styles.rowIcon, {
+        backgroundColor: destructive
+          ? colors.dangerMuted
+          : (isDark ? colors.fillTertiary : colors.surfaceTertiary),
+      }]}>
+        <Text style={styles.rowEmoji}>{emoji}</Text>
+      </View>
+
+      {/* Label */}
+      <View style={styles.rowContent}>
+        <Text style={[styles.rowLabel, {
+          color: destructive ? colors.danger : colors.text,
+        }]}>
+          {label}
+        </Text>
+        {sublabel && (
+          <Text style={[styles.rowSublabel, { color: colors.textSecondary }]}>
+            {sublabel}
+          </Text>
+        )}
+      </View>
+
+      {/* Right side */}
+      {toggle ? (
+        <Switch
+          value={toggleValue}
+          onValueChange={(v) => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            onToggle?.(v);
+          }}
+          trackColor={{ false: colors.fillTertiary, true: colors.accent }}
+          thumbColor="#FFFFFF"
+          ios_backgroundColor={colors.fillTertiary}
+        />
+      ) : value ? (
+        <Text style={[styles.rowValue, { color: colors.textSecondary }]}>{value}</Text>
+      ) : onPress ? (
+        <Text style={[styles.rowChevron, { color: colors.textTertiary }]}>›</Text>
+      ) : null}
+    </Pressable>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Settings Group
+// ─────────────────────────────────────────────────────────────────────────────
+interface GroupProps {
+  title?: string;
+  footer?: string;
+  children: React.ReactNode;
+  colors: ColorTokens;
+  isDark: boolean;
+}
+
+function Group({ title, footer, children, colors, isDark }: GroupProps) {
+  return (
+    <View style={styles.group}>
       {title && (
-        <Text
-          style={[
-            Typography.caption1,
-            styles.sectionTitle,
-            { color: colors.textSecondary },
-          ]}
-        >
+        <Text style={[styles.groupTitle, { color: colors.textSecondary }]}>
           {title.toUpperCase()}
         </Text>
       )}
-      <View
-        style={[
-          styles.sectionContent,
-          {
-            backgroundColor:
-              colorScheme === 'dark'
-                ? 'rgba(255, 255, 255, 0.05)'
-                : 'rgba(0, 0, 0, 0.02)',
-            borderColor:
-              colorScheme === 'dark'
-                ? 'rgba(255, 255, 255, 0.08)'
-                : 'rgba(0, 0, 0, 0.05)',
-          },
-        ]}
-      >
-        {React.Children.map(children, (child, idx) => (
-          <>
-            {child}
-            {idx < React.Children.count(children) - 1 && (
-              <View
-                style={[
-                  styles.separator,
-                  {
-                    backgroundColor:
-                      colorScheme === 'dark'
-                        ? 'rgba(255, 255, 255, 0.08)'
-                        : 'rgba(0, 0, 0, 0.05)',
-                  },
-                ]}
-              />
-            )}
-          </>
-        ))}
+      <View style={[styles.groupContent, {
+        borderRadius: 12,
+        overflow: 'hidden',
+        borderWidth: StyleSheet.hairlineWidth,
+        borderColor: isDark ? colors.divider : colors.borderLight,
+      }]}>
+        {children}
       </View>
       {footer && (
-        <Text
-          style={[
-            Typography.caption2,
-            styles.sectionFooter,
-            { color: colors.textTertiary },
-          ]}
-        >
+        <Text style={[styles.groupFooter, { color: colors.textSecondary }]}>
           {footer}
         </Text>
       )}
-    </Animated.View>
-  );
-}
-
-function SettingsItem({
-  icon,
-  title,
-  subtitle,
-  onPress,
-  rightElement,
-  showChevron = false,
-  destructive = false,
-  index = 0,
-}: SettingsItemProps) {
-  const colorScheme = useColorScheme() ?? 'dark';
-  const colors = Colors[colorScheme];
-  const scale = useSharedValue(1);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
-
-  const handlePressIn = () => {
-    scale.value = withSpring(0.98, { damping: 15, stiffness: 300 });
-  };
-
-  const handlePressOut = () => {
-    scale.value = withSpring(1, { damping: 15, stiffness: 300 });
-  };
-
-  const handlePress = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    onPress?.();
-  };
-
-  const titleColor = destructive ? colors.danger : colors.text;
-
-  return (
-    <Animated.View entering={FadeInRight.delay(index * 50)}>
-      <Pressable
-        onPress={onPress ? handlePress : undefined}
-        onPressIn={onPress ? handlePressIn : undefined}
-        onPressOut={onPress ? handlePressOut : undefined}
-        disabled={!onPress}
-      >
-        <Animated.View style={[styles.settingsItem, animatedStyle]}>
-          <View style={styles.itemIconContainer}>{icon}</View>
-
-          <View style={styles.itemContent}>
-            <Text style={[Typography.body, { color: titleColor }]}>{title}</Text>
-            {subtitle && (
-              <Text
-                style={[
-                  Typography.caption2,
-                  { color: colors.textSecondary, marginTop: 2 },
-                ]}
-                numberOfLines={2}
-              >
-                {subtitle}
-              </Text>
-            )}
-          </View>
-
-          {rightElement && (
-            <View style={styles.itemRight}>{rightElement}</View>
-          )}
-
-          {showChevron && (
-            <Ionicons
-              name="chevron-forward"
-              size={18}
-              color={colors.textTertiary}
-              style={{ marginLeft: 4 }}
-            />
-          )}
-        </Animated.View>
-      </Pressable>
-    </Animated.View>
-  );
-}
-
-function ToggleItem({
-  icon,
-  title,
-  subtitle,
-  value,
-  onValueChange,
-  index = 0,
-}: ToggleItemProps) {
-  const colorScheme = useColorScheme() ?? 'dark';
-  const colors = Colors[colorScheme];
-
-  const handleToggle = (newValue: boolean) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    onValueChange(newValue);
-  };
-
-  return (
-    <SettingsItem
-      icon={icon}
-      title={title}
-      subtitle={subtitle}
-      index={index}
-      rightElement={
-        <Switch
-          value={value}
-          onValueChange={handleToggle}
-          trackColor={{
-            false: colorScheme === 'dark' ? '#3A3A3C' : '#E5E5EA',
-            true: colors.primary,
-          }}
-          thumbColor="#FFFFFF"
-          ios_backgroundColor={colorScheme === 'dark' ? '#3A3A3C' : '#E5E5EA'}
-        />
-      }
-    />
-  );
-}
-
-function PickerItem({
-  icon,
-  title,
-  subtitle,
-  options,
-  selectedValue,
-  onValueChange,
-  index = 0,
-}: PickerItemProps) {
-  const colorScheme = useColorScheme() ?? 'dark';
-  const colors = Colors[colorScheme];
-  const [showOptions, setShowOptions] = useState(false);
-
-  const selectedLabel =
-    options.find((o) => o.value === selectedValue)?.label || selectedValue;
-
-  const handleSelect = (value: string) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    onValueChange(value);
-    setShowOptions(false);
-  };
-
-  return (
-    <View>
-      <SettingsItem
-        icon={icon}
-        title={title}
-        subtitle={subtitle}
-        index={index}
-        onPress={() => setShowOptions(!showOptions)}
-        rightElement={
-          <View style={styles.pickerValue}>
-            <Text style={[Typography.body, { color: colors.textSecondary }]}>
-              {selectedLabel}
-            </Text>
-          </View>
-        }
-        showChevron
-      />
-
-      {showOptions && (
-        <Animated.View
-          entering={FadeInDown.duration(200)}
-          style={[
-            styles.pickerOptions,
-            {
-              backgroundColor:
-                colorScheme === 'dark'
-                  ? 'rgba(60, 60, 67, 0.6)'
-                  : 'rgba(0, 0, 0, 0.05)',
-            },
-          ]}
-        >
-          {options.map((option, idx) => (
-            <Pressable
-              key={option.value}
-              onPress={() => handleSelect(option.value)}
-              style={[
-                styles.pickerOption,
-                idx < options.length - 1 && {
-                  borderBottomWidth: 0.5,
-                  borderBottomColor:
-                    colorScheme === 'dark'
-                      ? 'rgba(255, 255, 255, 0.1)'
-                      : 'rgba(0, 0, 0, 0.1)',
-                },
-              ]}
-            >
-              <Text
-                style={[
-                  Typography.body,
-                  {
-                    color:
-                      option.value === selectedValue
-                        ? colors.primary
-                        : colors.text,
-                  },
-                ]}
-              >
-                {option.label}
-              </Text>
-              {option.value === selectedValue && (
-                <Ionicons name="checkmark" size={20} color={colors.primary} />
-              )}
-            </Pressable>
-          ))}
-        </Animated.View>
-      )}
     </View>
   );
 }
 
-// =============================================================================
-// Icon Backgrounds
-// =============================================================================
-
-function IconBackground({
-  color,
-  children,
-}: {
-  color: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <View style={[styles.iconBackground, { backgroundColor: color }]}>
-      {children}
-    </View>
-  );
-}
-
-// =============================================================================
-// Main Settings Screen
-// =============================================================================
-
+// ─────────────────────────────────────────────────────────────────────────────
+// Main Screen
+// ─────────────────────────────────────────────────────────────────────────────
 export default function SettingsScreen() {
-  const colorScheme = useColorScheme() ?? 'dark';
+  const rawScheme = useColorScheme();
+  const colorScheme = rawScheme === 'dark' ? 'dark' : 'light';
   const colors = Colors[colorScheme];
+  const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
-  const { settings, updateSettings, rooms, stats, clearAllData } = useDeclutter();
 
-  const [apiKeyConfigured, setApiKeyConfigured] = useState(isApiKeyConfigured());
+  const { signOut } = useAuth();
+  const { user, resetStats } = useDeclutter();
 
-  useEffect(() => {
-    setApiKeyConfigured(isApiKeyConfigured());
-  }, []);
+  // Toggle states
+  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+  const [dailyReminder, setDailyReminder] = useState(true);
+  const [soundEnabled, setSoundEnabled] = useState(true);
+  const [hapticEnabled, setHapticEnabled] = useState(true);
+  const [analyticsEnabled, setAnalyticsEnabled] = useState(false);
 
-  const openGeminiSetup = async () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    try {
-      const canOpen = await Linking.canOpenURL('https://aistudio.google.com/app/apikey');
-      if (canOpen) {
-        await Linking.openURL('https://aistudio.google.com/app/apikey');
-      } else {
-        Alert.alert('Error', 'Unable to open link. Please visit aistudio.google.com manually.');
-      }
-    } catch (error) {
-      Alert.alert('Error', 'Failed to open link. Please try again.');
-    }
+  const handleSignOut = () => {
+    Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Sign Out',
+        style: 'destructive',
+        onPress: async () => {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+          await signOut();
+          router.replace('/auth/login');
+        },
+      },
+    ]);
   };
 
-  const handleClearData = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+  const handleResetProgress = () => {
     Alert.alert(
-      'Clear All Data',
-      'This will delete all your rooms, tasks, progress, mascot, and collection. This cannot be undone.',
+      'Reset All Progress',
+      'This will permanently delete all your rooms, tasks, and progress. This cannot be undone.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Clear All',
+          text: 'Reset Everything',
           style: 'destructive',
-          onPress: async () => {
-            try {
-              await clearAllData();
-              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-              Alert.alert(
-                'Data Cleared',
-                'All data has been cleared successfully. The app will restart fresh.',
-                [{ text: 'OK', onPress: () => router.replace('/onboarding') }]
-              );
-            } catch {
-              Alert.alert('Error', 'Failed to clear data. Please try again.');
-            }
+          onPress: () => {
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+            resetStats?.();
           },
         },
       ]
     );
   };
 
-
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* Background gradient */}
-      <LinearGradient
-        colors={
-          colorScheme === 'dark'
-            ? ['#0A0A0A', '#141414', '#0A0A0A']
-            : ['#F8F8FA', '#FFFFFF', '#F8F8FA']
-        }
-        style={StyleSheet.absoluteFill}
-      />
-
-      {/* Glass Header */}
-      <Animated.View
-        entering={SlideInUp.duration(500)}
-        style={[styles.header, { paddingTop: insets.top }]}
-      >
-        <BlurView
-          intensity={80}
-          tint={colorScheme === 'dark' ? 'dark' : 'light'}
-          style={StyleSheet.absoluteFill}
-        />
-        <View style={styles.headerContent}>
-          <Pressable
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              router.back();
-            }}
-            style={styles.headerButton}
-          >
-            <Ionicons name="chevron-back" size={24} color={colors.primary} />
-          </Pressable>
-
-          <Text style={[Typography.headline, { color: colors.text }]}>Settings</Text>
-
-          <Pressable
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              router.back();
-            }}
-            style={styles.headerButton}
-          >
-            <Text style={[Typography.body, { color: colors.primary }]}>Done</Text>
-          </Pressable>
-        </View>
-      </Animated.View>
+      {/* Header */}
+      <View style={[styles.navBar, {
+        paddingTop: insets.top,
+        backgroundColor: colors.background,
+        borderBottomWidth: StyleSheet.hairlineWidth,
+        borderBottomColor: isDark ? colors.divider : colors.borderLight,
+      }]}>
+        <Pressable
+          onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.back(); }}
+          style={styles.backButton}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+        >
+          <Text style={[styles.backIcon, { color: colors.accent }]}>‹</Text>
+          <Text style={[Typography.body, { color: colors.accent }]}>Back</Text>
+        </Pressable>
+        <Text style={[Typography.navTitle, { color: colors.text }]}>Settings</Text>
+        <View style={styles.navSpacer} />
+      </View>
 
       <ScrollView
         style={styles.scrollView}
@@ -493,498 +238,287 @@ export default function SettingsScreen() {
         ]}
         showsVerticalScrollIndicator={false}
       >
-        {/* AI Configuration */}
-        <SettingsSection
-          title="AI Configuration"
-          index={0}
-          footer={apiKeyConfigured
-            ? "AI features are ready to use."
-            : "Configure your Gemini API key in the .env file to enable AI features."}
-        >
-          <SettingsItem
-            icon={
-              <IconBackground color={apiKeyConfigured ? "#34C759" : "#FF9500"}>
-                <Ionicons name={apiKeyConfigured ? "checkmark-circle" : "key"} size={18} color="#FFFFFF" />
-              </IconBackground>
-            }
-            title="Gemini AI"
-            subtitle={apiKeyConfigured ? "Configured and ready" : "Not configured"}
-            rightElement={
-              !apiKeyConfigured ? (
-                <Pressable
-                  onPress={openGeminiSetup}
-                  style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
-                >
-                  <Text style={[Typography.callout, { color: colors.primary }]}>
-                    Get Key
-                  </Text>
-                  <Ionicons name="open-outline" size={14} color={colors.primary} />
-                </Pressable>
-              ) : undefined
-            }
-            index={0}
-          />
-        </SettingsSection>
-
-        {/* Appearance */}
-        <SettingsSection title="Appearance" index={1}>
-          <PickerItem
-            icon={
-              <IconBackground color="#5856D6">
-                <Ionicons name="color-palette" size={18} color="#FFFFFF" />
-              </IconBackground>
-            }
-            title="Theme"
-            options={[
-              { label: 'Auto', value: 'auto' },
-              { label: 'Light', value: 'light' },
-              { label: 'Dark', value: 'dark' },
-            ]}
-            selectedValue={settings.theme}
-            onValueChange={(value) =>
-              updateSettings({ theme: value as 'light' | 'dark' | 'auto' })
-            }
-            index={0}
-          />
-
-          <ToggleItem
-            icon={
-              <IconBackground color="#FF9500">
-                <Ionicons name="phone-portrait" size={18} color="#FFFFFF" />
-              </IconBackground>
-            }
-            title="Haptic Feedback"
-            subtitle="Vibration on interactions"
-            value={settings.hapticFeedback}
-            onValueChange={(value) => updateSettings({ hapticFeedback: value })}
-            index={1}
-          />
-        </SettingsSection>
-
-        {/* Notifications */}
-        <SettingsSection title="Notifications" index={2}>
-          <ToggleItem
-            icon={
-              <IconBackground color="#FF3B30">
-                <Ionicons name="notifications" size={18} color="#FFFFFF" />
-              </IconBackground>
-            }
-            title="Push Notifications"
-            subtitle="Reminders and updates"
-            value={settings.notifications}
-            onValueChange={(value) => updateSettings({ notifications: value })}
-            index={0}
-          />
-
-          <ToggleItem
-            icon={
-              <IconBackground color="#FF2D55">
-                <MaterialCommunityIcons name="diamond" size={18} color="#FFFFFF" />
-              </IconBackground>
-            }
-            title="Collectible Alerts"
-            subtitle="New collectibles earned"
-            value={settings.collectibleNotifications}
-            onValueChange={(value) =>
-              updateSettings({ collectibleNotifications: value })
-            }
-            index={1}
-          />
-        </SettingsSection>
-
-        {/* Focus Mode */}
-        <SettingsSection
-          title="Focus Mode"
-          index={3}
-          footer="Strict mode warns you when leaving the app during focus sessions."
-        >
-          <ToggleItem
-            icon={
-              <IconBackground color="#007AFF">
-                <Ionicons name="timer" size={18} color="#FFFFFF" />
-              </IconBackground>
-            }
-            title="Strict Mode"
-            subtitle="Stay focused during sessions"
-            value={settings.focusMode.strictMode}
-            onValueChange={(value) =>
-              updateSettings({
-                focusMode: { ...settings.focusMode, strictMode: value },
-              })
-            }
-            index={0}
-          />
-
-          <ToggleItem
-            icon={
-              <IconBackground color="#AF52DE">
-                <Ionicons name="chatbubble-ellipses" size={18} color="#FFFFFF" />
-              </IconBackground>
-            }
-            title="Motivational Quotes"
-            subtitle="Inspiring messages during breaks"
-            value={settings.focusMode.showMotivationalQuotes}
-            onValueChange={(value) =>
-              updateSettings({
-                focusMode: { ...settings.focusMode, showMotivationalQuotes: value },
-              })
-            }
-            index={1}
-          />
-
-          <ToggleItem
-            icon={
-              <IconBackground color="#32ADE6">
-                <Ionicons name="cafe" size={18} color="#FFFFFF" />
-              </IconBackground>
-            }
-            title="Auto-start Breaks"
-            subtitle="Automatic break reminders"
-            value={settings.focusMode.autoStartBreak}
-            onValueChange={(value) =>
-              updateSettings({
-                focusMode: { ...settings.focusMode, autoStartBreak: value },
-              })
-            }
-            index={2}
-          />
-
-          <ToggleItem
-            icon={
-              <IconBackground color="#64D2FF">
-                <Ionicons name="moon" size={18} color="#FFFFFF" />
-              </IconBackground>
-            }
-            title="Block Notifications"
-            subtitle="Silence during focus"
-            value={settings.focusMode.blockNotifications}
-            onValueChange={(value) =>
-              updateSettings({
-                focusMode: { ...settings.focusMode, blockNotifications: value },
-              })
-            }
-            index={3}
-          />
-        </SettingsSection>
-
-        {/* ADHD-Friendly Options */}
-        <SettingsSection
-          title="ADHD-Friendly Options"
-          index={4}
-          footer="Higher encouragement = more positive messages. Ultra breakdown = smallest possible task steps."
-        >
-          <PickerItem
-            icon={
-              <IconBackground color="#30D158">
-                <Ionicons name="heart" size={18} color="#FFFFFF" />
-              </IconBackground>
-            }
-            title="Encouragement Level"
-            subtitle="How much motivation you receive"
-            options={[
-              { label: 'Minimal', value: 'minimal' },
-              { label: 'Moderate', value: 'moderate' },
-              { label: 'Maximum', value: 'maximum' },
-            ]}
-            selectedValue={settings.encouragementLevel}
-            onValueChange={(value) =>
-              updateSettings({
-                encouragementLevel: value as 'minimal' | 'moderate' | 'maximum',
-              })
-            }
-            index={0}
-          />
-
-          <PickerItem
-            icon={
-              <IconBackground color="#FFD60A">
-                <Ionicons name="list" size={18} color="#FFFFFF" />
-              </IconBackground>
-            }
-            title="Task Breakdown"
-            subtitle="How detailed tasks are split"
-            options={[
-              { label: 'Normal', value: 'normal' },
-              { label: 'Detailed', value: 'detailed' },
-              { label: 'Ultra', value: 'ultra' },
-            ]}
-            selectedValue={settings.taskBreakdownLevel}
-            onValueChange={(value) =>
-              updateSettings({
-                taskBreakdownLevel: value as 'normal' | 'detailed' | 'ultra',
-              })
-            }
-            index={1}
-          />
-        </SettingsSection>
-
-        {/* Collection */}
-        <SettingsSection title="Collection" index={5}>
-          <ToggleItem
-            icon={
-              <IconBackground color="#BF5AF2">
-                <MaterialCommunityIcons name="cube-scan" size={18} color="#FFFFFF" />
-              </IconBackground>
-            }
-            title="AR Collectibles"
-            subtitle="View collectibles in augmented reality"
-            value={settings.arCollectionEnabled}
-            onValueChange={(value) =>
-              updateSettings({ arCollectionEnabled: value })
-            }
-            index={0}
-          />
-        </SettingsSection>
-
-        {/* Your Data */}
-        <SettingsSection title="Your Data" index={6}>
-          <SettingsItem
-            icon={
-              <IconBackground color="#5AC8FA">
-                <Ionicons name="home" size={18} color="#FFFFFF" />
-              </IconBackground>
-            }
-            title="Rooms"
-            rightElement={
-              <Text style={[Typography.body, { color: colors.textSecondary }]}>
-                {rooms.length}
-              </Text>
-            }
-            index={0}
-          />
-
-          <SettingsItem
-            icon={
-              <IconBackground color="#34C759">
-                <Ionicons name="checkmark-circle" size={18} color="#FFFFFF" />
-              </IconBackground>
-            }
-            title="Tasks Completed"
-            rightElement={
-              <Text style={[Typography.body, { color: colors.textSecondary }]}>
-                {stats.totalTasksCompleted}
-              </Text>
-            }
-            index={1}
-          />
-
-          <SettingsItem
-            icon={
-              <IconBackground color="#FF9500">
-                <Ionicons name="flame" size={18} color="#FFFFFF" />
-              </IconBackground>
-            }
-            title="Current Streak"
-            rightElement={
-              <Text style={[Typography.body, { color: colors.textSecondary }]}>
-                {stats.currentStreak} days
-              </Text>
-            }
-            index={2}
-          />
-
-          <SettingsItem
-            icon={
-              <IconBackground color="#AF52DE">
-                <Ionicons name="time" size={18} color="#FFFFFF" />
-              </IconBackground>
-            }
-            title="Total Time Cleaning"
-            rightElement={
-              <Text style={[Typography.body, { color: colors.textSecondary }]}>
-                {Math.round(stats.totalMinutesCleaned / 60)}h {stats.totalMinutesCleaned % 60}m
-              </Text>
-            }
-            index={3}
-          />
-        </SettingsSection>
-
-        {/* About */}
-        <SettingsSection title="About" index={7}>
-          <SettingsItem
-            icon={
-              <IconBackground color="#007AFF">
-                <Ionicons name="information-circle" size={18} color="#FFFFFF" />
-              </IconBackground>
-            }
-            title="App Version"
-            rightElement={
-              <Text style={[Typography.body, { color: colors.textSecondary }]}>
-                1.0.0
-              </Text>
-            }
-            index={0}
-          />
-
-          <SettingsItem
-            icon={
-              <IconBackground color="#5856D6">
-                <MaterialCommunityIcons name="react" size={18} color="#FFFFFF" />
-              </IconBackground>
-            }
-            title="Built With"
-            rightElement={
-              <Text style={[Typography.body, { color: colors.textSecondary }]}>
-                Expo + React Native
-              </Text>
-            }
-            index={1}
-          />
-
-          <SettingsItem
-            icon={
-              <IconBackground color="#4285F4">
-                <MaterialCommunityIcons name="robot" size={18} color="#FFFFFF" />
-              </IconBackground>
-            }
-            title="AI Powered By"
-            rightElement={
-              <Text style={[Typography.body, { color: colors.textSecondary }]}>
-                Google Gemini
-              </Text>
-            }
-            index={2}
-          />
-        </SettingsSection>
-
-        {/* Danger Zone */}
-        <SettingsSection title="Danger Zone" index={8}>
-          <SettingsItem
-            icon={
-              <IconBackground color="#FF3B30">
-                <Ionicons name="trash" size={18} color="#FFFFFF" />
-              </IconBackground>
-            }
-            title="Clear All Data"
-            subtitle="Delete rooms, tasks, and progress"
-            onPress={handleClearData}
-            destructive
-            showChevron
-            index={0}
-          />
-        </SettingsSection>
-
-        {/* Footer */}
-        <Animated.View
-          entering={FadeInDown.delay(900)}
-          style={styles.footer}
-        >
-          <Text style={[Typography.caption1, { color: colors.textTertiary }]}>
-            Made with ❤️ for people who struggle with cleaning
-          </Text>
-          <Text
-            style={[
-              Typography.caption2,
-              { color: colors.textTertiary, marginTop: 4 },
-            ]}
-          >
-            Remember: Progress, not perfection!
-          </Text>
+        {/* ── Account ──────────────────────────────────────────────── */}
+        <Animated.View entering={FadeInDown.delay(0).springify()}>
+          <Group title="Account" colors={colors} isDark={isDark}>
+            <Row
+              emoji="👤"
+              label={user?.name || 'Your Name'}
+              sublabel={'Tap to edit'}
+              onPress={() => {}}
+              colors={colors}
+              isDark={isDark}
+              isFirst
+              isLast
+            />
+          </Group>
         </Animated.View>
+
+        {/* ── Notifications ────────────────────────────────────────── */}
+        <Animated.View entering={FadeInDown.delay(60).springify()}>
+          <Group title="Notifications" colors={colors} isDark={isDark}>
+            <Row
+              emoji="🔔"
+              label="Push Notifications"
+              toggle
+              toggleValue={notificationsEnabled}
+              onToggle={setNotificationsEnabled}
+              colors={colors}
+              isDark={isDark}
+              isFirst
+            />
+            <Row
+              emoji="⏰"
+              label="Daily Reminder"
+              sublabel="Get reminded to declutter each day"
+              toggle
+              toggleValue={dailyReminder}
+              onToggle={setDailyReminder}
+              colors={colors}
+              isDark={isDark}
+              isLast
+            />
+          </Group>
+        </Animated.View>
+
+        {/* ── Preferences ──────────────────────────────────────────── */}
+        <Animated.View entering={FadeInDown.delay(120).springify()}>
+          <Group title="Preferences" colors={colors} isDark={isDark}>
+            <Row
+              emoji="🔊"
+              label="Sound Effects"
+              toggle
+              toggleValue={soundEnabled}
+              onToggle={setSoundEnabled}
+              colors={colors}
+              isDark={isDark}
+              isFirst
+            />
+            <Row
+              emoji="📳"
+              label="Haptic Feedback"
+              toggle
+              toggleValue={hapticEnabled}
+              onToggle={setHapticEnabled}
+              colors={colors}
+              isDark={isDark}
+            />
+            <Row
+              emoji="🌙"
+              label="Appearance"
+              value="System"
+              onPress={() => {}}
+              colors={colors}
+              isDark={isDark}
+              isLast
+            />
+          </Group>
+        </Animated.View>
+
+        {/* ── AI & Data ────────────────────────────────────────────── */}
+        <Animated.View entering={FadeInDown.delay(160).springify()}>
+          <Group
+            title="AI & Data"
+            footer="Analytics help us improve the app. No personal data is shared."
+            colors={colors}
+            isDark={isDark}
+          >
+            <Row
+              emoji="🤖"
+              label="AI Analysis"
+              sublabel="Powered by Gemini"
+              onPress={() => router.push('/analysis')}
+              colors={colors}
+              isDark={isDark}
+              isFirst
+            />
+            <Row
+              emoji="📊"
+              label="Share Analytics"
+              toggle
+              toggleValue={analyticsEnabled}
+              onToggle={setAnalyticsEnabled}
+              colors={colors}
+              isDark={isDark}
+              isLast
+            />
+          </Group>
+        </Animated.View>
+
+        {/* ── Support ──────────────────────────────────────────────── */}
+        <Animated.View entering={FadeInDown.delay(200).springify()}>
+          <Group title="Support" colors={colors} isDark={isDark}>
+            <Row
+              emoji="❓"
+              label="Help & FAQ"
+              onPress={() => {}}
+              colors={colors}
+              isDark={isDark}
+              isFirst
+            />
+            <Row
+              emoji="⭐"
+              label="Rate the App"
+              onPress={() => {}}
+              colors={colors}
+              isDark={isDark}
+            />
+            <Row
+              emoji="📧"
+              label="Contact Support"
+              onPress={() => {}}
+              colors={colors}
+              isDark={isDark}
+            />
+            <Row
+              emoji="📋"
+              label="Privacy Policy"
+              onPress={() => {}}
+              colors={colors}
+              isDark={isDark}
+            />
+            <Row
+              emoji="📄"
+              label="Terms of Service"
+              onPress={() => {}}
+              colors={colors}
+              isDark={isDark}
+              isLast
+            />
+          </Group>
+        </Animated.View>
+
+        {/* ── Danger Zone ──────────────────────────────────────────── */}
+        <Animated.View entering={FadeInDown.delay(240).springify()}>
+          <Group
+            title="Danger Zone"
+            footer="These actions are permanent and cannot be undone."
+            colors={colors}
+            isDark={isDark}
+          >
+            <Row
+              emoji="🗑️"
+              label="Reset All Progress"
+              onPress={handleResetProgress}
+              destructive
+              colors={colors}
+              isDark={isDark}
+              isFirst
+            />
+            <Row
+              emoji="🚪"
+              label="Sign Out"
+              onPress={handleSignOut}
+              destructive
+              colors={colors}
+              isDark={isDark}
+              isLast
+            />
+          </Group>
+        </Animated.View>
+
+        {/* Version */}
+        <Text style={[styles.versionText, { color: colors.textTertiary }]}>
+          Declutterly v1.0.0 · Build 1{'\n'}Made with ❤️ for a cleaner life
+        </Text>
       </ScrollView>
     </View>
   );
 }
 
-// =============================================================================
+// ─────────────────────────────────────────────────────────────────────────────
 // Styles
-// =============================================================================
-
+// ─────────────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  header: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 100,
-    overflow: 'hidden',
-  },
-  headerContent: {
+  container: { flex: 1 },
+
+  navBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: Spacing.md,
+    paddingBottom: Spacing.sm,
+    minHeight: 44,
   },
-  headerButton: {
-    padding: 8,
-    minWidth: 60,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingTop: 100,
-    paddingHorizontal: 16,
-  },
-  sectionContainer: {
-    marginBottom: 24,
-  },
-  sectionTitle: {
-    paddingHorizontal: 16,
-    paddingBottom: 8,
-    letterSpacing: 0.5,
-  },
-  sectionContent: {
-    borderRadius: 12,
-    overflow: 'hidden',
-    borderWidth: 0.5,
-  },
-  sectionFooter: {
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    lineHeight: 18,
-  },
-  separator: {
-    height: 0.5,
-    marginLeft: 56,
-  },
-  settingsItem: {
+  backButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
+    gap: 2,
+    minWidth: 70,
+  },
+  backIcon: {
+    fontSize: 28,
+    fontWeight: '300',
+    lineHeight: 32,
+  },
+  navSpacer: { minWidth: 70 },
+
+  scrollView: { flex: 1 },
+  scrollContent: {
+    paddingHorizontal: Spacing.ml,
+    paddingTop: Spacing.md,
+    gap: 0,
+  },
+
+  group: {
+    marginBottom: Spacing.lg + Spacing.xxs,
+  },
+  groupTitle: {
+    ...Typography.overline,
+    marginBottom: Spacing.xs,
+    marginLeft: Spacing.xxs,
+  },
+  groupContent: {},
+  groupFooter: {
+    ...Typography.caption1,
+    lineHeight: 18,
+    marginTop: Spacing.xs,
+    marginLeft: Spacing.xxs,
+  },
+
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    gap: Spacing.sm,
     minHeight: 52,
   },
-  itemIconContainer: {
-    marginRight: 12,
+  rowFirst: {
+    borderTopLeftRadius: BorderRadius.md,
+    borderTopRightRadius: BorderRadius.md,
   },
-  iconBackground: {
-    width: 28,
-    height: 28,
-    borderRadius: 6,
+  rowLast: {
+    borderBottomLeftRadius: BorderRadius.md,
+    borderBottomRightRadius: BorderRadius.md,
+  },
+  rowIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  itemContent: {
-    flex: 1,
+  rowEmoji: { fontSize: 16 },
+  rowContent: { flex: 1, gap: 2 },
+  rowLabel: {
+    ...Typography.body,
   },
-  itemRight: {
-    marginLeft: 12,
+  rowSublabel: {
+    ...Typography.caption1,
   },
-  pickerValue: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  rowValue: {
+    ...Typography.subheadline,
   },
-  pickerOptions: {
-    marginHorizontal: 16,
-    marginTop: 4,
-    marginBottom: 8,
-    borderRadius: 8,
-    overflow: 'hidden',
+  rowChevron: {
+    fontSize: 22,
+    fontWeight: '300',
   },
-  pickerOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-  },
-  footer: {
-    alignItems: 'center',
-    paddingVertical: 32,
+
+  versionText: {
+    textAlign: 'center',
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: 8,
   },
 });

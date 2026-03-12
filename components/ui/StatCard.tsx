@@ -4,7 +4,6 @@ import { useColorScheme } from '@/hooks/useColorScheme';
 import { Typography } from '@/theme/typography';
 import React, { useEffect } from 'react';
 import {
-  Pressable,
   StyleProp,
   StyleSheet,
   Text,
@@ -37,9 +36,11 @@ interface StatCardProps {
   style?: StyleProp<ViewStyle>;
   animateValue?: boolean;
   animationDelay?: number;
+  // Accessibility props
+  accessibilityLabel?: string;
+  accessibilityHint?: string;
+  testID?: string;
 }
-
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 export function StatCard({
   value,
@@ -47,14 +48,14 @@ export function StatCard({
   icon,
   trend,
   size = 'medium',
-  variant = 'default',
-  gradientColors,
   onPress,
   style,
-  animateValue = true,
   animationDelay = 0,
+  accessibilityLabel,
+  accessibilityHint,
+  testID,
 }: StatCardProps) {
-  const colorScheme = useColorScheme() ?? 'light';
+  const colorScheme = useColorScheme() ?? 'dark';
   const colors = Colors[colorScheme];
 
   // Animate entrance
@@ -89,7 +90,7 @@ export function StatCard({
       case 'large':
         return {
           container: { minWidth: 160 },
-          value: Typography.display1,
+          value: Typography.displayMedium,
           label: Typography.subheadline,
           padding: 24,
         };
@@ -126,6 +127,15 @@ export function StatCard({
     }
   };
 
+  const getTrendAccessibilityLabel = () => {
+    if (!trend) return '';
+    switch (trend.direction) {
+      case 'up': return `Trending up ${trend.value}`;
+      case 'down': return `Trending down ${trend.value}`;
+      default: return `No change ${trend.value}`;
+    }
+  };
+
   const content = (
     <View style={styles.innerContent}>
       {icon && (
@@ -158,8 +168,16 @@ export function StatCard({
         </Text>
 
         {trend && (
-          <View style={styles.trend}>
-            <Text style={[Typography.caption1, { color: getTrendColor() }]}>
+          <View
+            style={styles.trend}
+            accessibilityLabel={getTrendAccessibilityLabel()}
+            accessibilityRole="text"
+          >
+            <Text
+              style={[Typography.caption1, { color: getTrendColor() }]}
+              accessibilityElementsHidden
+              importantForAccessibility="no-hide-descendants"
+            >
               {getTrendIcon()} {trend.value}
             </Text>
           </View>
@@ -168,12 +186,18 @@ export function StatCard({
     </View>
   );
 
+  // Generate automatic accessibility label if not provided
+  const autoAccessibilityLabel = accessibilityLabel ?? `${label}: ${value}`;
+
   return (
     <Animated.View style={[entranceStyle, style]}>
       <ModernCard
         onPress={onPress}
         style={sizeStyles.container}
         padding={sizeStyles.padding}
+        accessibilityLabel={autoAccessibilityLabel}
+        accessibilityHint={accessibilityHint}
+        testID={testID}
       >
         {content}
       </ModernCard>
@@ -190,7 +214,6 @@ interface BentoGridProps {
 
 export function BentoGrid({
   children,
-  columns = 2,
   gap = 12,
 }: BentoGridProps) {
   return (
@@ -206,29 +229,20 @@ export function HeroStatCard({
   label,
   subtitle,
   icon,
-  gradientColors,
 }: {
   value: string | number;
   label: string;
   subtitle?: string;
   icon?: React.ReactNode;
-  gradientColors?: string[];
 }) {
-  const colorScheme = useColorScheme() ?? 'light';
+  const colorScheme = useColorScheme() ?? 'dark';
   const colors = Colors[colorScheme];
 
-  // Use primary color if no gradient provided, but keep it solid/minimal
-  const bgStyle = {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderWidth: colorScheme === 'dark' ? 1 : 0,
-  };
-
   return (
-    <ModernCard style={styles.heroCard}>
+    <ModernCard style={styles.heroCard} padding={24}>
       <View style={styles.heroContent}>
         {icon && <View style={styles.heroIcon}>{icon}</View>}
-        <Text style={[Typography.display1, { color: colors.text }]}>
+        <Text style={[Typography.displayMedium, { color: colors.text }]}>
           {value}
         </Text>
         <Text style={[Typography.headline, { color: colors.textSecondary }]}>

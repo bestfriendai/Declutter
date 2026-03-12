@@ -3,31 +3,31 @@
  * Animated overlay that appears when a collectible spawns
  */
 
+import { useDeclutter } from '@/context/DeclutterContext';
+import { useReducedMotion } from '@/hooks/useReducedMotion';
+import { RARITY_COLORS, SpawnEvent } from '@/types/declutter';
+import * as Haptics from 'expo-haptics';
 import React, { useEffect, useState } from 'react';
 import {
-  View,
-  StyleSheet,
-  Pressable,
-  Text as RNText,
-  useColorScheme,
-  Dimensions,
+    Dimensions,
+    Pressable,
+    Text as RNText,
+    StyleSheet,
+    View,
 } from 'react-native';
 import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withSpring,
-  withSequence,
-  withTiming,
-  withRepeat,
-  runOnJS,
-  Easing,
-  FadeIn,
-  ZoomIn,
+    Easing,
+    FadeIn,
+    ZoomIn,
+    cancelAnimation,
+    runOnJS,
+    useAnimatedStyle,
+    useSharedValue,
+    withRepeat,
+    withSequence,
+    withSpring,
+    withTiming,
 } from 'react-native-reanimated';
-import * as Haptics from 'expo-haptics';
-import { useDeclutter } from '@/context/DeclutterContext';
-import { Colors } from '@/constants/Colors';
-import { RARITY_COLORS, SpawnEvent } from '@/types/declutter';
 
 const { width, height } = Dimensions.get('window');
 
@@ -38,13 +38,24 @@ interface CollectibleSpawnProps {
 }
 
 // Particle component for celebration effect
-function Particle({ delay, color }: { delay: number; color: string }) {
+function Particle({ delay, color, reducedMotion }: { delay: number; color: string; reducedMotion?: boolean }) {
   const translateY = useSharedValue(0);
   const translateX = useSharedValue(0);
   const opacity = useSharedValue(1);
   const scale = useSharedValue(0);
 
   useEffect(() => {
+    // Skip particle animations if reduced motion is preferred
+    if (reducedMotion) {
+      scale.value = withSequence(
+        withTiming(1, { duration: 100 }),
+        withTiming(0, { duration: 300 })
+      );
+      return () => {
+        cancelAnimation(scale);
+      };
+    }
+    
     const randomX = (Math.random() - 0.5) * 150;
     const randomY = -Math.random() * 100 - 50;
 
@@ -69,7 +80,14 @@ function Particle({ delay, color }: { delay: number; color: string }) {
       withTiming(1, { duration: 400 }),
       withTiming(0, { duration: 400 })
     );
-  }, []);
+    
+    return () => {
+      cancelAnimation(scale);
+      cancelAnimation(translateX);
+      cancelAnimation(translateY);
+      cancelAnimation(opacity);
+    };
+  }, [reducedMotion]);
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [
@@ -86,11 +104,9 @@ function Particle({ delay, color }: { delay: number; color: string }) {
 }
 
 export function CollectibleSpawn({ spawn, onCollect, onDismiss }: CollectibleSpawnProps) {
-  const rawColorScheme = useColorScheme();
-  const colorScheme = rawColorScheme === 'dark' ? 'dark' : 'light';
-  const _colors = Colors[colorScheme]; // Reserved for future use
 
   const { collectItem } = useDeclutter();
+  const prefersReducedMotion = useReducedMotion();
 
   const [timeLeft, setTimeLeft] = useState(30);
   const [collected, setCollected] = useState(false);
@@ -117,63 +133,73 @@ export function CollectibleSpawn({ spawn, onCollect, onDismiss }: CollectibleSpa
     opacity.value = withTiming(1, { duration: 300 });
     scale.value = withSpring(1, { damping: 8, stiffness: 100 });
 
-    // Continuous float animation
-    floatY.value = withRepeat(
-      withSequence(
-        withTiming(-8, { duration: 1200, easing: Easing.inOut(Easing.ease) }),
-        withTiming(8, { duration: 1200, easing: Easing.inOut(Easing.ease) })
-      ),
-      -1,
-      true
-    );
+    // Reduced motion: skip continuous animations
+    if (prefersReducedMotion) {
+      floatY.value = 0;
+      rotation.value = 0;
+      glowOpacity.value = 0.7;
+      glowScale.value = 1;
+      ringScale.value = 0;
+      ringOpacity.value = 0;
+    } else {
+      // Continuous float animation
+      floatY.value = withRepeat(
+        withSequence(
+          withTiming(-8, { duration: 1200, easing: Easing.inOut(Easing.ease) }),
+          withTiming(8, { duration: 1200, easing: Easing.inOut(Easing.ease) })
+        ),
+        -1,
+        true
+      );
 
-    // Glow pulse
-    glowOpacity.value = withRepeat(
-      withSequence(
-        withTiming(0.9, { duration: 600 }),
-        withTiming(0.5, { duration: 600 })
-      ),
-      -1,
-      true
-    );
+      // Glow pulse
+      glowOpacity.value = withRepeat(
+        withSequence(
+          withTiming(0.9, { duration: 600 }),
+          withTiming(0.5, { duration: 600 })
+        ),
+        -1,
+        true
+      );
 
-    glowScale.value = withRepeat(
-      withSequence(
-        withTiming(1.15, { duration: 600 }),
-        withTiming(1, { duration: 600 })
-      ),
-      -1,
-      true
-    );
+      glowScale.value = withRepeat(
+        withSequence(
+          withTiming(1.15, { duration: 600 }),
+          withTiming(1, { duration: 600 })
+        ),
+        -1,
+        true
+      );
 
-    // Slight rotation wobble
-    rotation.value = withRepeat(
-      withSequence(
-        withTiming(-8, { duration: 500 }),
-        withTiming(8, { duration: 500 })
-      ),
-      -1,
-      true
-    );
+      // Slight rotation wobble
+      rotation.value = withRepeat(
+        withSequence(
+          withTiming(-8, { duration: 500 }),
+          withTiming(8, { duration: 500 })
+        ),
+        -1,
+        true
+      );
 
-    // Ring pulse effect
-    ringScale.value = withRepeat(
-      withSequence(
-        withTiming(0.8, { duration: 0 }),
-        withTiming(1.8, { duration: 1500, easing: Easing.out(Easing.ease) })
-      ),
-      -1,
-      false
-    );
+      // Ring pulse effect
+      ringScale.value = withRepeat(
+        withSequence(
+          withTiming(0.8, { duration: 0 }),
+          withTiming(1.8, { duration: 1500, easing: Easing.out(Easing.ease) })
+        ),
+        -1,
+        false
+      );
 
-    ringOpacity.value = withRepeat(
-      withSequence(
-        withTiming(0.6, { duration: 0 }),
-        withTiming(0, { duration: 1500, easing: Easing.out(Easing.ease) })
-      ),
-      -1,
-      false
-    );
+      ringOpacity.value = withRepeat(
+        withSequence(
+          withTiming(0.6, { duration: 0 }),
+          withTiming(0, { duration: 1500, easing: Easing.out(Easing.ease) })
+        ),
+        -1,
+        false
+      );
+    }
 
     // Timer countdown
     const timer = setInterval(() => {
@@ -338,7 +364,7 @@ export function CollectibleSpawn({ spawn, onCollect, onDismiss }: CollectibleSpa
         {showParticles && (
           <View style={styles.particlesContainer}>
             {Array.from({ length: 12 }).map((_, i) => (
-              <Particle key={i} delay={i * 30} color={rarityColor} />
+              <Particle key={i} delay={i * 30} color={rarityColor} reducedMotion={prefersReducedMotion} />
             ))}
           </View>
         )}

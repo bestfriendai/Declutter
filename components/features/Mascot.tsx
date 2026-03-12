@@ -3,32 +3,31 @@
  * Animated tamagotchi-style cleaning companion with rich animations
  */
 
+import { Colors } from '@/constants/Colors';
+import { useDeclutter } from '@/context/DeclutterContext';
+import { useReducedMotion } from '@/hooks/useReducedMotion';
+import { MASCOT_PERSONALITIES, MascotActivity, MascotMood } from '@/types/declutter';
+import * as Haptics from 'expo-haptics';
 import React, { useEffect, useMemo } from 'react';
 import {
-  View,
-  StyleSheet,
-  Pressable,
-  Text as RNText,
-  useColorScheme,
+    Pressable,
+    Text as RNText,
+    StyleSheet,
+    View,
+    useColorScheme,
 } from 'react-native';
 import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withRepeat,
-  withSequence,
-  withTiming,
-  withSpring,
-  withDelay,
-  Easing,
-  interpolate,
-  FadeIn,
-  FadeOut,
-  cancelAnimation,
+    Easing,
+    cancelAnimation,
+    interpolate,
+    useAnimatedStyle,
+    useSharedValue,
+    withDelay,
+    withRepeat,
+    withSequence,
+    withSpring,
+    withTiming
 } from 'react-native-reanimated';
-import * as Haptics from 'expo-haptics';
-import { useDeclutter } from '@/context/DeclutterContext';
-import { Colors } from '@/constants/Colors';
-import { MASCOT_PERSONALITIES, MascotActivity, MascotMood } from '@/types/declutter';
 
 interface MascotProps {
   size?: 'small' | 'medium' | 'large';
@@ -38,12 +37,19 @@ interface MascotProps {
 }
 
 // Sparkle effect for happy states
-function Sparkle({ delay, x, y }: { delay: number; x: number; y: number }) {
-  const opacity = useSharedValue(0);
-  const scale = useSharedValue(0);
+function Sparkle({ delay, x, y, reducedMotion }: { delay: number; x: number; y: number; reducedMotion?: boolean }) {
+  const opacity = useSharedValue(reducedMotion ? 0.7 : 0);
+  const scale = useSharedValue(reducedMotion ? 1 : 0);
   const rotation = useSharedValue(0);
 
   useEffect(() => {
+    // Skip animations if reduced motion is preferred
+    if (reducedMotion) {
+      opacity.value = 0.7;
+      scale.value = 1;
+      return;
+    }
+    
     opacity.value = withDelay(
       delay,
       withRepeat(
@@ -88,7 +94,7 @@ function Sparkle({ delay, x, y }: { delay: number; x: number; y: number }) {
       cancelAnimation(scale);
       cancelAnimation(rotation);
     };
-  }, [delay, opacity, scale, rotation]);
+  }, [delay, opacity, scale, rotation, reducedMotion]);
 
   const animatedStyle = useAnimatedStyle(() => ({
     opacity: opacity.value,
@@ -204,6 +210,9 @@ export function Mascot({
   const colors = Colors[colorScheme];
 
   const { mascot, interactWithMascot } = useDeclutter();
+  
+  // Check for reduced motion preference
+  const prefersReducedMotion = useReducedMotion();
 
   // Animation values
   const bounceY = useSharedValue(0);
@@ -239,6 +248,18 @@ export function Mascot({
 
   useEffect(() => {
     if (!mascot) return;
+
+    // Reduced motion: skip intensive animations
+    if (prefersReducedMotion) {
+      // Static fallback values
+      glowScale.value = 1;
+      glowOpacity.value = 0.4;
+      bounceY.value = 0;
+      rotation.value = 0;
+      scale.value = 1;
+      eyeScale.value = 1;
+      return;
+    }
 
     // Glow animation (always active)
     glowScale.value = withRepeat(
@@ -403,7 +424,7 @@ export function Mascot({
       cancelAnimation(glowOpacity);
       cancelAnimation(eyeScale);
     };
-  }, [mascot?.activity, bounceY, rotation, scale, glowScale, glowOpacity, eyeScale]);
+  }, [mascot?.activity, bounceY, rotation, scale, glowScale, glowOpacity, eyeScale, prefersReducedMotion]);
 
   // Show speech bubble on mood change
   useEffect(() => {
@@ -506,7 +527,7 @@ export function Mascot({
 
         {/* Sparkles for happy moods */}
         {isHappy && sparkles.map(s => (
-          <Sparkle key={s.id} delay={s.delay} x={s.x} y={s.y} />
+          <Sparkle key={s.id} delay={s.delay} x={s.x} y={s.y} reducedMotion={prefersReducedMotion} />
         ))}
 
         {/* Main mascot */}

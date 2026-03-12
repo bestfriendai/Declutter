@@ -106,7 +106,7 @@ export function ActivityRings({
         <View style={styles.centerContent}>
           {centerContent ?? (
             <View style={styles.defaultCenter}>
-              <Text style={[Typography.statLarge, { color: colors.text }]}>
+              <Text style={[Typography.title1, { color: colors.text }]}>
                 {Math.round(
                   rings.reduce((sum, r) => sum + r.value, 0) / rings.length
                 )}%
@@ -153,7 +153,7 @@ interface RingProps {
 }
 
 function Ring({
-  index,
+  index: _index,
   cx,
   cy,
   radius,

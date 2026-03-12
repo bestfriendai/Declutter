@@ -3,40 +3,51 @@
  * Full mascot view with stats, interactions, and customization
  */
 
-import { Colors } from '@/constants/Colors';
+import { Colors, ColorTokens } from '@/constants/Colors';
 import { useDeclutter } from '@/context/DeclutterContext';
+import { useColorScheme } from '@/hooks/useColorScheme';
 import { MASCOT_PERSONALITIES } from '@/types/declutter';
 import { Mascot } from '@/components/features/Mascot';
+import { Typography } from '@/theme/typography';
+import { Spacing, BorderRadius } from '@/theme/spacing';
 import { router } from 'expo-router';
 import React from 'react';
 import {
-  useColorScheme,
   View,
   StyleSheet,
   Pressable,
   Text as RNText,
   ScrollView,
 } from 'react-native';
+import Animated, { FadeInDown } from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 
 export default function MascotScreen() {
   const rawColorScheme = useColorScheme();
   const colorScheme = rawColorScheme === 'dark' ? 'dark' : 'light';
   const colors = Colors[colorScheme];
+  const isDark = colorScheme === 'dark';
+  const insets = useSafeAreaInsets();
 
   const { mascot, interactWithMascot, feedMascot, stats } = useDeclutter();
 
   if (!mascot) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <View style={styles.header}>
-          <Pressable onPress={() => router.back()} style={styles.backButton}>
+        <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
+          <Pressable
+            onPress={() => router.back()}
+            style={styles.backButton}
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
+          >
             <RNText style={[styles.backText, { color: colors.primary }]}>Back</RNText>
           </Pressable>
         </View>
         <View style={styles.emptyState}>
-          <RNText style={styles.emptyEmoji}>🥺</RNText>
-          <RNText style={[styles.emptyTitle, { color: colors.text }]}>
+          <RNText style={styles.emptyEmoji} accessibilityElementsHidden>🥺</RNText>
+          <RNText style={[styles.emptyTitle, { color: colors.text }]} accessibilityRole="header">
             No Buddy Yet
           </RNText>
           <RNText style={[styles.emptyText, { color: colors.textSecondary }]}>
@@ -63,15 +74,20 @@ export default function MascotScreen() {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Header */}
-      <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.backButton}>
+      <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
+        <Pressable
+          onPress={() => router.back()}
+          style={styles.backButton}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+        >
           <RNText style={[styles.backText, { color: colors.primary }]}>Back</RNText>
         </Pressable>
-        <RNText style={[styles.title, { color: colors.text }]}>Your Buddy</RNText>
+        <RNText style={[styles.title, { color: colors.text }]} accessibilityRole="header">Your Buddy</RNText>
         <View style={styles.placeholder} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView contentContainerStyle={styles.content} contentInsetAdjustmentBehavior="automatic">
         {/* Mascot Display */}
         <View style={[styles.mascotSection, { backgroundColor: personalityInfo.color + '20' }]}>
           <Mascot size="large" showStats interactive onPress={handlePet} />
@@ -81,7 +97,7 @@ export default function MascotScreen() {
         </View>
 
         {/* Stats Card */}
-        <View style={[styles.statsCard, { backgroundColor: colors.card }]}>
+        <Animated.View entering={FadeInDown.delay(60).springify()} style={[styles.statsCard, { backgroundColor: colors.card }]}>
           <RNText style={[styles.sectionTitle, { color: colors.text }]}>Stats</RNText>
 
           {/* Level Progress */}
@@ -115,62 +131,71 @@ export default function MascotScreen() {
             <StatBar
               label="Hunger"
               value={mascot.hunger}
-              color="#22C55E"
+              color={colors.success}
               colors={colors}
             />
             <StatBar
               label="Energy"
               value={mascot.energy}
-              color="#3B82F6"
+              color={colors.accent}
               colors={colors}
             />
             <StatBar
               label="Happiness"
               value={mascot.happiness}
-              color="#F59E0B"
+              color={colors.warning}
               colors={colors}
             />
           </View>
-        </View>
+        </Animated.View>
 
         {/* Actions */}
-        <View style={styles.actionsSection}>
+        <Animated.View entering={FadeInDown.delay(120).springify()} style={styles.actionsSection}>
           <RNText style={[styles.sectionTitle, { color: colors.text }]}>Actions</RNText>
 
           <View style={styles.actionButtons}>
             <Pressable
               style={[styles.actionButton, { backgroundColor: colors.success }]}
               onPress={handleFeed}
+              accessibilityRole="button"
+              accessibilityLabel="Feed your buddy"
+              accessibilityHint="Increases hunger by 20 points"
             >
-              <RNText style={styles.actionEmoji}>🍎</RNText>
-              <RNText style={styles.actionText}>Feed</RNText>
-              <RNText style={styles.actionHint}>+20 Hunger</RNText>
+              <RNText style={styles.actionEmoji} accessibilityElementsHidden>🍎</RNText>
+              <RNText style={[styles.actionText, { color: colors.textOnSuccess }]}>Feed</RNText>
+              <RNText style={[styles.actionHint, { color: colors.textOnSuccess }]} accessibilityElementsHidden>+20 Hunger</RNText>
             </Pressable>
 
             <Pressable
               style={[styles.actionButton, { backgroundColor: colors.primary }]}
               onPress={handlePet}
+              accessibilityRole="button"
+              accessibilityLabel="Pet your buddy"
+              accessibilityHint="Increases happiness by 15 points"
             >
-              <RNText style={styles.actionEmoji}>👋</RNText>
-              <RNText style={styles.actionText}>Pet</RNText>
-              <RNText style={styles.actionHint}>+15 Happy</RNText>
+              <RNText style={styles.actionEmoji} accessibilityElementsHidden>👋</RNText>
+              <RNText style={[styles.actionText, { color: colors.textOnPrimary }]}>Pet</RNText>
+              <RNText style={[styles.actionHint, { color: colors.textOnPrimary }]} accessibilityElementsHidden>+15 Happy</RNText>
             </Pressable>
 
             <Pressable
-              style={[styles.actionButton, { backgroundColor: '#A855F7' }]}
+              style={[styles.actionButton, { backgroundColor: isDark ? '#BF5AF2' : '#AF52DE' }]}
               onPress={() => router.push('/focus?duration=25')}
+              accessibilityRole="button"
+              accessibilityLabel="Clean together"
+              accessibilityHint="Start a 25 minute focus cleaning session"
             >
-              <RNText style={styles.actionEmoji}>🧹</RNText>
-              <RNText style={styles.actionText}>Clean</RNText>
-              <RNText style={styles.actionHint}>Together!</RNText>
+              <RNText style={styles.actionEmoji} accessibilityElementsHidden>🧹</RNText>
+              <RNText style={[styles.actionText, { color: colors.textOnPrimary }]}>Clean</RNText>
+              <RNText style={[styles.actionHint, { color: colors.textOnPrimary }]} accessibilityElementsHidden>Together!</RNText>
             </Pressable>
           </View>
-        </View>
+        </Animated.View>
 
         {/* Info Card */}
-        <View style={[styles.infoCard, { backgroundColor: colors.card }]}>
+        <Animated.View entering={FadeInDown.delay(180).springify()} style={[styles.infoCard, { backgroundColor: colors.card }]}>
           <RNText style={[styles.sectionTitle, { color: colors.text }]}>About</RNText>
-          <View style={styles.infoRow}>
+          <View style={[styles.infoRow, { borderBottomColor: isDark ? colors.divider : colors.borderLight }]}>
             <RNText style={[styles.infoLabel, { color: colors.textSecondary }]}>
               Personality
             </RNText>
@@ -178,7 +203,7 @@ export default function MascotScreen() {
               {personalityInfo.emoji} {personalityInfo.name}
             </RNText>
           </View>
-          <View style={styles.infoRow}>
+          <View style={[styles.infoRow, { borderBottomColor: isDark ? colors.divider : colors.borderLight }]}>
             <RNText style={[styles.infoLabel, { color: colors.textSecondary }]}>
               Current Mood
             </RNText>
@@ -186,7 +211,7 @@ export default function MascotScreen() {
               {getMoodEmoji(mascot.mood)} {mascot.mood}
             </RNText>
           </View>
-          <View style={styles.infoRow}>
+          <View style={[styles.infoRow, { borderBottomColor: isDark ? colors.divider : colors.borderLight }]}>
             <RNText style={[styles.infoLabel, { color: colors.textSecondary }]}>
               Tasks Together
             </RNText>
@@ -194,7 +219,7 @@ export default function MascotScreen() {
               {stats.totalTasksCompleted}
             </RNText>
           </View>
-          <View style={styles.infoRow}>
+          <View style={[styles.infoRow, { borderBottomColor: isDark ? colors.divider : colors.borderLight }]}>
             <RNText style={[styles.infoLabel, { color: colors.textSecondary }]}>
               Days Together
             </RNText>
@@ -202,15 +227,15 @@ export default function MascotScreen() {
               {Math.floor((Date.now() - new Date(mascot.createdAt).getTime()) / (1000 * 60 * 60 * 24)) + 1}
             </RNText>
           </View>
-        </View>
+        </Animated.View>
 
         {/* Tips */}
-        <View style={[styles.tipsCard, { backgroundColor: personalityInfo.color + '20' }]}>
+        <Animated.View entering={FadeInDown.delay(240).springify()} style={[styles.tipsCard, { backgroundColor: personalityInfo.color + '20' }]}>
           <RNText style={styles.tipsEmoji}>💡</RNText>
           <RNText style={[styles.tipsText, { color: colors.text }]}>
             Complete tasks to feed {mascot.name} and keep them happy! A happy buddy means more motivation for you.
           </RNText>
-        </View>
+        </Animated.View>
       </ScrollView>
     </View>
   );
@@ -225,7 +250,7 @@ function StatBar({
   label: string;
   value: number;
   color: string;
-  colors: typeof Colors.light;
+  colors: ColorTokens;
 }) {
   return (
     <View style={styles.statBarContainer}>
@@ -270,62 +295,59 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingTop: 60,
-    paddingBottom: 16,
+    paddingHorizontal: Spacing.md,
+    paddingBottom: Spacing.md,
   },
   backButton: {
-    padding: 8,
+    padding: Spacing.xs,
+    minHeight: 44,
+    justifyContent: 'center',
   },
   backText: {
-    fontSize: 16,
-    fontWeight: '600',
+    ...Typography.subheadlineMedium,
   },
   title: {
-    fontSize: 20,
-    fontWeight: '700',
+    ...Typography.title3,
   },
   placeholder: {
     width: 50,
   },
   content: {
-    paddingHorizontal: 16,
+    paddingHorizontal: Spacing.md,
     paddingBottom: 100,
   },
   mascotSection: {
     alignItems: 'center',
-    paddingVertical: 32,
-    borderRadius: 24,
-    marginBottom: 20,
+    paddingVertical: Spacing.xl,
+    borderRadius: BorderRadius.xxl,
+    marginBottom: Spacing.ml,
   },
   tapHint: {
     fontSize: 13,
     marginTop: 8,
   },
   statsCard: {
-    padding: 20,
-    borderRadius: 16,
-    marginBottom: 20,
+    padding: Spacing.ml,
+    borderRadius: BorderRadius.lg,
+    marginBottom: Spacing.ml,
   },
   sectionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    marginBottom: 16,
+    ...Typography.title3,
+    marginBottom: Spacing.md,
   },
   levelSection: {
-    marginBottom: 20,
+    marginBottom: Spacing.ml,
   },
   levelHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 8,
+    marginBottom: Spacing.xs,
   },
   levelText: {
-    fontSize: 16,
-    fontWeight: '600',
+    ...Typography.subheadlineMedium,
   },
   xpText: {
-    fontSize: 14,
+    ...Typography.subheadline,
   },
   xpBar: {
     height: 10,
@@ -342,7 +364,7 @@ const styles = StyleSheet.create({
     textAlign: 'right',
   },
   statBars: {
-    gap: 12,
+    gap: Spacing.sm,
   },
   statBarContainer: {
     gap: 4,
@@ -368,43 +390,41 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   actionsSection: {
-    marginBottom: 20,
+    marginBottom: Spacing.ml,
   },
   actionButtons: {
     flexDirection: 'row',
-    gap: 12,
+    gap: Spacing.sm,
   },
   actionButton: {
     flex: 1,
     alignItems: 'center',
-    padding: 16,
-    borderRadius: 16,
+    padding: Spacing.md,
+    borderRadius: BorderRadius.lg,
   },
   actionEmoji: {
     fontSize: 28,
   },
   actionText: {
-    color: '#fff',
     fontSize: 14,
     fontWeight: '600',
     marginTop: 4,
   },
   actionHint: {
-    color: 'rgba(255,255,255,0.8)',
     fontSize: 10,
     marginTop: 2,
+    opacity: 0.8,
   },
   infoCard: {
-    padding: 20,
-    borderRadius: 16,
-    marginBottom: 20,
+    padding: Spacing.ml,
+    borderRadius: BorderRadius.lg,
+    marginBottom: Spacing.ml,
   },
   infoRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(0,0,0,0.05)',
+    paddingVertical: Spacing.xs,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
   infoLabel: {
     fontSize: 14,
@@ -416,9 +436,9 @@ const styles = StyleSheet.create({
   tipsCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
-    borderRadius: 12,
-    gap: 12,
+    padding: Spacing.md,
+    borderRadius: BorderRadius.md,
+    gap: Spacing.sm,
   },
   tipsEmoji: {
     fontSize: 24,
@@ -432,19 +452,18 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 40,
+    padding: Spacing.xxl,
   },
   emptyEmoji: {
     fontSize: 64,
   },
   emptyTitle: {
-    fontSize: 22,
-    fontWeight: '700',
-    marginTop: 16,
+    ...Typography.title2,
+    marginTop: Spacing.md,
   },
   emptyText: {
-    fontSize: 15,
+    ...Typography.subheadline,
     textAlign: 'center',
-    marginTop: 8,
+    marginTop: Spacing.xs,
   },
 });

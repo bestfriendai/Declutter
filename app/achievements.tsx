@@ -35,6 +35,7 @@ import * as Haptics from 'expo-haptics';
 
 import { Colors } from '@/constants/Colors';
 import { Typography } from '@/theme/typography';
+import { Spacing, BorderRadius } from '@/theme/spacing';
 import { useDeclutter } from '@/context/DeclutterContext';
 import { BADGES, Badge } from '@/types/declutter';
 import { GlassCard } from '@/components/ui/GlassCard';
@@ -156,6 +157,7 @@ export default function AchievementsScreen() {
           styles.scrollContent,
           { paddingTop: insets.top + 60, paddingBottom: insets.bottom + 100 },
         ]}
+        contentInsetAdjustmentBehavior="automatic"
         showsVerticalScrollIndicator={false}
       >
         {/* Hero Section */}
@@ -181,20 +183,20 @@ export default function AchievementsScreen() {
                   backgroundColor="rgba(255, 255, 255, 0.1)"
                 />
                 <View style={styles.heroRingCenter}>
-                  <Text style={[Typography.display1, { color: '#FFFFFF' }]}>
+                  <Text style={[Typography.displayMedium, { color: colors.text }]}>
                     {earnedBadges}
                   </Text>
-                  <Text style={[Typography.caption1, { color: 'rgba(255,255,255,0.7)' }]}>
+                  <Text style={[Typography.caption1, { color: colors.textSecondary }]}>
                     of {totalBadges}
                   </Text>
                 </View>
               </View>
 
               <View style={styles.heroTextContent}>
-                <Text style={[Typography.title1, { color: '#FFFFFF' }]}>
+                <Text style={[Typography.title1, { color: colors.text }]}>
                   Achievement Progress
                 </Text>
-                <Text style={[Typography.body, { color: 'rgba(255,255,255,0.7)', marginTop: 8 }]}>
+                <Text style={[Typography.body, { color: colors.textSecondary, marginTop: 8 }]}>
                   {earnedBadges === 0
                     ? "Start your journey to unlock badges!"
                     : earnedBadges === totalBadges
@@ -210,7 +212,7 @@ export default function AchievementsScreen() {
                     return (
                       <View key={cat.id} style={styles.heroStat}>
                         <Text style={{ fontSize: 20 }}>{cat.emoji}</Text>
-                        <Text style={[Typography.caption1Medium, { color: '#FFFFFF', marginTop: 4 }]}>
+                        <Text style={[Typography.caption1Medium, { color: colors.text, marginTop: 4 }]}>
                           {unlockedInCategory}/{categoryBadges.length}
                         </Text>
                       </View>
@@ -270,7 +272,7 @@ export default function AchievementsScreen() {
                         {category.label}
                       </Text>
                       <View style={[styles.categoryCount, { backgroundColor: category.color }]}>
-                        <Text style={[Typography.caption2, { color: '#FFFFFF' }]}>
+                        <Text style={[Typography.caption2, { color: colors.textOnPrimary }]}>
                           {unlockedInCategory.length}/{categoryBadges.length}
                         </Text>
                       </View>
@@ -365,6 +367,8 @@ export default function AchievementsScreen() {
               transform: [{ scale: pressed ? 0.95 : 1 }],
             },
           ]}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
         >
           <BlurView
             intensity={60}
@@ -415,6 +419,9 @@ function FilterPill({
         onPressIn={() => { scale.value = withSpring(0.95); }}
         onPressOut={() => { scale.value = withSpring(1); }}
         style={animatedStyle}
+        accessibilityRole="tab"
+        accessibilityLabel={`Filter by ${category.label}`}
+        accessibilityState={{ selected: isSelected }}
       >
         <View
           style={[
@@ -433,11 +440,11 @@ function FilterPill({
             },
           ]}
         >
-          <Text style={{ fontSize: 16 }}>{category.emoji}</Text>
+          <Text style={{ fontSize: 16 }} accessibilityElementsHidden>{category.emoji}</Text>
           <Text
             style={[
               Typography.subheadlineMedium,
-              { color: isSelected ? '#FFFFFF' : colors.text, marginLeft: 6 },
+              { color: isSelected ? colors.textOnPrimary : colors.text, marginLeft: 6 },
             ]}
           >
             {category.label}
@@ -476,6 +483,9 @@ function BadgeCard({
       onPressIn={onPressIn}
       onPressOut={onPressOut}
       style={[animatedStyle, style]}
+      accessibilityRole="button"
+      accessibilityLabel={`${badge.name} badge, ${isUnlocked ? 'unlocked' : `${progress.percentage}% progress`}`}
+      accessibilityHint="Double tap to view details"
     >
       <Animated.View
         entering={FadeInUp.delay(delay).springify()}
@@ -509,7 +519,7 @@ function BadgeCard({
         )}
 
         {/* Badge emoji */}
-        <View style={[styles.badgeEmojiContainer, !isUnlocked && styles.locked]}>
+        <View style={[styles.badgeEmojiContainer, !isUnlocked && styles.locked]} accessibilityElementsHidden>
           <Text style={styles.badgeEmoji}>{badge.emoji}</Text>
           {!isUnlocked && (
             <View style={styles.lockOverlay}>
@@ -536,7 +546,7 @@ function BadgeCard({
         {/* Progress or checkmark */}
         {isUnlocked ? (
           <View style={[styles.unlockedBadge, { backgroundColor: categoryColor }]}>
-            <Text style={styles.checkmark}>✓</Text>
+            <Text style={[styles.checkmark, { color: colors.textOnPrimary }]}>✓</Text>
           </View>
         ) : (
           <View style={styles.progressContainer}>
@@ -628,6 +638,8 @@ function BadgeModal({
                     : 'rgba(0, 0, 0, 0.05)',
                 },
               ]}
+              accessibilityRole="button"
+              accessibilityLabel="Close badge detail"
             >
               <Text style={[Typography.body, { color: colors.textSecondary }]}>✕</Text>
             </Pressable>
@@ -713,6 +725,8 @@ function BadgeModal({
                   styles.modalShareButton,
                   { opacity: pressed ? 0.8 : 1 },
                 ]}
+                accessibilityRole="button"
+                accessibilityLabel="Share this achievement"
               >
                 <LinearGradient
                   colors={[categoryColor, categoryColor + 'CC']}
@@ -720,7 +734,7 @@ function BadgeModal({
                   end={{ x: 1, y: 1 }}
                   style={StyleSheet.absoluteFill}
                 />
-                <Text style={[Typography.headline, { color: '#FFFFFF' }]}>
+                <Text style={[Typography.headline, { color: colors.textOnPrimary }]}>
                   Share Achievement
                 </Text>
               </Pressable>
@@ -748,17 +762,19 @@ const styles = StyleSheet.create({
     zIndex: 100,
   },
   backButtonInner: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 20,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.card,
     overflow: 'hidden',
+    minHeight: 44,
+    justifyContent: 'center',
   },
   heroSection: {
-    paddingHorizontal: 20,
-    marginBottom: 24,
+    paddingHorizontal: Spacing.ml,
+    marginBottom: Spacing.lg,
   },
   heroCard: {
-    padding: 24,
+    padding: Spacing.lg,
     overflow: 'hidden',
   },
   heroContent: {
@@ -780,33 +796,34 @@ const styles = StyleSheet.create({
   },
   heroStats: {
     flexDirection: 'row',
-    marginTop: 16,
-    gap: 16,
+    marginTop: Spacing.md,
+    gap: Spacing.md,
   },
   heroStat: {
     alignItems: 'center',
   },
   filterSection: {
-    marginBottom: 20,
+    marginBottom: Spacing.ml,
   },
   filterScroll: {
-    paddingHorizontal: 20,
-    gap: 8,
+    paddingHorizontal: Spacing.ml,
+    gap: Spacing.xs,
   },
   filterPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 20,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.card,
     borderWidth: 1,
+    minHeight: 44,
   },
   categorySection: {
-    marginBottom: 24,
+    marginBottom: Spacing.lg,
   },
   categoryHeader: {
-    paddingHorizontal: 20,
-    marginBottom: 12,
+    paddingHorizontal: Spacing.ml,
+    marginBottom: Spacing.sm,
   },
   categoryTitleRow: {
     flexDirection: 'row',
@@ -819,16 +836,16 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   badgesScroll: {
-    paddingHorizontal: 20,
-    gap: 12,
+    paddingHorizontal: Spacing.ml,
+    gap: Spacing.sm,
   },
   gridSection: {
-    paddingHorizontal: 20,
+    paddingHorizontal: Spacing.ml,
   },
   badgesGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 12,
+    gap: Spacing.sm,
   },
   gridBadge: {
     width: (SCREEN_WIDTH - 64) / 3,
@@ -836,8 +853,8 @@ const styles = StyleSheet.create({
   badgeCard: {
     width: 120,
     height: 150,
-    borderRadius: 16,
-    padding: 12,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.sm,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
@@ -881,7 +898,6 @@ const styles = StyleSheet.create({
   },
   checkmark: {
     fontSize: 14,
-    color: '#FFFFFF',
     fontWeight: 'bold',
   },
   progressContainer: {
@@ -901,12 +917,12 @@ const styles = StyleSheet.create({
     borderRadius: 2,
   },
   motivationSection: {
-    paddingHorizontal: 20,
-    marginTop: 20,
-    marginBottom: 20,
+    paddingHorizontal: Spacing.ml,
+    marginTop: Spacing.ml,
+    marginBottom: Spacing.ml,
   },
   motivationCard: {
-    padding: 24,
+    padding: Spacing.lg,
     alignItems: 'center',
   },
   motivationEmoji: {
@@ -926,17 +942,17 @@ const styles = StyleSheet.create({
     maxWidth: 360,
   },
   modalCard: {
-    borderRadius: 24,
-    padding: 24,
+    borderRadius: BorderRadius.card,
+    padding: Spacing.lg,
     alignItems: 'center',
   },
   modalCloseButton: {
     position: 'absolute',
-    top: 12,
-    right: 12,
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    top: Spacing.sm,
+    right: Spacing.sm,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 10,
@@ -945,7 +961,7 @@ const styles = StyleSheet.create({
     position: 'relative',
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 20,
+    marginTop: Spacing.ml,
   },
   modalBadgeGlow: {
     position: 'absolute',
@@ -976,13 +992,13 @@ const styles = StyleSheet.create({
   modalCategoryTag: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
-    marginTop: 16,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.xxs,
+    borderRadius: BorderRadius.input,
+    marginTop: Spacing.md,
   },
   modalProgressSection: {
-    marginTop: 24,
+    marginTop: Spacing.lg,
     alignItems: 'center',
     position: 'relative',
   },
@@ -999,10 +1015,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   modalShareButton: {
-    marginTop: 24,
-    paddingVertical: 14,
-    paddingHorizontal: 32,
-    borderRadius: 16,
+    marginTop: Spacing.lg,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.xl,
+    borderRadius: BorderRadius.button,
     overflow: 'hidden',
+    minHeight: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });

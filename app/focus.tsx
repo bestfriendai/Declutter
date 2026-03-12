@@ -1,1331 +1,479 @@
 /**
- * Declutterly - Focus Mode Screen
- * Immersive focus timer with beautiful animations and motivation
+ * Declutterly — Focus Mode Screen (Apple 2026)
+ * Pomodoro timer with glass card, animated ring, haptic milestones
  */
 
-import { router, useLocalSearchParams } from 'expo-router';
-import React, { useState, useEffect, useRef } from 'react';
-import {
-  useColorScheme,
-  View,
-  StyleSheet,
-  Pressable,
-  Dimensions,
-  AppState,
-  AppStateStatus,
-  Text as RNText,
-  Vibration,
-  ScrollView,
-} from 'react-native';
-import * as Haptics from 'expo-haptics';
-import { useDeclutter } from '@/context/DeclutterContext';
 import { Colors } from '@/constants/Colors';
-import { FOCUS_QUOTES, MASCOT_PERSONALITIES, FocusModeSettings } from '@/types/declutter';
+import { GlassCard } from '@/components/ui/GlassCard';
+import { useColorScheme } from '@/hooks/useColorScheme';
+import { Typography } from '@/theme/typography';
+import { Spacing, BorderRadius } from '@/theme/spacing';
+import { LinearGradient } from 'expo-linear-gradient';
+import { router } from 'expo-router';
+import * as Haptics from 'expo-haptics';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  playAmbientSound,
-  stopAmbientSound,
-  pauseAmbientSound,
-  resumeAmbientSound,
-  playTimerCompleteSound,
-  playBreakSound,
-  setVolume,
-  SOUND_INFO,
-} from '@/services/audio';
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import Animated, {
-  useSharedValue,
+  FadeInDown,
   useAnimatedStyle,
-  withTiming,
-  withRepeat,
-  withSequence,
+  useSharedValue,
   withSpring,
-  Easing,
-  interpolate,
-  FadeIn,
-  FadeOut,
-  SlideInDown,
-  ZoomIn,
+  withTiming,
 } from 'react-native-reanimated';
-// Using native View with gradient-like styling
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Svg, { Circle } from 'react-native-svg';
 
-const { width, height } = Dimensions.get('window');
-const TIMER_SIZE = Math.min(width * 0.7, 280);
+// ─────────────────────────────────────────────────────────────────────────────
+// Timer Presets
+// ─────────────────────────────────────────────────────────────────────────────
+const PRESETS = [
+  { label: '5 min',  seconds: 5 * 60,  emoji: '⚡', description: 'Quick win' },
+  { label: '15 min', seconds: 15 * 60, emoji: '🎯', description: 'Short focus' },
+  { label: '25 min', seconds: 25 * 60, emoji: '🍅', description: 'Pomodoro' },
+  { label: '45 min', seconds: 45 * 60, emoji: '🔥', description: 'Deep work' },
+] as const;
 
-// Breathing particle for ambient effect
-function BreathingParticle({ delay, size, x, y }: { delay: number; size: number; x: number; y: number }) {
-  const opacity = useSharedValue(0);
-  const scale = useSharedValue(0.5);
-  const translateY = useSharedValue(0);
+// ─────────────────────────────────────────────────────────────────────────────
+// Timer Ring
+// ─────────────────────────────────────────────────────────────────────────────
+interface TimerRingProps {
+  progress: number; // 0-1
+  size: number;
+  strokeWidth: number;
+  color: string;
+  trackColor: string;
+}
 
-  useEffect(() => {
-    opacity.value = withSequence(
-      withTiming(0, { duration: delay }),
-      withRepeat(
-        withSequence(
-          withTiming(0.6, { duration: 2000 }),
-          withTiming(0.1, { duration: 2000 })
-        ),
-        -1,
-        true
-      )
-    );
-
-    scale.value = withSequence(
-      withTiming(0.5, { duration: delay }),
-      withRepeat(
-        withSequence(
-          withTiming(1, { duration: 3000 }),
-          withTiming(0.5, { duration: 3000 })
-        ),
-        -1,
-        true
-      )
-    );
-
-    translateY.value = withRepeat(
-      withSequence(
-        withTiming(-20, { duration: 4000, easing: Easing.inOut(Easing.ease) }),
-        withTiming(20, { duration: 4000, easing: Easing.inOut(Easing.ease) })
-      ),
-      -1,
-      true
-    );
-  }, []);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    opacity: opacity.value,
-    transform: [
-      { scale: scale.value },
-      { translateY: translateY.value },
-    ],
-  }));
+function TimerRing({ progress, size, strokeWidth, color, trackColor }: TimerRingProps) {
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const strokeDashoffset = circumference * (1 - Math.max(0, Math.min(1, progress)));
 
   return (
-    <Animated.View
-      style={[
-        styles.particle,
-        animatedStyle,
-        {
-          width: size,
-          height: size,
-          borderRadius: size / 2,
-          left: x,
-          top: y,
-        },
-      ]}
-    />
+    <Svg width={size} height={size} style={{ transform: [{ rotate: '-90deg' }] }}>
+      <Circle
+        cx={size / 2}
+        cy={size / 2}
+        r={radius}
+        stroke={trackColor}
+        strokeWidth={strokeWidth}
+        fill="none"
+      />
+      <Circle
+        cx={size / 2}
+        cy={size / 2}
+        r={radius}
+        stroke={color}
+        strokeWidth={strokeWidth}
+        fill="none"
+        strokeDasharray={circumference}
+        strokeDashoffset={strokeDashoffset}
+        strokeLinecap="round"
+      />
+    </Svg>
   );
 }
 
-// Animated progress ring
-function ProgressRing({ progress, isPaused }: { progress: number; isPaused: boolean }) {
-  const rotation = useSharedValue(0);
-  const glowOpacity = useSharedValue(0.5);
-
-  useEffect(() => {
-    if (!isPaused) {
-      rotation.value = withRepeat(
-        withTiming(360, { duration: 20000, easing: Easing.linear }),
-        -1,
-        false
-      );
-
-      glowOpacity.value = withRepeat(
-        withSequence(
-          withTiming(0.8, { duration: 1500 }),
-          withTiming(0.4, { duration: 1500 })
-        ),
-        -1,
-        true
-      );
-    }
-  }, [isPaused]);
-
-  const ringStyle = useAnimatedStyle(() => ({
-    transform: [{ rotate: `${rotation.value}deg` }],
-  }));
-
-  const glowStyle = useAnimatedStyle(() => ({
-    opacity: glowOpacity.value,
-  }));
-
-  // Calculate the stroke dasharray for progress
-  const circumference = TIMER_SIZE * Math.PI;
-  const strokeDashoffset = circumference * (1 - progress);
-
-  return (
-    <View style={styles.progressRingContainer}>
-      {/* Background ring */}
-      <View style={styles.ringBackground} />
-
-      {/* Animated glow */}
-      <Animated.View style={[styles.ringGlow, glowStyle]} />
-
-      {/* Progress arc - using segments */}
-      <View style={styles.progressSegments}>
-        {Array.from({ length: 60 }).map((_, i) => {
-          const segmentProgress = i / 60;
-          const isActive = segmentProgress <= progress;
-          const angle = (i / 60) * 360 - 90;
-          const radians = (angle * Math.PI) / 180;
-          const x = (TIMER_SIZE / 2) * Math.cos(radians);
-          const y = (TIMER_SIZE / 2) * Math.sin(radians);
-
-          return (
-            <View
-              key={i}
-              style={[
-                styles.progressSegment,
-                {
-                  opacity: isActive ? 1 : 0.2,
-                  backgroundColor: isActive ? '#fff' : 'rgba(255,255,255,0.3)',
-                  transform: [
-                    { translateX: x + TIMER_SIZE / 2 - 3 },
-                    { translateY: y + TIMER_SIZE / 2 - 3 },
-                    { rotate: `${angle + 90}deg` },
-                  ],
-                },
-              ]}
-            />
-          );
-        })}
-      </View>
-
-      {/* Rotating accent */}
-      <Animated.View style={[styles.rotatingAccent, ringStyle]}>
-        <View style={styles.accentDot} />
-      </Animated.View>
-    </View>
-  );
+// ─────────────────────────────────────────────────────────────────────────────
+// Format time
+// ─────────────────────────────────────────────────────────────────────────────
+function formatTime(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
-export default function FocusModeScreen() {
-  const rawColorScheme = useColorScheme();
-  const colorScheme = rawColorScheme === 'dark' ? 'dark' : 'light';
+// ─────────────────────────────────────────────────────────────────────────────
+// Main Screen
+// ─────────────────────────────────────────────────────────────────────────────
+export default function FocusScreen() {
+  const rawScheme = useColorScheme();
+  const colorScheme = rawScheme === 'dark' ? 'dark' : 'light';
   const colors = Colors[colorScheme];
+  const isDark = colorScheme === 'dark';
+  const insets = useSafeAreaInsets();
 
-  const params = useLocalSearchParams<{ duration?: string; roomId?: string }>();
-  const duration = parseInt(params.duration || '25', 10);
-  const roomId = params.roomId;
+  const [selectedPreset, setSelectedPreset] = useState(2); // Default: 25 min
+  const [totalSeconds, setTotalSeconds] = useState(PRESETS[2].seconds);
+  const [remainingSeconds, setRemainingSeconds] = useState(PRESETS[2].seconds);
+  const [isRunning, setIsRunning] = useState(false);
+  const [isComplete, setIsComplete] = useState(false);
+  const [sessionsCompleted, setSessionsCompleted] = useState(0);
 
-  const {
-    focusSession,
-    startFocusSession,
-    pauseFocusSession,
-    resumeFocusSession,
-    endFocusSession,
-    updateFocusSession,
-    mascot,
-    settings,
-  } = useDeclutter();
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pulseScale = useSharedValue(1);
 
-  const [quote, setQuote] = useState(FOCUS_QUOTES[0]);
-  const [showExitWarning, setShowExitWarning] = useState(false);
-  const [showCompletion, setShowCompletion] = useState(false);
-  const [isBreakMode, setIsBreakMode] = useState(false);
-  const [breakTimeRemaining, setBreakTimeRemaining] = useState(0);
-  const [showSoundPicker, setShowSoundPicker] = useState(false);
-  const [currentSound, setCurrentSound] = useState<FocusModeSettings['whiteNoiseType']>(
-    settings.focusMode.whiteNoiseType
-  );
-  const [soundVolume, setSoundVolume] = useState(0.5);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const breakTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const appState = useRef(AppState.currentState);
+  const progress = totalSeconds > 0 ? remainingSeconds / totalSeconds : 0;
 
-  // Animation values
-  const timerScale = useSharedValue(1);
-  const breatheScale = useSharedValue(1);
-  const mascotBounce = useSharedValue(0);
-
-  // Start session on mount
+  // Pulse animation when running
   useEffect(() => {
-    if (!focusSession) {
-      startFocusSession(duration, roomId);
-    }
-
-    // Start ambient sound if enabled
-    if (settings.focusMode.playWhiteNoise && currentSound !== 'none') {
-      playAmbientSound(currentSound);
-    }
-
-    // Rotate quote every 30 seconds
-    const quoteInterval = setInterval(() => {
-      const randomQuote = FOCUS_QUOTES[Math.floor(Math.random() * FOCUS_QUOTES.length)];
-      setQuote(randomQuote);
-    }, 30000);
-
-    // Breathing animation for timer
-    breatheScale.value = withRepeat(
-      withSequence(
-        withTiming(1.02, { duration: 2000, easing: Easing.inOut(Easing.ease) }),
-        withTiming(1, { duration: 2000, easing: Easing.inOut(Easing.ease) })
-      ),
-      -1,
-      true
-    );
-
-    // Mascot bounce
-    mascotBounce.value = withRepeat(
-      withSequence(
-        withTiming(-5, { duration: 800, easing: Easing.inOut(Easing.ease) }),
-        withTiming(5, { duration: 800, easing: Easing.inOut(Easing.ease) })
-      ),
-      -1,
-      true
-    );
-
-    return () => {
-      clearInterval(quoteInterval);
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-      }
-      // Stop ambient sound on unmount
-      stopAmbientSound();
-    };
-  }, []);
-
-  // Timer countdown
-  useEffect(() => {
-    if (focusSession?.isActive && !focusSession?.isPaused) {
-      timerRef.current = setInterval(() => {
-        if (focusSession.remainingSeconds > 0) {
-          updateFocusSession({ remainingSeconds: focusSession.remainingSeconds - 1 });
-        } else {
-          handleTimerComplete();
-        }
-      }, 1000);
-    }
-
-    return () => {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-      }
-    };
-  }, [focusSession?.isActive, focusSession?.isPaused, focusSession?.remainingSeconds]);
-
-  // Handle app state changes
-  useEffect(() => {
-    const subscription = AppState.addEventListener('change', handleAppStateChange);
-    return () => subscription.remove();
-  }, []);
-
-  function handleAppStateChange(nextAppState: AppStateStatus) {
-    if (appState.current === 'active' && nextAppState.match(/inactive|background/)) {
-      if (focusSession?.isActive && settings.focusMode.strictMode) {
-        updateFocusSession({
-          distractionAttempts: (focusSession.distractionAttempts || 0) + 1,
+    if (isRunning) {
+      const pulse = () => {
+        pulseScale.value = withTiming(1.02, { duration: 1000 }, () => {
+          pulseScale.value = withTiming(1, { duration: 1000 });
         });
-        Vibration.vibrate([0, 100, 50, 100]);
-      }
-    }
-    appState.current = nextAppState;
-  }
-
-  function handleTimerComplete() {
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-    }
-
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    Vibration.vibrate([0, 200, 100, 200, 100, 200]);
-    playTimerCompleteSound();
-
-    // Check if we should auto-start a break
-    if (settings.focusMode.autoStartBreak && !isBreakMode) {
-      startBreak();
+      };
+      pulse();
+      const id = setInterval(pulse, 2000);
+      return () => clearInterval(id);
     } else {
-      stopAmbientSound();
-      setShowCompletion(true);
-      setTimeout(() => {
-        endFocusSession();
-        router.back();
-      }, 3000);
+      pulseScale.value = withSpring(1);
     }
-  }
+  }, [isRunning]);
 
-  function startBreak() {
-    setIsBreakMode(true);
-    setBreakTimeRemaining(settings.focusMode.breakDuration * 60);
-
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    playBreakSound();
-
-    // Start break timer
-    breakTimerRef.current = setInterval(() => {
-      setBreakTimeRemaining(prev => {
-        if (prev <= 1) {
-          endBreak();
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-  }
-
-  function endBreak() {
-    if (breakTimerRef.current) {
-      clearInterval(breakTimerRef.current);
-    }
-    setIsBreakMode(false);
-    setShowCompletion(true);
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    Vibration.vibrate([0, 300, 150, 300]);
-    playTimerCompleteSound();
-    stopAmbientSound();
-
-    setTimeout(() => {
-      endFocusSession();
-      router.back();
-    }, 3000);
-  }
-
-  function skipBreak() {
-    if (breakTimerRef.current) {
-      clearInterval(breakTimerRef.current);
-    }
-    setIsBreakMode(false);
-    stopAmbientSound();
-    endFocusSession();
-    router.back();
-  }
-
-  // Cleanup break timer on unmount
+  // Timer tick
   useEffect(() => {
-    return () => {
-      if (breakTimerRef.current) {
-        clearInterval(breakTimerRef.current);
-      }
-    };
-  }, []);
-
-  function handlePauseResume() {
-    if (focusSession?.isPaused) {
-      resumeFocusSession();
-      resumeAmbientSound();
-      timerScale.value = withSpring(1, { damping: 10 });
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (isRunning) {
+      intervalRef.current = setInterval(() => {
+        setRemainingSeconds(prev => {
+          if (prev <= 1) {
+            clearInterval(intervalRef.current!);
+            setIsRunning(false);
+            setIsComplete(true);
+            setSessionsCompleted(s => s + 1);
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            return 0;
+          }
+          // Haptic at halfway
+          if (prev === Math.floor(totalSeconds / 2)) {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          }
+          return prev - 1;
+        });
+      }, 1000);
     } else {
-      pauseFocusSession();
-      pauseAmbientSound();
-      timerScale.value = withSpring(0.95, { damping: 10 });
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      if (intervalRef.current) clearInterval(intervalRef.current);
     }
-  }
+    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
+  }, [isRunning, totalSeconds]);
 
-  async function handleSoundChange(soundType: FocusModeSettings['whiteNoiseType']) {
-    setCurrentSound(soundType);
-    setShowSoundPicker(false);
+  const handleSelectPreset = (index: number) => {
+    if (isRunning) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-
-    if (soundType === 'none') {
-      await stopAmbientSound();
-    } else {
-      await playAmbientSound(soundType);
-      await setVolume(soundVolume);
-    }
-  }
-
-  async function handleVolumeChange(newVolume: number) {
-    setSoundVolume(newVolume);
-    await setVolume(newVolume);
-  }
-
-  function handleExit() {
-    if (settings.focusMode.strictMode && focusSession && focusSession.remainingSeconds > 60) {
-      setShowExitWarning(true);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-    } else {
-      confirmExit();
-    }
-  }
-
-  function confirmExit() {
-    stopAmbientSound();
-    endFocusSession();
-    router.back();
-  }
-
-  function formatTime(seconds: number): { mins: string; secs: string } {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return {
-      mins: mins.toString().padStart(2, '0'),
-      secs: secs.toString().padStart(2, '0'),
-    };
-  }
-
-  // Calculate progress
-  const totalSeconds = duration * 60;
-  const elapsedSeconds = totalSeconds - (focusSession?.remainingSeconds || totalSeconds);
-  const progress = elapsedSeconds / totalSeconds;
-  const time = formatTime(focusSession?.remainingSeconds || 0);
-
-  // Animated styles
-  const timerStyle = useAnimatedStyle(() => ({
-    transform: [
-      { scale: timerScale.value * breatheScale.value },
-    ],
-  }));
-
-  const mascotStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: mascotBounce.value }],
-  }));
-
-  // Get mascot personality info
-  const mascotEmoji = mascot ? MASCOT_PERSONALITIES[mascot.personality].emoji : '🧹';
-
-  // Generate ambient particles
-  const particles = Array.from({ length: 8 }).map((_, i) => ({
-    id: i,
-    delay: i * 500,
-    size: Math.random() * 40 + 20,
-    x: Math.random() * width,
-    y: Math.random() * height * 0.7,
-  }));
-
-  // Get primary color based on progress
-  const getPrimaryColor = (): string => {
-    if (progress < 0.33) {
-      return '#667eea';
-    } else if (progress < 0.66) {
-      return '#11998e';
-    } else {
-      return '#8B5CF6';
-    }
+    setSelectedPreset(index);
+    setTotalSeconds(PRESETS[index].seconds);
+    setRemainingSeconds(PRESETS[index].seconds);
+    setIsComplete(false);
   };
 
+  const handleStartPause = () => {
+    if (isComplete) {
+      // Reset
+      setRemainingSeconds(totalSeconds);
+      setIsComplete(false);
+      setIsRunning(true);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      return;
+    }
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setIsRunning(v => !v);
+  };
+
+  const handleReset = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setIsRunning(false);
+    setIsComplete(false);
+    setRemainingSeconds(totalSeconds);
+  };
+
+  const pulseStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: pulseScale.value }],
+  }));
+
+  // Ring color based on progress
+  const ringColor = isComplete ? colors.success
+    : progress < 0.25 ? colors.error
+    : progress < 0.5 ? colors.warning
+    : colors.accent;
+
+  const RING_SIZE = 260;
+  const RING_STROKE = 14;
+
   return (
-    <View style={[styles.container, { backgroundColor: getPrimaryColor() }]}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      {/* Background gradient */}
+      <LinearGradient
+        colors={isDark
+          ? ['#000000', '#0A0A14', '#000000']
+          : ['#F2F2F7', '#FFFFFF', '#F2F2F7']}
+        style={StyleSheet.absoluteFill}
+      />
 
-      {/* Ambient particles */}
-      {particles.map(p => (
-        <BreathingParticle key={p.id} delay={p.delay} size={p.size} x={p.x} y={p.y} />
-      ))}
-
-      {/* Break Mode Overlay */}
-      {isBreakMode && (
-        <Animated.View
-          entering={FadeIn}
-          style={styles.breakOverlay}
+      {/* Header */}
+      <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
+        <Pressable
+          onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.back(); }}
+          style={[styles.closeButton, {
+            backgroundColor: isDark ? colors.fillTertiary : colors.surfaceTertiary,
+          }]}
+          accessibilityRole="button"
+          accessibilityLabel="Close focus mode"
         >
-          <View style={styles.breakContent}>
-            <RNText style={styles.breakEmoji}>☕</RNText>
-            <RNText style={styles.breakTitle}>Break Time!</RNText>
-            <RNText style={styles.breakSubtitle}>
-              {"You've earned a rest. Take a breather!"}
-            </RNText>
-
-            <View style={styles.breakTimerContainer}>
-              <RNText style={styles.breakTime}>
-                {Math.floor(breakTimeRemaining / 60).toString().padStart(2, '0')}
-                :
-                {(breakTimeRemaining % 60).toString().padStart(2, '0')}
-              </RNText>
-              <RNText style={styles.breakLabel}>remaining</RNText>
-            </View>
-
-            <View style={styles.breakSuggestions}>
-              <RNText style={styles.breakSuggestionTitle}>Quick suggestions:</RNText>
-              <RNText style={styles.breakSuggestion}>💧 Drink some water</RNText>
-              <RNText style={styles.breakSuggestion}>🚶 Stretch your legs</RNText>
-              <RNText style={styles.breakSuggestion}>👀 Rest your eyes</RNText>
-            </View>
-
-            <Pressable style={styles.skipBreakButton} onPress={skipBreak}>
-              <RNText style={styles.skipBreakText}>Skip Break & Finish</RNText>
-            </Pressable>
-          </View>
-        </Animated.View>
-      )}
-
-      {/* Completion celebration */}
-      {showCompletion && (
-        <Animated.View
-          entering={ZoomIn.springify()}
-          style={styles.completionOverlay}
-        >
-          <RNText style={styles.completionEmoji}>🎉</RNText>
-          <RNText style={styles.completionTitle}>Amazing!</RNText>
-          <RNText style={styles.completionText}>
-            You completed {focusSession?.tasksCompletedDuringSession || 0} tasks!
-          </RNText>
-          <RNText style={styles.completionXP}>+{Math.floor(elapsedSeconds / 60) * 10} XP</RNText>
-        </Animated.View>
-      )}
-
-      {/* Exit Warning Modal */}
-      {showExitWarning && (
-        <Animated.View
-          entering={FadeIn}
-          exiting={FadeOut}
-          style={styles.warningOverlay}
-        >
-          <Animated.View
-            entering={SlideInDown.springify()}
-            style={[styles.warningModal, { backgroundColor: colors.card }]}
-          >
-            <RNText style={styles.warningEmoji}>💪</RNText>
-            <RNText style={[styles.warningTitle, { color: colors.text }]}>
-              {"You're doing great!"}
-            </RNText>
-            <RNText style={[styles.warningText, { color: colors.textSecondary }]}>
-              {"Are you sure you want to exit? You've already completed "}
-              <RNText style={{ fontWeight: '700', color: colors.text }}>
-                {focusSession?.tasksCompletedDuringSession || 0} tasks
-              </RNText>
-              !
-            </RNText>
-            <View style={styles.warningButtons}>
-              <Pressable
-                style={[styles.warningButton, styles.keepGoingButton]}
-                onPress={() => setShowExitWarning(false)}
-              >
-                <RNText style={styles.warningButtonText}>Keep Going! 🔥</RNText>
-              </Pressable>
-              <Pressable
-                style={[styles.warningButton, styles.exitAnywayButton]}
-                onPress={confirmExit}
-              >
-                <RNText style={[styles.warningButtonText, { opacity: 0.8 }]}>Exit</RNText>
-              </Pressable>
-            </View>
-          </Animated.View>
-        </Animated.View>
-      )}
-
-      {/* Sound Picker Modal */}
-      {showSoundPicker && (
-        <Animated.View
-          entering={FadeIn}
-          exiting={FadeOut}
-          style={styles.warningOverlay}
-        >
-          <Pressable
-            style={StyleSheet.absoluteFill}
-            onPress={() => setShowSoundPicker(false)}
-          />
-          <Animated.View
-            entering={SlideInDown.springify()}
-            style={[styles.soundModal, { backgroundColor: colors.card }]}
-          >
-            <RNText style={[styles.soundModalTitle, { color: colors.text }]}>
-              Ambient Sound
-            </RNText>
-            <RNText style={[styles.soundModalSubtitle, { color: colors.textSecondary }]}>
-              Choose background audio for focus
-            </RNText>
-
-            <View style={styles.soundOptions}>
-              {(Object.keys(SOUND_INFO) as Array<keyof typeof SOUND_INFO>).map((key) => {
-                const sound = SOUND_INFO[key];
-                const isSelected = currentSound === key;
-                return (
-                  <Pressable
-                    key={key}
-                    style={[
-                      styles.soundOption,
-                      isSelected && styles.soundOptionSelected,
-                      { borderColor: isSelected ? '#6366F1' : 'rgba(255,255,255,0.1)' },
-                    ]}
-                    onPress={() => handleSoundChange(key as FocusModeSettings['whiteNoiseType'])}
-                  >
-                    <RNText style={styles.soundOptionEmoji}>{sound.emoji}</RNText>
-                    <RNText style={[styles.soundOptionLabel, { color: colors.text }]}>
-                      {sound.label}
-                    </RNText>
-                    <RNText style={[styles.soundOptionDesc, { color: colors.textSecondary }]}>
-                      {sound.description}
-                    </RNText>
-                    {isSelected && (
-                      <View style={styles.soundCheckmark}>
-                        <RNText style={styles.soundCheckmarkText}>✓</RNText>
-                      </View>
-                    )}
-                  </Pressable>
-                );
-              })}
-            </View>
-
-            {currentSound !== 'none' && (
-              <View style={styles.volumeContainer}>
-                <RNText style={[styles.volumeLabel, { color: colors.textSecondary }]}>
-                  Volume: {Math.round(soundVolume * 100)}%
-                </RNText>
-                <View style={styles.volumeSlider}>
-                  {[0.25, 0.5, 0.75, 1].map((vol) => (
-                    <Pressable
-                      key={vol}
-                      style={[
-                        styles.volumeButton,
-                        soundVolume === vol && styles.volumeButtonActive,
-                      ]}
-                      onPress={() => handleVolumeChange(vol)}
-                    >
-                      <RNText style={styles.volumeButtonText}>
-                        {vol === 0.25 ? '🔈' : vol === 0.5 ? '🔉' : vol === 0.75 ? '🔊' : '📢'}
-                      </RNText>
-                    </Pressable>
-                  ))}
-                </View>
-              </View>
-            )}
-
-            <Pressable
-              style={styles.soundCloseButton}
-              onPress={() => setShowSoundPicker(false)}
-            >
-              <RNText style={styles.soundCloseText}>Done</RNText>
-            </Pressable>
-          </Animated.View>
-        </Animated.View>
-      )}
-
-      {/* Main Content */}
-      <View style={styles.content}>
-        {/* Header */}
-        <View style={styles.header}>
-          <Pressable onPress={handleExit} style={styles.exitButton}>
-            <View style={styles.exitButtonInner}>
-              <RNText style={styles.exitIcon}>←</RNText>
-              <RNText style={styles.exitText}>Exit</RNText>
-            </View>
-          </Pressable>
-          <View style={styles.headerRight}>
-            <Pressable
-              style={styles.soundButton}
-              onPress={() => {
-                setShowSoundPicker(true);
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              }}
-            >
-              <RNText style={styles.soundButtonEmoji}>
-                {currentSound === 'none' ? '🔇' : SOUND_INFO[currentSound]?.emoji || '🎵'}
-              </RNText>
-            </Pressable>
-            <View style={styles.modeContainer}>
-              <RNText style={styles.modeEmoji}>
-                {settings.focusMode.strictMode ? '🔒' : '🧘'}
-              </RNText>
-              <RNText style={styles.modeText}>
-                {settings.focusMode.strictMode ? 'Strict' : 'Focus'}
-              </RNText>
-            </View>
-          </View>
-        </View>
-
-        {/* Timer Section */}
-        <View style={styles.timerSection}>
-          <Animated.View style={[styles.timerContainer, timerStyle]}>
-            <ProgressRing progress={progress} isPaused={focusSession?.isPaused || false} />
-
-            <View style={styles.timerContent}>
-              <View style={styles.timeDisplay}>
-                <RNText style={styles.timeDigits}>{time.mins}</RNText>
-                <RNText style={styles.timeSeparator}>:</RNText>
-                <RNText style={styles.timeDigits}>{time.secs}</RNText>
-              </View>
-              <RNText style={styles.timerLabel}>
-                {focusSession?.isPaused ? '⏸️ PAUSED' : 'remaining'}
-              </RNText>
-            </View>
-          </Animated.View>
-        </View>
-
-        {/* Mascot */}
-        <Animated.View style={[styles.mascotSection, mascotStyle]}>
-          <View style={styles.mascotBubble}>
-            <RNText style={styles.mascotEmoji}>{mascotEmoji}</RNText>
-          </View>
-          {mascot && (
-            <RNText style={styles.mascotMessage}>
-              {focusSession?.isPaused
-                ? `${mascot.name} is waiting...`
-                : `${mascot.name} is cleaning with you!`}
-            </RNText>
-          )}
-        </Animated.View>
-
-        {/* Quote */}
-        {settings.focusMode.showMotivationalQuotes && (
-          <Animated.View entering={FadeIn.delay(300)} style={styles.quoteContainer}>
-            <RNText style={styles.quoteText}>&ldquo;{quote}&rdquo;</RNText>
-          </Animated.View>
-        )}
-
-        {/* Stats Bar */}
-        <View style={styles.statsBar}>
-          <View style={styles.statPill}>
-            <RNText style={styles.statPillValue}>
-              {focusSession?.tasksCompletedDuringSession || 0}
-            </RNText>
-            <RNText style={styles.statPillLabel}>tasks</RNText>
-          </View>
-          <View style={styles.statPill}>
-            <RNText style={styles.statPillValue}>
-              {Math.floor(elapsedSeconds / 60)}
-            </RNText>
-            <RNText style={styles.statPillLabel}>min</RNText>
-          </View>
-          {(focusSession?.distractionAttempts ?? 0) > 0 && (
-            <View style={[styles.statPill, styles.resistedPill]}>
-              <RNText style={styles.statPillValue}>
-                {focusSession?.distractionAttempts}
-              </RNText>
-              <RNText style={styles.statPillLabel}>resisted</RNText>
+          <Text style={[styles.closeIcon, { color: colors.text }]}>✕</Text>
+        </Pressable>
+        <Text style={[Typography.navTitle, { color: colors.text }]}>Focus Mode</Text>
+        <View style={styles.sessionsBadge}>
+          {sessionsCompleted > 0 && (
+            <View style={[styles.sessionsCount, { backgroundColor: colors.accentMuted }]}>
+              <Text style={[Typography.caption1Medium, { color: colors.accent }]}>
+                🍅 {sessionsCompleted}
+              </Text>
             </View>
           )}
-        </View>
-
-        {/* Controls */}
-        <View style={styles.controls}>
-          <Pressable
-            style={styles.secondaryButton}
-            onPress={() => {
-              updateFocusSession({
-                remainingSeconds: (focusSession?.remainingSeconds || 0) + 300,
-                duration: (focusSession?.duration || duration) + 5,
-              });
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            }}
-          >
-            <RNText style={styles.secondaryButtonText}>+5 min</RNText>
-          </Pressable>
-
-          <Pressable
-            style={styles.primaryButton}
-            onPress={handlePauseResume}
-          >
-            <RNText style={styles.primaryButtonEmoji}>
-              {focusSession?.isPaused ? '▶️' : '⏸️'}
-            </RNText>
-            <RNText style={styles.primaryButtonText}>
-              {focusSession?.isPaused ? 'Resume' : 'Pause'}
-            </RNText>
-          </Pressable>
-
-          <Pressable
-            style={styles.secondaryButton}
-            onPress={() => {
-              if ((focusSession?.remainingSeconds || 0) > 300) {
-                updateFocusSession({
-                  remainingSeconds: (focusSession?.remainingSeconds || 0) - 300,
-                  duration: Math.max(5, (focusSession?.duration || duration) - 5),
-                });
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              }
-            }}
-          >
-            <RNText style={styles.secondaryButtonText}>-5 min</RNText>
-          </Pressable>
         </View>
       </View>
+
+      <ScrollView
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingBottom: insets.bottom + 40 },
+        ]}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* ── Timer Ring ───────────────────────────────────────────── */}
+        <Animated.View entering={FadeInDown.delay(0).springify()} style={styles.timerSection}>
+          <Animated.View style={[styles.ringWrapper, pulseStyle]}>
+            <TimerRing
+              progress={progress}
+              size={RING_SIZE}
+              strokeWidth={RING_STROKE}
+              color={ringColor}
+              trackColor={isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'}
+            />
+
+            {/* Center content */}
+            <View style={styles.ringCenter}>
+              {isComplete ? (
+                <>
+                  <Text style={styles.completeEmoji}>🎉</Text>
+                  <Text style={[Typography.title2, { color: colors.success, marginTop: 8 }]}>
+                    Complete!
+                  </Text>
+                </>
+              ) : (
+                <>
+                  <Text style={[styles.timerText, { color: colors.text }]}>
+                    {formatTime(remainingSeconds)}
+                  </Text>
+                  <Text style={[Typography.subheadline, { color: colors.textSecondary, marginTop: 4 }]}>
+                    {isRunning ? PRESETS[selectedPreset].description : 'Ready'}
+                  </Text>
+                </>
+              )}
+            </View>
+          </Animated.View>
+        </Animated.View>
+
+        {/* ── Preset Selector ──────────────────────────────────────── */}
+        <Animated.View entering={FadeInDown.delay(80).springify()} style={styles.presetsSection}>
+          <View style={styles.presetsRow}>
+            {PRESETS.map((preset, index) => {
+              const isSelected = selectedPreset === index;
+              return (
+                <Pressable
+                  key={preset.label}
+                  onPress={() => handleSelectPreset(index)}
+                  disabled={isRunning}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${preset.label} ${preset.description}`}
+                  accessibilityState={{ selected: isSelected }}
+                >
+                  <View style={[styles.presetChip, {
+                    backgroundColor: isSelected
+                      ? colors.accent
+                      : (isDark ? colors.fillTertiary : colors.surfaceTertiary),
+                    opacity: isRunning && !isSelected ? 0.4 : 1,
+                  }]}>
+                    <Text style={styles.presetEmoji}>{preset.emoji}</Text>
+                    <Text style={[styles.presetLabel, {
+                      color: isSelected ? '#FFFFFF' : colors.text,
+                    }]}>
+                      {preset.label}
+                    </Text>
+                  </View>
+                </Pressable>
+              );
+            })}
+          </View>
+        </Animated.View>
+
+        {/* ── Controls ─────────────────────────────────────────────── */}
+        <Animated.View entering={FadeInDown.delay(120).springify()} style={styles.controlsSection}>
+          {/* Main button */}
+          <Pressable
+            onPress={handleStartPause}
+            accessibilityRole="button"
+            accessibilityLabel={isComplete ? 'Start again' : isRunning ? 'Pause' : 'Start'}
+          >
+            <LinearGradient
+              colors={isComplete
+                ? ['#30D158', '#25A244']
+                : isRunning
+                ? ['#FF453A', '#D93025']
+                : ['#007AFF', '#5856D6']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.mainButton}
+            >
+              <Text style={styles.mainButtonIcon}>
+                {isComplete ? '🔄' : isRunning ? '⏸' : '▶'}
+              </Text>
+              <Text style={[Typography.headline, { color: '#FFFFFF' }]}>
+                {isComplete ? 'Start Again' : isRunning ? 'Pause' : 'Start Focus'}
+              </Text>
+            </LinearGradient>
+          </Pressable>
+
+          {/* Reset button */}
+          {(isRunning || remainingSeconds !== totalSeconds) && !isComplete && (
+            <Pressable
+              onPress={handleReset}
+              style={[styles.resetButton, {
+                backgroundColor: isDark ? colors.fillTertiary : colors.surfaceTertiary,
+              }]}
+              accessibilityRole="button"
+              accessibilityLabel="Reset timer"
+            >
+              <Text style={[Typography.subheadlineMedium, { color: colors.textSecondary }]}>
+                Reset
+              </Text>
+            </Pressable>
+          )}
+        </Animated.View>
+
+        {/* ── Tips ─────────────────────────────────────────────────── */}
+        <Animated.View entering={FadeInDown.delay(160).springify()} style={styles.tipsSection}>
+          <GlassCard variant="subtle" style={styles.tipCard}>
+            <Text style={[Typography.caption1Medium, { color: colors.textSecondary, marginBottom: 6 }]}>
+              💡 FOCUS TIP
+            </Text>
+            <Text style={[Typography.subheadline, { color: colors.text }]}>
+              {selectedPreset === 0
+                ? 'Perfect for a single quick task. No distractions!'
+                : selectedPreset === 1
+                ? 'Great for clearing a small area or sorting items.'
+                : selectedPreset === 2
+                ? 'The classic Pomodoro. Work, then take a 5-min break.'
+                : 'Deep work session. Put your phone face-down.'}
+            </Text>
+          </GlassCard>
+        </Animated.View>
+      </ScrollView>
     </View>
   );
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Styles
+// ─────────────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  particle: {
-    position: 'absolute',
-    backgroundColor: 'rgba(255,255,255,0.15)',
-  },
-  content: {
-    flex: 1,
-    paddingTop: 60,
-    paddingHorizontal: 20,
-  },
+  container: { flex: 1 },
+
   header: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  exitButton: {
-    padding: 4,
-  },
-  exitButtonInner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 20,
-    gap: 6,
-  },
-  exitIcon: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  exitText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  modeContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 20,
-    gap: 6,
-  },
-  modeEmoji: {
-    fontSize: 14,
-  },
-  modeText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  timerSection: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 20,
-  },
-  timerContainer: {
-    width: TIMER_SIZE,
-    height: TIMER_SIZE,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  progressRingContainer: {
-    position: 'absolute',
-    width: TIMER_SIZE,
-    height: TIMER_SIZE,
-  },
-  ringBackground: {
-    position: 'absolute',
-    width: TIMER_SIZE,
-    height: TIMER_SIZE,
-    borderRadius: TIMER_SIZE / 2,
-    borderWidth: 4,
-    borderColor: 'rgba(255,255,255,0.15)',
-  },
-  ringGlow: {
-    position: 'absolute',
-    width: TIMER_SIZE + 20,
-    height: TIMER_SIZE + 20,
-    left: -10,
-    top: -10,
-    borderRadius: (TIMER_SIZE + 20) / 2,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-  },
-  progressSegments: {
-    position: 'absolute',
-    width: TIMER_SIZE,
-    height: TIMER_SIZE,
-  },
-  progressSegment: {
-    position: 'absolute',
-    width: 6,
-    height: 2,
-    borderRadius: 1,
-  },
-  rotatingAccent: {
-    position: 'absolute',
-    width: TIMER_SIZE,
-    height: TIMER_SIZE,
-  },
-  accentDot: {
-    position: 'absolute',
-    top: -4,
-    left: TIMER_SIZE / 2 - 4,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#fff',
-  },
-  timerContent: {
-    alignItems: 'center',
-  },
-  timeDisplay: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  timeDigits: {
-    fontSize: 64,
-    fontWeight: '200',
-    color: '#fff',
-    fontVariant: ['tabular-nums'],
-    width: 80,
-    textAlign: 'center',
-  },
-  timeSeparator: {
-    fontSize: 56,
-    fontWeight: '200',
-    color: 'rgba(255,255,255,0.7)',
-    marginHorizontal: -8,
-  },
-  timerLabel: {
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.7)',
-    textTransform: 'uppercase',
-    letterSpacing: 3,
-    marginTop: 8,
-  },
-  mascotSection: {
-    alignItems: 'center',
-    marginTop: 30,
-  },
-  mascotBubble: {
-    width: 70,
-    height: 70,
-    borderRadius: 35,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  mascotEmoji: {
-    fontSize: 36,
-  },
-  mascotMessage: {
-    color: 'rgba(255,255,255,0.9)',
-    fontSize: 14,
-    marginTop: 10,
-    fontWeight: '500',
-  },
-  quoteContainer: {
-    paddingHorizontal: 30,
-    marginTop: 24,
-  },
-  quoteText: {
-    color: 'rgba(255,255,255,0.85)',
-    fontSize: 15,
-    fontStyle: 'italic',
-    textAlign: 'center',
-    lineHeight: 24,
-  },
-  statsBar: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 12,
-    marginTop: 30,
-  },
-  statPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 20,
-    gap: 6,
-  },
-  resistedPill: {
-    backgroundColor: 'rgba(34, 197, 94, 0.3)',
-  },
-  statPillValue: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#fff',
-  },
-  statPillLabel: {
-    fontSize: 13,
-    color: 'rgba(255,255,255,0.8)',
-  },
-  controls: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 16,
-    marginTop: 'auto',
-    marginBottom: 50,
-  },
-  primaryButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.25)',
-    paddingVertical: 18,
-    paddingHorizontal: 36,
-    borderRadius: 30,
-    gap: 10,
-    borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.3)',
-  },
-  primaryButtonEmoji: {
-    fontSize: 20,
-  },
-  primaryButtonText: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  secondaryButton: {
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    paddingVertical: 14,
     paddingHorizontal: 20,
-    borderRadius: 20,
+    paddingBottom: 12,
   },
-  secondaryButtonText: {
-    color: 'rgba(255,255,255,0.9)',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  warningOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 100,
-  },
-  warningModal: {
-    width: width * 0.85,
-    padding: 28,
-    borderRadius: 24,
-    alignItems: 'center',
-  },
-  warningEmoji: {
-    fontSize: 48,
-    marginBottom: 16,
-  },
-  warningTitle: {
-    fontSize: 22,
-    fontWeight: '700',
-    marginBottom: 12,
-    textAlign: 'center',
-  },
-  warningText: {
-    fontSize: 15,
-    lineHeight: 24,
-    textAlign: 'center',
-    marginBottom: 24,
-  },
-  warningButtons: {
-    width: '100%',
-    gap: 12,
-  },
-  warningButton: {
-    paddingVertical: 16,
-    paddingHorizontal: 24,
-    borderRadius: 16,
-    alignItems: 'center',
-  },
-  keepGoingButton: {
-    backgroundColor: '#22C55E',
-  },
-  exitAnywayButton: {
-    backgroundColor: 'rgba(0,0,0,0.1)',
-  },
-  warningButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  completionOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.8)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 200,
-  },
-  completionEmoji: {
-    fontSize: 80,
-    marginBottom: 20,
-  },
-  completionTitle: {
-    fontSize: 36,
-    fontWeight: '800',
-    color: '#fff',
-    marginBottom: 8,
-  },
-  completionText: {
-    fontSize: 18,
-    color: 'rgba(255,255,255,0.8)',
-    marginBottom: 16,
-  },
-  completionXP: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: '#22C55E',
-  },
-  breakOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(79, 70, 229, 0.95)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 150,
-  },
-  breakContent: {
-    alignItems: 'center',
-    padding: 40,
-  },
-  breakEmoji: {
-    fontSize: 72,
-    marginBottom: 16,
-  },
-  breakTitle: {
-    fontSize: 32,
-    fontWeight: '800',
-    color: '#fff',
-    marginBottom: 8,
-  },
-  breakSubtitle: {
-    fontSize: 16,
-    color: 'rgba(255,255,255,0.8)',
-    marginBottom: 32,
-    textAlign: 'center',
-  },
-  breakTimerContainer: {
-    alignItems: 'center',
-    marginBottom: 40,
-  },
-  breakTime: {
-    fontSize: 64,
-    fontWeight: '200',
-    color: '#fff',
-    fontVariant: ['tabular-nums'],
-  },
-  breakLabel: {
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.6)',
-    textTransform: 'uppercase',
-    letterSpacing: 3,
-    marginTop: 8,
-  },
-  breakSuggestions: {
-    alignItems: 'center',
-    marginBottom: 32,
-  },
-  breakSuggestionTitle: {
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.7)',
-    marginBottom: 12,
-  },
-  breakSuggestion: {
-    fontSize: 16,
-    color: '#fff',
-    marginVertical: 4,
-  },
-  skipBreakButton: {
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    paddingVertical: 14,
-    paddingHorizontal: 28,
-    borderRadius: 24,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.3)',
-  },
-  skipBreakText: {
-    color: '#fff',
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  // Sound picker styles
-  headerRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  soundButton: {
+  closeButton: {
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: 'rgba(255,255,255,0.15)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  soundButtonEmoji: {
-    fontSize: 20,
-  },
-  soundModal: {
-    width: width * 0.9,
-    padding: 24,
-    borderRadius: 24,
-  },
-  soundModalTitle: {
-    fontSize: 22,
-    fontWeight: '700',
-    textAlign: 'center',
-    marginBottom: 8,
-  },
-  soundModalSubtitle: {
-    fontSize: 14,
-    textAlign: 'center',
-    marginBottom: 24,
-  },
-  soundOptions: {
-    gap: 12,
-  },
-  soundOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    borderRadius: 16,
-    borderWidth: 2,
-  },
-  soundOptionSelected: {
-    backgroundColor: 'rgba(99, 102, 241, 0.1)',
-  },
-  soundOptionEmoji: {
-    fontSize: 28,
-    marginRight: 14,
-  },
-  soundOptionLabel: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  soundOptionDesc: {
-    fontSize: 12,
-    marginTop: 2,
-  },
-  soundCheckmark: {
-    marginLeft: 'auto',
-    width: 24,
-    height: 24,
+  closeIcon: { fontSize: 14, fontWeight: '600' },
+  sessionsBadge: { minWidth: 36, alignItems: 'flex-end' },
+  sessionsCount: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
     borderRadius: 12,
-    backgroundColor: '#6366F1',
+  },
+
+  scrollContent: {
+    paddingHorizontal: 24,
     alignItems: 'center',
-    justifyContent: 'center',
   },
-  soundCheckmarkText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  volumeContainer: {
-    marginTop: 24,
-    paddingTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.1)',
-  },
-  volumeLabel: {
-    fontSize: 14,
-    marginBottom: 12,
-    textAlign: 'center',
-  },
-  volumeSlider: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 12,
-  },
-  volumeButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.1)',
+
+  // Timer
+  timerSection: {
     alignItems: 'center',
-    justifyContent: 'center',
-  },
-  volumeButtonActive: {
-    backgroundColor: 'rgba(99, 102, 241, 0.3)',
-    borderWidth: 2,
-    borderColor: '#6366F1',
-  },
-  volumeButtonText: {
-    fontSize: 20,
-  },
-  soundCloseButton: {
     marginTop: 20,
-    paddingVertical: 14,
-    backgroundColor: '#6366F1',
-    borderRadius: 14,
+    marginBottom: 32,
+  },
+  ringWrapper: {
+    position: 'relative',
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  soundCloseText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
+  ringCenter: {
+    position: 'absolute',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
+  timerText: {
+    ...Typography.monoHero,
+    fontSize: 56,
+  },
+  completeEmoji: { fontSize: 48 },
+
+  // Presets
+  presetsSection: {
+    width: '100%',
+    marginBottom: 32,
+  },
+  presetsRow: {
+    flexDirection: 'row',
+    gap: 10,
+    justifyContent: 'center',
+  },
+  presetChip: {
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: 14,
+    borderRadius: BorderRadius.lg,
+    alignItems: 'center',
+    gap: Spacing.xxs,
+    minWidth: 72,
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  presetEmoji: { fontSize: 18 },
+  presetLabel: {
+    ...Typography.caption1Medium,
+  },
+
+  // Controls
+  controlsSection: {
+    width: '100%',
+    gap: 12,
+    marginBottom: 32,
+  },
+  mainButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.sm,
+    paddingVertical: 18,
+    borderRadius: BorderRadius.card,
+    minHeight: 60,
+  },
+  mainButtonIcon: { fontSize: 20 },
+  resetButton: {
+    alignItems: 'center',
+    paddingVertical: 14,
+    borderRadius: BorderRadius.lg,
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+
+  // Tips
+  tipsSection: { width: '100%' },
+  tipCard: { padding: 16 },
 });
