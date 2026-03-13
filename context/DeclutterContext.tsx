@@ -3,38 +3,41 @@
  * Global state management for the declutter app
  */
 
-import React, { createContext, ReactNode, useState, useEffect, useCallback } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import {
-  DeclutterState,
-  Room,
-  UserProfile,
-  UserStats,
-  AppSettings,
-  CleaningTask,
-  PhotoCapture,
-  CleaningSession,
-  BADGES,
-  Badge,
-  Mascot,
-  MascotPersonality,
-  MascotMood,
-  FocusSession,
-  CollectedItem,
-  CollectionStats,
-  SpawnEvent,
-  Collectible,
-  COLLECTIBLES,
-  DEFAULT_FOCUS_SETTINGS,
-  FocusModeSettings,
-} from '@/types/declutter';
+import { api } from '@/convex/_generated/api';
+import { convex } from '@/config/convex';
+import { SyncData, useAuth } from '@/context/AuthContext';
 import { setGeminiApiKey } from '@/services/gemini';
+import { setHapticsEnabled } from '@/services/haptics';
 import {
-  saveApiKeySecure,
-  loadApiKeySecure,
-  deleteApiKeySecure,
-  isValidApiKeyFormat,
+    deleteApiKeySecure,
+    isValidApiKeyFormat,
+    loadApiKeySecure,
+    saveApiKeySecure,
 } from '@/services/secureStorage';
+import { persistPhotoLocally } from '@/services/localPhotos';
+import {
+    AppSettings,
+    Badge,
+    BADGES,
+    CleaningSession,
+    CleaningTask,
+    CollectedItem,
+    COLLECTIBLES,
+    CollectionStats,
+    DeclutterState,
+    DEFAULT_FOCUS_SETTINGS,
+    FocusSession,
+    Mascot,
+    MascotMood,
+    MascotPersonality,
+    PhotoCapture,
+    Room,
+    SpawnEvent,
+    UserProfile,
+    UserStats,
+} from '@/types/declutter';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import React, { createContext, ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 
 // Storage keys
 const STORAGE_KEYS = {
@@ -88,7 +91,92 @@ export const DeclutterContext = createContext<DeclutterState | null>(null);
 
 // Generate unique ID
 function generateId(): string {
-  return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  return `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+}
+
+function asDate(value: unknown): Date {
+  if (value instanceof Date) return value;
+  if (typeof value === 'number' || typeof value === 'string') {
+    return new Date(value);
+  }
+  return new Date();
+}
+
+function hydrateUserProfile(profile: any): UserProfile | null {
+  if (!profile) return null;
+  return {
+    id: String(profile.id),
+    name: profile.name ?? 'Declutterer',
+    avatar: profile.avatar,
+    createdAt: asDate(profile.createdAt),
+    onboardingComplete: !!profile.onboardingComplete,
+  };
+}
+
+function hydrateTask(task: any): CleaningTask {
+  return {
+    ...task,
+    id: String(task.id),
+    completedAt: task.completedAt ? asDate(task.completedAt) : undefined,
+    subtasks: (task.subtasks ?? []).map((subtask: any) => ({
+      ...subtask,
+      id: String(subtask.id),
+    })),
+  };
+}
+
+function hydrateRoom(room: any): Room {
+  return {
+    ...room,
+    id: String(room.id),
+    createdAt: asDate(room.createdAt),
+    lastAnalyzedAt: room.lastAnalyzedAt ? asDate(room.lastAnalyzedAt) : undefined,
+    photos: (room.photos ?? []).map((photo: any) => ({
+      ...photo,
+      id: String(photo.id),
+      timestamp: asDate(photo.timestamp),
+    })),
+    tasks: (room.tasks ?? []).map(hydrateTask),
+  };
+}
+
+function hydrateStats(stats: any): UserStats {
+  if (!stats) return defaultStats;
+
+  return {
+    ...defaultStats,
+    ...stats,
+    badges: (stats.badges ?? []).map((badge: Badge) => ({
+      ...badge,
+      unlockedAt: badge.unlockedAt ? asDate(badge.unlockedAt) : undefined,
+    })),
+  };
+}
+
+function hydrateMascot(mascot: any): Mascot | null {
+  if (!mascot) return null;
+  return {
+    ...mascot,
+    lastFed: asDate(mascot.lastFed),
+    lastInteraction: asDate(mascot.lastInteraction),
+    createdAt: asDate(mascot.createdAt),
+  };
+}
+
+function hydrateCollection(items: any[]): CollectedItem[] {
+  return (items ?? []).map((item) => ({
+    ...item,
+    collectedAt: asDate(item.collectedAt),
+  }));
+}
+
+function hydrateCollectionStatsData(stats: any): CollectionStats {
+  if (!stats) return defaultCollectionStats;
+  return {
+    ...defaultCollectionStats,
+    ...stats,
+    lastCollected: stats.lastCollected ? asDate(stats.lastCollected) : undefined,
+  };
 }
 
 // Provider component
@@ -115,6 +203,13 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
   const [collectionStats, setCollectionStats] = useState<CollectionStats>(defaultCollectionStats);
   const [activeSpawn, setActiveSpawn] = useState<SpawnEvent | null>(null);
 
+  // Celebration state for achievements
+  const [pendingCelebration, setPendingCelebration] = useState<Badge[]>([]);
+
+  // Sync error state
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const [isHydratingCloud, setIsHydratingCloud] = useState(false);
+
   // Load data from storage on mount
   useEffect(() => {
     loadData();
@@ -127,17 +222,122 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
     }
   }, [user, rooms, stats, settings, mascot, collection, collectionStats, isLoaded]);
 
-  // Update mascot mood based on activity
-  useEffect(() => {
-    if (mascot) {
-      const interval = setInterval(() => {
-        updateMascotStatus();
-      }, 60000); // Check every minute
-      return () => clearInterval(interval);
+  // Cloud sync with debouncing
+  const { syncToCloud, loadFromCloud, isAuthenticated, isAnonymous } = useAuth();
+  const syncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  
+  // Mascot activity timeout refs - for cleanup
+  const mascotActivityTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  
+  // Clear mascot activity timeout helper
+  const clearMascotActivityTimeout = useCallback(() => {
+    if (mascotActivityTimeoutRef.current) {
+      clearTimeout(mascotActivityTimeoutRef.current);
+      mascotActivityTimeoutRef.current = null;
     }
-  }, [mascot]);
+  }, []);
+  
+  // Cleanup mascot activity timeouts on unmount
+  useEffect(() => {
+    return () => {
+      if (mascotActivityTimeoutRef.current) {
+        clearTimeout(mascotActivityTimeoutRef.current);
+      }
+    };
+  }, []);
 
-  function updateMascotStatus() {
+  const applyCloudData = useCallback((cloudData: any) => {
+    if (!cloudData) return;
+
+    const hydratedUser = hydrateUserProfile(cloudData.profile);
+    const hydratedRooms = (cloudData.rooms ?? []).map(hydrateRoom);
+    const hydratedStats = hydrateStats(cloudData.stats);
+    const hydratedSettings = cloudData.settings
+      ? { ...defaultSettings, ...cloudData.settings }
+      : defaultSettings;
+    const hydratedMascot = hydrateMascot(cloudData.mascot);
+    const hydratedCollection = hydrateCollection(cloudData.collection ?? []);
+
+    setUser(hydratedUser);
+    setRooms(hydratedRooms);
+    setStats(hydratedStats);
+    setSettingsState(hydratedSettings);
+    setHapticsEnabled(hydratedSettings.hapticFeedback);
+    setMascot(hydratedMascot);
+    setCollection(hydratedCollection);
+    setCollectionStats(hydrateCollectionStatsData(cloudData.collectionStats));
+    setSyncError(null);
+  }, []);
+
+  useEffect(() => {
+    if (!isLoaded || !isAuthenticated || isAnonymous) {
+      setIsHydratingCloud(false);
+      return;
+    }
+
+    let cancelled = false;
+    setIsHydratingCloud(true);
+
+    void (async () => {
+      try {
+        const cloudData = await loadFromCloud();
+        if (!cancelled && cloudData) {
+          applyCloudData(cloudData);
+        }
+      } catch (error) {
+        console.error('Error loading cloud data from Convex:', error);
+        if (!cancelled) {
+          setSyncError('Unable to load your latest synced data.');
+        }
+      } finally {
+        if (!cancelled) {
+          setIsHydratingCloud(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [applyCloudData, isAuthenticated, isAnonymous, isLoaded, loadFromCloud]);
+
+  useEffect(() => {
+    // Only sync if loaded, authenticated, not anonymous, and not hydrating
+    if (!isLoaded || !isAuthenticated || isAnonymous || isHydratingCloud) return;
+    
+    // Clear any pending sync
+    if (syncTimeoutRef.current) {
+      clearTimeout(syncTimeoutRef.current);
+    }
+    
+    // Debounce sync by 5 seconds to avoid excessive API calls
+    syncTimeoutRef.current = setTimeout(() => {
+      const syncData: SyncData = {
+        profile: user || undefined,
+        rooms,
+        stats,
+        settings,
+        mascot: mascot || undefined,
+        collection,
+        collectionStats,
+      };
+      
+      syncToCloud(syncData).catch(error => {
+        console.error('Background sync failed:', error);
+        setSyncError('Unable to sync your data. Changes saved locally.');
+      });
+    }, 5000);
+    
+    return () => {
+      if (syncTimeoutRef.current) {
+        clearTimeout(syncTimeoutRef.current);
+      }
+    };
+  }, [user, rooms, stats, settings, mascot, collection, collectionStats, isLoaded, isAuthenticated, isAnonymous, isHydratingCloud, syncToCloud]);
+
+  const updateMascotStatusRef = useRef<() => void>(() => {});
+
+  updateMascotStatusRef.current = () => {
     if (!mascot) return;
 
     const now = new Date();
@@ -149,7 +349,6 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
     let newEnergy = Math.min(100, mascot.energy + 2);
     let newHappiness = mascot.happiness;
 
-    // Mood logic
     if (hoursSinceInteraction > 24) {
       newMood = 'sad';
       newHappiness = Math.max(0, newHappiness - 10);
@@ -163,7 +362,6 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
       newMood = 'happy';
     }
 
-    // Update if changed
     if (newMood !== mascot.mood || newHunger !== mascot.hunger) {
       setMascot(prev => prev ? {
         ...prev,
@@ -173,7 +371,17 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
         happiness: newHappiness,
       } : null);
     }
-  }
+  };
+
+  useEffect(() => {
+    if (!mascot) return;
+
+    const interval = setInterval(() => {
+      updateMascotStatusRef.current();
+    }, 60000);
+
+    return () => clearInterval(interval);
+  }, [!!mascot]);
 
   async function loadData() {
     try {
@@ -220,7 +428,9 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
 
       if (settingsStr) {
         const loadedSettings = JSON.parse(settingsStr);
-        setSettingsState({ ...defaultSettings, ...loadedSettings });
+        const mergedSettings = { ...defaultSettings, ...loadedSettings };
+        setSettingsState(mergedSettings);
+        setHapticsEnabled(mergedSettings.hapticFeedback);
       }
 
       // Load API key from secure storage instead
@@ -251,7 +461,7 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
       }
 
       if (collectionStatsStr) {
-        setCollectionStats(JSON.parse(collectionStatsStr));
+        setCollectionStats(hydrateCollectionStatsData(JSON.parse(collectionStatsStr)));
       }
     } catch (error) {
       console.error('Error loading data:', error);
@@ -320,10 +530,24 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
     setUser(newUser);
   }, []);
 
-  const addRoom = useCallback((roomData: Omit<Room, 'id' | 'createdAt' | 'photos' | 'tasks' | 'currentProgress'>) => {
+  const addRoom = useCallback(async (roomData: Omit<Room, 'id' | 'createdAt' | 'photos' | 'tasks' | 'currentProgress'>) => {
+    let roomId = generateId();
+
+    if (isAuthenticated && !isAnonymous) {
+      try {
+        roomId = await convex.mutation(api.rooms.create, {
+          name: roomData.name,
+          type: roomData.type,
+          emoji: roomData.emoji,
+        });
+      } catch (error) {
+        console.error('Failed to create room in Convex:', error);
+      }
+    }
+
     const newRoom: Room = {
       ...roomData,
-      id: generateId(),
+      id: roomId,
       createdAt: new Date(),
       photos: [],
       tasks: [],
@@ -331,7 +555,7 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
     };
     setRooms(prev => [...prev, newRoom]);
     return newRoom;
-  }, []);
+  }, [isAnonymous, isAuthenticated]);
 
   const updateRoom = useCallback((roomId: string, updates: Partial<Room>) => {
     setRooms(prev =>
@@ -344,11 +568,17 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
     setActiveRoomId(prev => prev === roomId ? null : prev);
   }, []);
 
-  const addPhotoToRoom = useCallback((roomId: string, photoData: Omit<PhotoCapture, 'id'>) => {
+  const addPhotoToRoom = useCallback(async (roomId: string, photoData: Omit<PhotoCapture, 'id'>) => {
+    const photoId = generateId();
+
+    const persistedUri = await persistPhotoLocally(photoData.uri, photoId);
+
     const photo: PhotoCapture = {
       ...photoData,
-      id: generateId(),
+      id: photoId,
+      uri: persistedUri,
     };
+
     setRooms(prev =>
       prev.map(room =>
         room.id === roomId
@@ -356,12 +586,94 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
           : room
       )
     );
-  }, []);
+
+    if (!isAuthenticated || isAnonymous) {
+      return;
+    }
+
+    try {
+      const uploadUrl = await convex.mutation(api.photos.generateUploadUrl, {});
+      const localResponse = await fetch(persistedUri);
+      const blob = await localResponse.blob();
+      const uploadResponse = await fetch(uploadUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'image/jpeg' },
+        body: blob,
+      });
+      const { storageId } = await uploadResponse.json();
+      const remotePhotoId = await convex.mutation(api.photos.create, {
+        roomId: roomId as any,
+        uri: persistedUri,
+        type: photoData.type,
+        storageId,
+        timestamp: photoData.timestamp.getTime(),
+      });
+      const remotePhotos = await convex.query(api.photos.listByRoom, {
+        roomId: roomId as any,
+      });
+      const remotePhoto = (remotePhotos as Array<any>).find(
+        (candidate) => String(candidate._id) === String(remotePhotoId)
+      );
+
+      if (remotePhoto?.uri) {
+        setRooms(prev =>
+          prev.map(room =>
+            room.id === roomId
+              ? {
+                  ...room,
+                  photos: room.photos.map(existingPhoto =>
+                    existingPhoto.id === photoId
+                      ? {
+                          ...existingPhoto,
+                          id: String(remotePhotoId),
+                          uri: remotePhoto.uri,
+                        }
+                      : existingPhoto
+                  ),
+                }
+              : room
+          )
+        );
+      }
+    } catch (error) {
+      console.error('Failed to upload photo to Convex storage:', error);
+    }
+  }, [isAnonymous, isAuthenticated]);
+
+  const deletePhotoFromRoom = useCallback((roomId: string, photoId: string) => {
+    setRooms(prev =>
+      prev.map(room =>
+        room.id === roomId
+          ? { ...room, photos: room.photos.filter(p => p.id !== photoId) }
+          : room
+      )
+    );
+
+    if (isAuthenticated && !isAnonymous) {
+      void convex.mutation(api.photos.remove, { id: photoId as any }).catch((error) => {
+        console.error('Failed to delete photo from Convex:', error);
+      });
+    }
+  }, [isAnonymous, isAuthenticated]);
 
   const setTasksForRoom = useCallback((roomId: string, tasks: CleaningTask[]) => {
     setRooms(prev =>
       prev.map(room =>
         room.id === roomId ? { ...room, tasks } : room
+      )
+    );
+  }, []);
+
+  const addTaskToRoom = useCallback((roomId: string, task: Omit<CleaningTask, 'id'>) => {
+    const newTask: CleaningTask = {
+      ...task,
+      id: generateId(),
+    };
+    setRooms(prev =>
+      prev.map(room =>
+        room.id === roomId 
+          ? { ...room, tasks: [...room.tasks, newTask] } 
+          : room
       )
     );
   }, []);
@@ -386,11 +698,12 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
       activity: 'cheering',
     } : null);
 
-    // Reset activity after animation
-    setTimeout(() => {
+    // Reset activity after animation - with cleanup
+    clearMascotActivityTimeout();
+    mascotActivityTimeoutRef.current = setTimeout(() => {
       setMascot(prev => prev ? { ...prev, activity: 'idle' } : null);
     }, 2000);
-  }, [mascot]);
+  }, [mascot, clearMascotActivityTimeout]);
 
   // Moved before toggleTask to avoid temporal dead zone
   const spawnCollectibleAction = useCallback((): SpawnEvent | null => {
@@ -429,87 +742,143 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
   }, [settings.arCollectionEnabled, stats.totalTasksCompleted]);
 
   const toggleTask = useCallback((roomId: string, taskId: string) => {
-    setRooms(prev =>
-      prev.map(room => {
-        if (room.id !== roomId) return room;
+    let taskJustCompleted = false;
+    let taskJustUncompleted = false;
+    let taskMinutes = 0;
+    let roomJustCompleted = false;
+    let roomWasCompleted = false;
 
-        const updatedTasks = room.tasks.map(task => {
-          if (task.id !== taskId) return task;
+    setRooms(prev => {
+      const room = prev.find(r => r.id === roomId);
+      const task = room?.tasks.find(t => t.id === taskId);
 
-          const nowCompleted = !task.completed;
+      if (!task) return prev;
+
+      const wasCompleted = task.completed;
+      taskMinutes = task.estimatedMinutes;
+
+      // Check if room was 100% before this change
+      const prevCompletedCount = room?.tasks.filter(t => t.completed).length || 0;
+      const totalCount = room?.tasks.length || 0;
+      roomWasCompleted = totalCount > 0 && prevCompletedCount === totalCount;
+
+      const newRooms = prev.map(r => {
+        if (r.id !== roomId) return r;
+
+        const updatedTasks = r.tasks.map(t => {
+          if (t.id !== taskId) return t;
           return {
-            ...task,
-            completed: nowCompleted,
-            completedAt: nowCompleted ? new Date() : undefined,
+            ...t,
+            completed: !t.completed,
+            completedAt: !t.completed ? new Date() : undefined,
           };
         });
 
         const completedCount = updatedTasks.filter(t => t.completed).length;
-        const totalCount = updatedTasks.length;
         const newProgress = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
 
-        const task = room.tasks.find(t => t.id === taskId);
-        if (task && !task.completed) {
-          const newXp = stats.xp + 10;
-          const updatedStats: UserStats = {
-            ...stats,
-            totalTasksCompleted: stats.totalTasksCompleted + 1,
-            totalMinutesCleaned: stats.totalMinutesCleaned + task.estimatedMinutes,
+        taskJustCompleted = !wasCompleted;
+        taskJustUncompleted = wasCompleted;
+        roomJustCompleted = !wasCompleted && completedCount === totalCount && totalCount > 0;
+
+        return {
+          ...r,
+          tasks: updatedTasks,
+          currentProgress: newProgress,
+        };
+      });
+
+      return newRooms;
+    });
+
+    requestAnimationFrame(() => {
+      if (taskJustCompleted) {
+        // Update stats when completing a task
+        setStats(prevStats => {
+          const today = new Date().toDateString();
+          const yesterday = new Date();
+          yesterday.setDate(yesterday.getDate() - 1);
+          const wasYesterday = prevStats.lastActivityDate === yesterday.toDateString();
+          const isNewDay = prevStats.lastActivityDate !== today;
+
+          // Calculate new streak
+          let newStreak = prevStats.currentStreak;
+          if (isNewDay) {
+            newStreak = wasYesterday ? prevStats.currentStreak + 1 : 1;
+          }
+
+          const newXp = prevStats.xp + 10 + (roomJustCompleted ? 50 : 0);
+          let updatedStats: UserStats = {
+            ...prevStats,
+            totalTasksCompleted: prevStats.totalTasksCompleted + 1,
+            totalMinutesCleaned: prevStats.totalMinutesCleaned + taskMinutes,
+            totalRoomsCleaned: prevStats.totalRoomsCleaned + (roomJustCompleted ? 1 : 0),
             xp: newXp,
             level: calculateLevel(newXp),
+            currentStreak: newStreak,
+            longestStreak: Math.max(prevStats.longestStreak, newStreak),
+            lastActivityDate: today,
           };
 
           const newBadges = checkBadges(updatedStats);
           if (newBadges.length > 0) {
-            updatedStats.badges = [...updatedStats.badges, ...newBadges];
+            updatedStats = { ...updatedStats, badges: [...updatedStats.badges, ...newBadges] };
+            setPendingCelebration(prev => [...prev, ...newBadges]);
           }
 
-          setStats(updatedStats);
+          return updatedStats;
+        });
 
-          // Feed mascot when task is completed
-          if (mascot) {
-            feedMascotAction();
-          }
+        // Update current session if active
+        if (currentSession) {
+          setCurrentSession(prev => prev ? {
+            ...prev,
+            tasksCompletedIds: [...prev.tasksCompletedIds, taskId],
+          } : null);
+        }
 
-          // Spawn collectible chance
-          if (settings.arCollectionEnabled) {
-            const spawn = spawnCollectibleAction();
-            if (spawn) {
-              setActiveSpawn(spawn);
-            }
-          }
+        if (mascot) {
+          feedMascotAction();
+        }
 
-          // Update focus session
-          if (focusSession?.isActive) {
-            setFocusSession(prev => prev ? {
-              ...prev,
-              tasksCompletedDuringSession: prev.tasksCompletedDuringSession + 1,
-            } : null);
-          }
-
-          if (newProgress === 100) {
-            const roomStats: UserStats = {
-              ...updatedStats,
-              totalRoomsCleaned: updatedStats.totalRoomsCleaned + 1,
-              xp: updatedStats.xp + 50,
-            };
-            roomStats.level = calculateLevel(roomStats.xp);
-            const roomBadges = checkBadges(roomStats);
-            if (roomBadges.length > 0) {
-              roomStats.badges = [...roomStats.badges, ...roomBadges];
-            }
-            setStats(roomStats);
+        if (settings.arCollectionEnabled) {
+          const spawn = spawnCollectibleAction();
+          if (spawn) {
+            setActiveSpawn(spawn);
           }
         }
 
-        return {
-          ...room,
-          tasks: updatedTasks,
-          currentProgress: newProgress,
-        };
-      })
-    );
-  }, [stats, mascot, focusSession, settings.arCollectionEnabled, feedMascotAction, spawnCollectibleAction]);
+        if (focusSession?.isActive) {
+          setFocusSession(prev => prev ? {
+            ...prev,
+            tasksCompletedDuringSession: prev.tasksCompletedDuringSession + 1,
+          } : null);
+        }
+      } else if (taskJustUncompleted) {
+        // Decrement stats when uncompleting a task (but never go below 0)
+        setStats(prevStats => {
+          const newXp = Math.max(0, prevStats.xp - 10 - (roomWasCompleted ? 50 : 0));
+          return {
+            ...prevStats,
+            totalTasksCompleted: Math.max(0, prevStats.totalTasksCompleted - 1),
+            totalMinutesCleaned: Math.max(0, prevStats.totalMinutesCleaned - taskMinutes),
+            totalRoomsCleaned: roomWasCompleted ? Math.max(0, prevStats.totalRoomsCleaned - 1) : prevStats.totalRoomsCleaned,
+            xp: newXp,
+            level: calculateLevel(newXp),
+            // Note: We don't decrement streak when uncompleting - that would be frustrating for users
+          };
+        });
+
+        // Remove from current session if active
+        if (currentSession) {
+          setCurrentSession(prev => prev ? {
+            ...prev,
+            tasksCompletedIds: prev.tasksCompletedIds.filter(id => id !== taskId),
+          } : null);
+        }
+      }
+    });
+  }, [mascot, focusSession?.isActive, settings.arCollectionEnabled, feedMascotAction, spawnCollectibleAction, currentSession]);
 
   const toggleSubTask = useCallback((roomId: string, taskId: string, subTaskId: string) => {
     setRooms(prev =>
@@ -531,12 +900,96 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
     );
   }, []);
 
+  const deleteTask = useCallback((roomId: string, taskId: string) => {
+    setRooms(prev =>
+      prev.map(room => {
+        if (room.id !== roomId) return room;
+
+        const updatedTasks = room.tasks.filter(task => task.id !== taskId);
+        const completedCount = updatedTasks.filter(t => t.completed).length;
+        const totalCount = updatedTasks.length;
+        const newProgress = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
+
+        return {
+          ...room,
+          tasks: updatedTasks,
+          currentProgress: newProgress,
+        };
+      })
+    );
+  }, []);
+
+  const restoreTask = useCallback((roomId: string, task: CleaningTask, originalIndex?: number) => {
+    setRooms(prev =>
+      prev.map(room => {
+        if (room.id !== roomId) return room;
+
+        // Insert at original position if provided, otherwise append
+        let updatedTasks: CleaningTask[];
+        if (originalIndex !== undefined && originalIndex >= 0 && originalIndex <= room.tasks.length) {
+          updatedTasks = [
+            ...room.tasks.slice(0, originalIndex),
+            task,
+            ...room.tasks.slice(originalIndex),
+          ];
+        } else {
+          updatedTasks = [...room.tasks, task];
+        }
+
+        const completedCount = updatedTasks.filter(t => t.completed).length;
+        const totalCount = updatedTasks.length;
+        const newProgress = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
+
+        return {
+          ...room,
+          tasks: updatedTasks,
+          currentProgress: newProgress,
+        };
+      })
+    );
+  }, []);
+
+  const updateTask = useCallback((roomId: string, taskId: string, updates: Partial<CleaningTask>) => {
+    setRooms(prev =>
+      prev.map(room => {
+        if (room.id !== roomId) return room;
+
+        const updatedTasks = room.tasks.map(task =>
+          task.id === taskId ? { ...task, ...updates } : task
+        );
+
+        // Recalculate difficulty based on estimated minutes if it changed
+        if (updates.estimatedMinutes !== undefined) {
+          const taskIndex = updatedTasks.findIndex(t => t.id === taskId);
+          if (taskIndex !== -1) {
+            const minutes = updates.estimatedMinutes;
+            updatedTasks[taskIndex] = {
+              ...updatedTasks[taskIndex],
+              difficulty: minutes <= 5 ? 'quick' : minutes <= 15 ? 'medium' : 'challenging',
+            };
+          }
+        }
+
+        return {
+          ...room,
+          tasks: updatedTasks,
+        };
+      })
+    );
+  }, []);
+
   const setActiveRoom = useCallback((roomId: string | null) => {
     setActiveRoomId(roomId);
   }, []);
 
   const updateSettings = useCallback((updates: Partial<AppSettings>) => {
-    setSettingsState(prev => ({ ...prev, ...updates }));
+    setSettingsState(prev => {
+      const newSettings = { ...prev, ...updates };
+      if (updates.hapticFeedback !== undefined) {
+        setHapticsEnabled(updates.hapticFeedback);
+      }
+      return newSettings;
+    });
   }, []);
 
   const updateStats = useCallback((updates: Partial<UserStats>) => {
@@ -555,17 +1008,15 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const endSession = useCallback(() => {
-    if (currentSession) {
-      if (currentSession.tasksCompletedIds.length > 0) {
-        setStats(prev => ({
-          ...prev,
-          currentStreak: prev.currentStreak + 1,
-          longestStreak: Math.max(prev.longestStreak, prev.currentStreak + 1),
-        }));
+    // Simply end the session - streak updates are now handled in toggleTask
+    setCurrentSession(prevSession => {
+      if (prevSession && prevSession.tasksCompletedIds.length > 0) {
+        // Session had tasks completed - good job!
+        // Streak was already updated when tasks were toggled
       }
-    }
-    setCurrentSession(null);
-  }, [currentSession]);
+      return null;
+    });
+  }, []);
 
   const completeOnboarding = useCallback(() => {
     setUser(prev => prev ? { ...prev, onboardingComplete: true } : null);
@@ -611,10 +1062,12 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
       mood: newHappiness > 70 ? 'excited' : prev.mood,
     } : null);
 
-    setTimeout(() => {
+    // Reset activity after animation - with cleanup
+    clearMascotActivityTimeout();
+    mascotActivityTimeoutRef.current = setTimeout(() => {
       setMascot(prev => prev ? { ...prev, activity: 'idle' } : null);
     }, 3000);
-  }, [mascot]);
+  }, [mascot, clearMascotActivityTimeout]);
 
   // =====================
   // FOCUS MODE ACTIONS
@@ -658,25 +1111,28 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const endFocusSession = useCallback(() => {
-    if (focusSession) {
-      // Grant bonus XP for focus sessions
-      const bonusXp = Math.floor((focusSession.duration * 60 - focusSession.remainingSeconds) / 60) * 2;
-      setStats(prev => ({
-        ...prev,
-        xp: prev.xp + bonusXp,
-        level: calculateLevel(prev.xp + bonusXp),
-      }));
+    setFocusSession(prevSession => {
+      if (prevSession) {
+        // Grant bonus XP for focus sessions
+        const bonusXp = Math.floor((prevSession.duration * 60 - prevSession.remainingSeconds) / 60) * 2;
+        setStats(prev => ({
+          ...prev,
+          xp: prev.xp + bonusXp,
+          level: calculateLevel(prev.xp + bonusXp),
+        }));
 
-      // Mascot celebrates
-      if (mascot) {
-        setMascot(prev => prev ? { ...prev, activity: 'celebrating' } : null);
-        setTimeout(() => {
-          setMascot(prev => prev ? { ...prev, activity: 'idle' } : null);
-        }, 3000);
+        // Mascot celebrates - with cleanup
+        if (mascot) {
+          setMascot(prev => prev ? { ...prev, activity: 'celebrating' } : null);
+          clearMascotActivityTimeout();
+          mascotActivityTimeoutRef.current = setTimeout(() => {
+            setMascot(prev => prev ? { ...prev, activity: 'idle' } : null);
+          }, 3000);
+        }
       }
-    }
-    setFocusSession(null);
-  }, [focusSession, mascot]);
+      return null;
+    });
+  }, [mascot, clearMascotActivityTimeout]);
 
   const updateFocusSessionAction = useCallback((updates: Partial<FocusSession>) => {
     setFocusSession(prev => prev ? { ...prev, ...updates } : null);
@@ -697,23 +1153,27 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
       taskId,
     };
 
-    setCollection(prev => [...prev, newItem]);
+    // Use functional update to check if first of kind
+    setCollection(prev => {
+      const isFirstOfKind = !prev.some(c => c.collectibleId === collectibleId);
 
-    // Update collection stats
-    const isFirstOfKind = !collection.some(c => c.collectibleId === collectibleId);
-    setCollectionStats(prev => ({
-      ...prev,
-      totalCollected: prev.totalCollected + 1,
-      uniqueCollected: isFirstOfKind ? prev.uniqueCollected + 1 : prev.uniqueCollected,
-      commonCount: collectible.rarity === 'common' ? prev.commonCount + 1 : prev.commonCount,
-      uncommonCount: collectible.rarity === 'uncommon' ? prev.uncommonCount + 1 : prev.uncommonCount,
-      rareCount: collectible.rarity === 'rare' ? prev.rareCount + 1 : prev.rareCount,
-      epicCount: collectible.rarity === 'epic' ? prev.epicCount + 1 : prev.epicCount,
-      legendaryCount: collectible.rarity === 'legendary' ? prev.legendaryCount + 1 : prev.legendaryCount,
-      lastCollected: new Date(),
-    }));
+      // Update collection stats using functional update
+      setCollectionStats(prevStats => ({
+        ...prevStats,
+        totalCollected: prevStats.totalCollected + 1,
+        uniqueCollected: isFirstOfKind ? prevStats.uniqueCollected + 1 : prevStats.uniqueCollected,
+        commonCount: collectible.rarity === 'common' ? prevStats.commonCount + 1 : prevStats.commonCount,
+        uncommonCount: collectible.rarity === 'uncommon' ? prevStats.uncommonCount + 1 : prevStats.uncommonCount,
+        rareCount: collectible.rarity === 'rare' ? prevStats.rareCount + 1 : prevStats.rareCount,
+        epicCount: collectible.rarity === 'epic' ? prevStats.epicCount + 1 : prevStats.epicCount,
+        legendaryCount: collectible.rarity === 'legendary' ? prevStats.legendaryCount + 1 : prevStats.legendaryCount,
+        lastCollected: new Date(),
+      }));
 
-    // Grant XP
+      return [...prev, newItem];
+    });
+
+    // Grant XP using functional update
     setStats(prev => ({
       ...prev,
       xp: prev.xp + collectible.xpValue,
@@ -723,14 +1183,15 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
     // Clear active spawn
     setActiveSpawn(null);
 
-    // Mascot gets excited
+    // Mascot gets excited - with cleanup
     if (mascot) {
       setMascot(prev => prev ? { ...prev, activity: 'cheering', mood: 'excited' } : null);
-      setTimeout(() => {
+      clearMascotActivityTimeout();
+      mascotActivityTimeoutRef.current = setTimeout(() => {
         setMascot(prev => prev ? { ...prev, activity: 'idle' } : null);
       }, 2000);
     }
-  }, [collection, mascot]);
+  }, [mascot, clearMascotActivityTimeout]);
 
   const dismissSpawn = useCallback(() => {
     setActiveSpawn(null);
@@ -778,6 +1239,14 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
     setStats(defaultStats);
   }, []);
 
+  const clearCelebration = useCallback(() => {
+    setPendingCelebration([]);
+  }, []);
+
+  const clearSyncError = useCallback(() => {
+    setSyncError(null);
+  }, []);
+
   // Memoize context value to prevent unnecessary re-renders
   const value: DeclutterState = React.useMemo(() => ({
     user,
@@ -793,14 +1262,21 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
     activeSpawn,
     isAnalyzing,
     analysisError,
+    syncError,
+    pendingCelebration,
     setUser: setUserAction,
     addRoom,
     updateRoom,
     deleteRoom,
     addPhotoToRoom,
+    deletePhotoFromRoom,
     setTasksForRoom,
+    addTaskToRoom,
     toggleTask,
     toggleSubTask,
+    deleteTask,
+    restoreTask,
+    updateTask,
     setActiveRoom,
     updateSettings,
     updateStats,
@@ -823,6 +1299,8 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
     dismissSpawn,
     clearAllData,
     resetStats,
+    clearCelebration,
+    clearSyncError,
   }), [
     user,
     stats,

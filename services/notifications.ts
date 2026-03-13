@@ -44,7 +44,7 @@ export interface NotificationData extends Record<string, unknown> {
 // Register for push notifications
 export async function registerForPushNotifications(): Promise<string | null> {
   if (!Device.isDevice) {
-    console.log('Push notifications require a physical device');
+    if (__DEV__) console.log('Push notifications require a physical device');
     return null;
   }
 
@@ -60,13 +60,24 @@ export async function registerForPushNotifications(): Promise<string | null> {
     }
 
     if (finalStatus !== 'granted') {
-      console.log('Push notification permission not granted');
+      if (__DEV__) console.log('Push notification permission not granted');
       return null;
     }
 
-    // Get push token
+    // Get push token - projectId is required for Expo push notifications
+    // If not configured, skip push token registration but continue with local notifications
+    const projectId = process.env.EXPO_PUBLIC_PROJECT_ID;
+    if (!projectId) {
+      if (__DEV__) console.log('EXPO_PUBLIC_PROJECT_ID not set, skipping push token registration. Local notifications will still work.');
+      // Configure Android channel even without push token
+      if (Platform.OS === 'android') {
+        await setupAndroidChannels();
+      }
+      return null;
+    }
+
     const tokenData = await Notifications.getExpoPushTokenAsync({
-      projectId: process.env.EXPO_PUBLIC_PROJECT_ID,
+      projectId,
     });
     const token = tokenData.data;
 
@@ -332,15 +343,73 @@ export async function requestNotificationPermissions(): Promise<boolean> {
   return status === 'granted';
 }
 
+// Subscription storage for cleanup
+let notificationResponseSubscription: Notifications.EventSubscription | null = null;
+let notificationReceivedSubscription: Notifications.EventSubscription | null = null;
+
 // Listen for notification interactions
+// Returns an unsubscribe function for cleanup
 export function addNotificationResponseListener(
+  callback: (response: Notifications.NotificationResponse) => void
+): () => void {
+  // Remove existing subscription if any
+  if (notificationResponseSubscription) {
+    notificationResponseSubscription.remove();
+  }
+
+  notificationResponseSubscription = Notifications.addNotificationResponseReceivedListener(callback);
+
+  // Return cleanup function
+  return () => {
+    if (notificationResponseSubscription) {
+      notificationResponseSubscription.remove();
+      notificationResponseSubscription = null;
+    }
+  };
+}
+
+// Listen for received notifications (when app is foregrounded)
+// Returns an unsubscribe function for cleanup
+export function addNotificationReceivedListener(
+  callback: (notification: Notifications.Notification) => void
+): () => void {
+  // Remove existing subscription if any
+  if (notificationReceivedSubscription) {
+    notificationReceivedSubscription.remove();
+  }
+
+  notificationReceivedSubscription = Notifications.addNotificationReceivedListener(callback);
+
+  // Return cleanup function
+  return () => {
+    if (notificationReceivedSubscription) {
+      notificationReceivedSubscription.remove();
+      notificationReceivedSubscription = null;
+    }
+  };
+}
+
+// Remove all notification listeners (call on app unmount/cleanup)
+export function removeAllNotificationListeners(): void {
+  if (notificationResponseSubscription) {
+    notificationResponseSubscription.remove();
+    notificationResponseSubscription = null;
+  }
+  if (notificationReceivedSubscription) {
+    notificationReceivedSubscription.remove();
+    notificationReceivedSubscription = null;
+  }
+}
+
+// Get the raw EventSubscription for advanced use cases (e.g., multiple listeners)
+export function addNotificationResponseListenerRaw(
   callback: (response: Notifications.NotificationResponse) => void
 ): Notifications.EventSubscription {
   return Notifications.addNotificationResponseReceivedListener(callback);
 }
 
-// Listen for received notifications (when app is foregrounded)
-export function addNotificationReceivedListener(
+// Get the raw EventSubscription for advanced use cases (e.g., multiple listeners)
+export function addNotificationReceivedListenerRaw(
   callback: (notification: Notifications.Notification) => void
 ): Notifications.EventSubscription {
   return Notifications.addNotificationReceivedListener(callback);

@@ -58,15 +58,13 @@ export function FocusProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const endFocusSession = useCallback((): number => {
-    let bonusXp = 0;
-    setFocusSession(prevSession => {
-      if (prevSession) {
-        bonusXp = Math.floor((prevSession.duration * 60 - prevSession.remainingSeconds) / 60) * 2;
-      }
-      return null;
-    });
+    const session = focusSession;
+    const bonusXp = session
+      ? Math.floor((session.duration * 60 - session.remainingSeconds) / 60) * 2
+      : 0;
+    setFocusSession(null);
     return bonusXp;
-  }, []);
+  }, [focusSession]);
 
   const updateFocusSession = useCallback((updates: Partial<FocusSession>) => {
     setFocusSession(prev => prev ? { ...prev, ...updates } : null);

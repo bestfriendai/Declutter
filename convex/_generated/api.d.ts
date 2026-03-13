@@ -20,6 +20,7 @@ import type * as settings from "../settings.js";
 import type * as social from "../social.js";
 import type * as stats from "../stats.js";
 import type * as subtasks from "../subtasks.js";
+import type * as sync from "../sync.js";
 import type * as tasks from "../tasks.js";
 import type * as users from "../users.js";
 
@@ -42,6 +43,7 @@ declare const fullApi: ApiFromModules<{
   social: typeof social;
   stats: typeof stats;
   subtasks: typeof subtasks;
+  sync: typeof sync;
   tasks: typeof tasks;
   users: typeof users;
 }>;

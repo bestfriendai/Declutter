@@ -14,16 +14,8 @@ import { useDeclutter } from '@/context/DeclutterContext';
  */
 export function useAppColorScheme(): 'light' | 'dark' {
   const systemScheme = useRNColorScheme();
-
-  // Try to get settings, but handle the case where context isn't available
-  let themePreference: 'auto' | 'light' | 'dark' = 'auto';
-
-  try {
-    const { settings } = useDeclutter();
-    themePreference = settings.theme;
-  } catch {
-    // Context not available, use system default
-  }
+  const { settings } = useDeclutter();
+  const themePreference = settings.theme ?? 'auto';
 
   if (themePreference === 'auto') {
     return systemScheme ?? 'dark';

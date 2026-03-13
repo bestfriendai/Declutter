@@ -25,13 +25,14 @@ Declutterly is an ADHD-friendly AI-powered decluttering assistant built with Rea
 - Providing encouraging, non-judgmental support
 
 ### Tech Stack
-- **Framework**: React Native + Expo SDK 55 (Canary)
-- **Router**: Expo Router 7
+- **Framework**: React Native + Expo SDK 54 (~54.0.30)
+- **Router**: Expo Router 6 (~6.0.21)
 - **UI Components**: @expo/ui (SwiftUI-style components)
 - **State Management**: React Context API
-- **Storage**: AsyncStorage (local persistence)
-- **AI**: Google Gemini 3.0 Flash API
+- **Storage**: AsyncStorage (local-first cache) + Convex cloud sync and storage
+- **AI**: Google Gemini 3.0 Pro Image API
 - **Animations**: react-native-reanimated + Animated API
+- **Authentication**: Convex Auth (password + anonymous sessions)
 
 ---
 
@@ -252,12 +253,13 @@ Re-render Components
 
 ## AI Integration
 
-### Gemini 3.0 Flash API
+### Gemini 3.0 Pro Image API
 
 #### Configuration
 ```typescript
 // services/gemini.ts
-const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent';
+const GEMINI_MODEL = 'gemini-3-pro-image-preview';
+const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 ```
 
 #### API Key Setup

@@ -7,11 +7,19 @@ export default defineSchema({
 
   // User profiles (linked to auth identity)
   users: defineTable({
-    name: v.string(),
+    name: v.optional(v.string()),
+    image: v.optional(v.string()),
+    email: v.optional(v.string()),
+    emailVerificationTime: v.optional(v.number()),
+    phone: v.optional(v.string()),
+    phoneVerificationTime: v.optional(v.number()),
+    isAnonymous: v.optional(v.boolean()),
     avatar: v.optional(v.string()),
-    createdAt: v.number(),
-    onboardingComplete: v.boolean(),
-  }),
+    createdAt: v.optional(v.number()),
+    onboardingComplete: v.optional(v.boolean()),
+  })
+    .index("email", ["email"])
+    .index("phone", ["phone"]),
 
   // Rooms being tracked
   rooms: defineTable({
@@ -75,6 +83,9 @@ export default defineSchema({
     tips: v.optional(v.array(v.string())),
     zone: v.optional(v.string()),
     targetObjects: v.optional(v.array(v.string())),
+    destinationLocation: v.optional(v.string()),
+    destinationInstructions: v.optional(v.string()),
+    destinationRequiresSetup: v.optional(v.string()),
     category: v.optional(v.string()),
     energyRequired: v.optional(v.string()),
     decisionLoad: v.optional(v.string()),
@@ -223,11 +234,12 @@ export default defineSchema({
   // Social challenges
   challenges: defineTable({
     creatorId: v.id("users"),
+    creatorName: v.string(),
     title: v.string(),
     description: v.string(),
     type: v.union(
-      v.literal("task_count"),
-      v.literal("time_based"),
+      v.literal("tasks_count"),
+      v.literal("time_spent"),
       v.literal("room_complete"),
       v.literal("streak"),
       v.literal("collectibles")
@@ -235,9 +247,27 @@ export default defineSchema({
     target: v.number(),
     startDate: v.number(),
     endDate: v.number(),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("accepted"),
+      v.literal("in_progress"),
+      v.literal("completed"),
+      v.literal("failed"),
+      v.literal("expired")
+    ),
+    createdAt: v.number(),
     inviteCode: v.string(),
     isActive: v.boolean(),
-    participants: v.array(v.string()),
+    participants: v.array(
+      v.object({
+        userId: v.string(),
+        displayName: v.string(),
+        progress: v.number(),
+        joined: v.number(),
+        completed: v.boolean(),
+        completedAt: v.optional(v.number()),
+      })
+    ),
   })
     .index("by_creatorId", ["creatorId"])
     .index("by_inviteCode", ["inviteCode"]),

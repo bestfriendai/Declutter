@@ -7,14 +7,31 @@
     "scheme": "declutterly",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
+    "owner": "declutterly",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/declutterly",
+      "enabled": true,
+      "fallbackToCacheTimeout": 0,
+      "checkAutomatically": "ON_LOAD"
+    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.declutterly.app",
       "appleTeamId": "T2A8YY9YDW",
+      "associatedDomains": [
+        "applinks:declutterly.app",
+        "applinks:*.declutterly.app"
+      ],
       "infoPlist": {
         "NSCameraUsageDescription": "Declutterly needs camera access to capture photos of your spaces for AI analysis",
-        "NSPhotoLibraryUsageDescription": "Declutterly needs photo library access to save and load room photos"
-      }
+        "NSPhotoLibraryUsageDescription": "Declutterly needs photo library access to save and load room photos",
+        "NSUserNotificationsUsageDescription": "Declutterly sends reminders to help you stay on track with your decluttering goals",
+        "NSMicrophoneUsageDescription": "Declutterly may use the microphone for voice notes during cleaning sessions"
+      },
+      "usesAppleSignIn": true
     },
     "android": {
       "adaptiveIcon": {
@@ -23,7 +40,40 @@
       },
       "edgeToEdgeEnabled": true,
       "package": "com.declutterly.app",
-      "permissions": ["CAMERA", "READ_EXTERNAL_STORAGE", "WRITE_EXTERNAL_STORAGE"]
+      "permissions": [
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "READ_MEDIA_IMAGES",
+        "READ_MEDIA_VIDEO"
+      ],
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "declutterly.app",
+              "pathPrefix": "/join"
+            },
+            {
+              "scheme": "https",
+              "host": "declutterly.app",
+              "pathPrefix": "/room"
+            },
+            {
+              "scheme": "https",
+              "host": "declutterly.app",
+              "pathPrefix": "/challenge"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
+        }
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -50,7 +100,17 @@
           "cameraPermission": "Allow Declutterly to access your camera to capture room photos for AI analysis"
         }
       ],
-      "expo-media-library"
+      "expo-media-library",
+      "@react-native-google-signin/google-signin",
+      "expo-apple-authentication",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/icon.png",
+          "color": "#6366F1",
+          "sounds": []
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

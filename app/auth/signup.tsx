@@ -70,8 +70,13 @@ export default function SignupScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     try {
-      await signUp(email.trim(), password, name.trim());
-      router.replace('/onboarding');
+      const result = await signUp(email.trim(), password, name.trim());
+      if (result.success) {
+        router.replace('/(tabs)');
+      } else {
+        setError(result.error ?? 'Sign up failed. Please try again.');
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      }
     } catch (e: any) {
       setError(e?.message ?? 'Sign up failed. Please try again.');
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);

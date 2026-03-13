@@ -33,10 +33,14 @@ export const create = mutation({
     const room = await ctx.db.get(args.roomId);
     if (!room || room.userId !== userId) throw new Error("Room not found");
 
+    const uploadedUrl = args.storageId
+      ? await ctx.storage.getUrl(args.storageId)
+      : null;
+
     return await ctx.db.insert("photos", {
       roomId: args.roomId,
       userId,
-      uri: args.uri,
+      uri: uploadedUrl ?? args.uri,
       type: args.type,
       storageId: args.storageId,
       timestamp: args.timestamp ?? Date.now(),

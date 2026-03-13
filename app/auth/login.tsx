@@ -55,8 +55,13 @@ export default function LoginScreen() {
     setLoading(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     try {
-      await signIn(email.trim(), password);
-      router.replace('/(tabs)');
+      const result = await signIn(email.trim(), password);
+      if (result.success) {
+        router.replace('/(tabs)');
+      } else {
+        setError(result.error ?? 'Login failed. Please try again.');
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      }
     } catch (e: any) {
       setError(e?.message ?? 'Login failed. Please try again.');
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
@@ -197,21 +202,6 @@ export default function LoginScreen() {
               </View>
             </View>
 
-            {/* Forgot Password */}
-            <Pressable
-              onPress={() => {
-                Haptics.selectionAsync();
-                router.push('/auth/forgot-password');
-              }}
-              style={styles.forgotButton}
-              accessibilityRole="link"
-              accessibilityLabel="Forgot password"
-              hitSlop={8}
-            >
-              <Text style={[Typography.subheadlineMedium, { color: colors.accent }]}>
-                Forgot Password?
-              </Text>
-            </Pressable>
           </Animated.View>
 
           {/* ── Error ────────────────────────────────────────────────── */}

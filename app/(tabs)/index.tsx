@@ -471,7 +471,7 @@ export default function HomeScreen() {
         {quickWinTask && rooms.length > 0 && (
           <Animated.View entering={FadeInDown.delay(280).springify()} style={styles.section}>
             <Text style={[Typography.title3, { color: colors.text, marginBottom: Spacing.sm }]}>
-              Today's Focus
+              Today&apos;s Focus
             </Text>
             <Pressable
               onPress={handleQuickWin}

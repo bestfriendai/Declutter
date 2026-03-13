@@ -14,7 +14,49 @@ export const get = query({
 export const getById = query({
   args: { id: v.id("users") },
   handler: async (ctx, args) => {
-    return await ctx.db.get(args.id);
+    const userId = await getAuthUserId(ctx);
+    if (!userId) return null;
+
+    // Users can only look up themselves or their connections
+    if (args.id === userId) {
+      return await ctx.db.get(args.id);
+    }
+
+    // Check if there's an accepted connection between these users
+    const connection = await ctx.db
+      .query("connections")
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .filter((q) =>
+        q.and(
+          q.eq(q.field("friendId"), args.id),
+          q.eq(q.field("status"), "accepted")
+        )
+      )
+      .first();
+
+    const reverseConnection = await ctx.db
+      .query("connections")
+      .withIndex("by_userId", (q) => q.eq("userId", args.id))
+      .filter((q) =>
+        q.and(
+          q.eq(q.field("friendId"), userId),
+          q.eq(q.field("status"), "accepted")
+        )
+      )
+      .first();
+
+    if (!connection && !reverseConnection) return null;
+
+    const user = await ctx.db.get(args.id);
+    if (!user) return null;
+
+    // Return limited public profile for connected users
+    return {
+      _id: user._id,
+      _creationTime: user._creationTime,
+      name: user.name,
+      avatar: user.avatar,
+    };
   },
 });
 

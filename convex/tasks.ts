@@ -25,7 +25,7 @@ export const listByRoom = query({
 
     const tasks = await ctx.db
       .query("tasks")
-      .filter((q) => q.eq(q.field("roomId"), args.roomId))
+      .withIndex("by_roomId", (q) => q.eq("roomId", args.roomId))
       .collect();
 
     return tasks.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
@@ -45,6 +45,9 @@ export const create = mutation({
     tips: v.optional(v.array(v.string())),
     zone: v.optional(v.string()),
     targetObjects: v.optional(v.array(v.string())),
+    destinationLocation: v.optional(v.string()),
+    destinationInstructions: v.optional(v.string()),
+    destinationRequiresSetup: v.optional(v.string()),
     category: v.optional(v.string()),
     energyRequired: v.optional(v.string()),
     decisionLoad: v.optional(v.string()),
@@ -63,6 +66,7 @@ export const create = mutation({
     const room = await ctx.db.get(args.roomId);
     if (!room || room.userId !== userId) throw new Error("Room not found");
 
+    const completed = args.completed ?? false;
     return await ctx.db.insert("tasks", {
       roomId: args.roomId,
       userId,
@@ -72,11 +76,14 @@ export const create = mutation({
       priority: args.priority,
       difficulty: args.difficulty,
       estimatedMinutes: args.estimatedMinutes,
-      completed: args.completed ?? false,
-      completedAt: undefined,
+      completed,
+      ...(completed ? { completedAt: Date.now() } : {}),
       tips: args.tips,
       zone: args.zone,
       targetObjects: args.targetObjects,
+      destinationLocation: args.destinationLocation,
+      destinationInstructions: args.destinationInstructions,
+      destinationRequiresSetup: args.destinationRequiresSetup,
       category: args.category,
       energyRequired: args.energyRequired,
       decisionLoad: args.decisionLoad,
@@ -106,6 +113,9 @@ export const createMany = mutation({
         tips: v.optional(v.array(v.string())),
         zone: v.optional(v.string()),
         targetObjects: v.optional(v.array(v.string())),
+        destinationLocation: v.optional(v.string()),
+        destinationInstructions: v.optional(v.string()),
+        destinationRequiresSetup: v.optional(v.string()),
         category: v.optional(v.string()),
         energyRequired: v.optional(v.string()),
         decisionLoad: v.optional(v.string()),
@@ -129,6 +139,7 @@ export const createMany = mutation({
     const ids = [];
     for (let i = 0; i < args.tasks.length; i++) {
       const task = args.tasks[i];
+      const taskCompleted = task.completed ?? false;
       const id = await ctx.db.insert("tasks", {
         roomId: args.roomId,
         userId,
@@ -138,11 +149,14 @@ export const createMany = mutation({
         priority: task.priority,
         difficulty: task.difficulty,
         estimatedMinutes: task.estimatedMinutes,
-        completed: task.completed ?? false,
-        completedAt: undefined,
+        completed: taskCompleted,
+        ...(taskCompleted ? { completedAt: Date.now() } : {}),
         tips: task.tips,
         zone: task.zone,
         targetObjects: task.targetObjects,
+        destinationLocation: task.destinationLocation,
+        destinationInstructions: task.destinationInstructions,
+        destinationRequiresSetup: task.destinationRequiresSetup,
         category: task.category,
         energyRequired: task.energyRequired,
         decisionLoad: task.decisionLoad,
@@ -172,6 +186,9 @@ export const update = mutation({
     tips: v.optional(v.array(v.string())),
     zone: v.optional(v.string()),
     targetObjects: v.optional(v.array(v.string())),
+    destinationLocation: v.optional(v.string()),
+    destinationInstructions: v.optional(v.string()),
+    destinationRequiresSetup: v.optional(v.string()),
     category: v.optional(v.string()),
     energyRequired: v.optional(v.string()),
     decisionLoad: v.optional(v.string()),

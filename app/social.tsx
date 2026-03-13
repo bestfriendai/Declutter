@@ -1,21 +1,16 @@
 /**
  * Social & Challenges Screen
- * Challenges, room sharing, and body doubling sessions
+ * Convex-backed challenge hub
  */
 
 import { GlassButton } from '@/components/ui/GlassButton';
 import { GlassCard } from '@/components/ui/GlassCard';
 import { useAuth } from '@/context/AuthContext';
 import {
-    BodyDoublingSession,
     Challenge,
     ChallengeType,
-    SharedRoom,
     createChallenge,
-    getActiveSessions,
     getMyChallenges,
-    getSharedWithMe,
-    joinBodyDoublingSession,
     joinChallenge,
 } from '@/services/social';
 import { useTheme } from '@/theme/ThemeProvider';
@@ -44,9 +39,6 @@ import Animated, {
     SlideInRight,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-
-// Tab type
-type SocialTab = 'challenges' | 'sessions' | 'shared';
 
 // Challenge type info
 const CHALLENGE_TYPES: Record<ChallengeType, { icon: string; label: string; unit: string }> = {
@@ -163,65 +155,6 @@ function ChallengeCard({
           {challenge.inviteCode}
         </Text>
       </View>
-    </GlassCard>
-  );
-}
-
-// Body doubling session card
-function SessionCard({
-  session,
-  onJoin,
-}: {
-  session: BodyDoublingSession;
-  onJoin: () => void;
-}) {
-  const { colors } = useTheme();
-  const activeCount = session.participants.filter(p => p.isActive).length;
-
-  return (
-    <GlassCard style={styles.sessionCard}>
-      <View style={styles.sessionHeader}>
-        <View style={[styles.liveIndicator, { backgroundColor: colors.success }]}>
-          <Text style={[styles.liveText, { color: colors.textOnSuccess }]}>LIVE</Text>
-        </View>
-        <Text style={[styles.sessionTitle, { color: colors.text }]}>
-          {session.title}
-        </Text>
-      </View>
-
-      <Text style={[styles.sessionHost, { color: colors.textSecondary }]}>
-        Hosted by {session.hostName}
-      </Text>
-
-      {session.description && (
-        <Text style={[styles.sessionDesc, { color: colors.textSecondary }]}>
-          {session.description}
-        </Text>
-      )}
-
-      <View style={styles.sessionMeta}>
-        <View style={styles.metaItem}>
-          <Ionicons name="people" size={16} color={colors.textSecondary} />
-          <Text style={[styles.metaText, { color: colors.textSecondary }]}>
-            {activeCount} / {session.maxParticipants}
-          </Text>
-        </View>
-        <View style={styles.metaItem}>
-          <Ionicons name="time" size={16} color={colors.textSecondary} />
-          <Text style={[styles.metaText, { color: colors.textSecondary }]}>
-            {session.duration} min
-          </Text>
-        </View>
-      </View>
-
-      <GlassButton
-        title="Join Session"
-        onPress={onJoin}
-        variant="primary"
-        size="small"
-        icon={<Ionicons name="enter" size={18} color={colors.textOnPrimary} />}
-        style={styles.joinButton}
-      />
     </GlassCard>
   );
 }
@@ -422,10 +355,7 @@ export default function SocialScreen() {
   const { colors } = useTheme();
   const { isAuthenticated, user } = useAuth();
 
-  const [activeTab, setActiveTab] = useState<SocialTab>('challenges');
   const [challenges, setChallenges] = useState<Challenge[]>([]);
-  const [sessions, setSessions] = useState<BodyDoublingSession[]>([]);
-  const [sharedRooms, setSharedRooms] = useState<SharedRoom[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -433,17 +363,9 @@ export default function SocialScreen() {
 
   const loadData = useCallback(async () => {
     try {
-      const [challengesData, sessionsData, sharedData] = await Promise.all([
-        getMyChallenges(),
-        getActiveSessions(),
-        getSharedWithMe(),
-      ]);
-
-      setChallenges(challengesData);
-      setSessions(sessionsData);
-      setSharedRooms(sharedData);
+      setChallenges(await getMyChallenges());
     } catch {
-      // Failed to load social data — user will see empty state
+      // Failed to load challenges — user will see empty state
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
@@ -490,7 +412,6 @@ export default function SocialScreen() {
 
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
-    // Try joining challenge first
     const challenge = await joinChallenge(joinCode.trim());
     if (challenge) {
       setChallenges(prev => [challenge, ...prev]);
@@ -499,16 +420,7 @@ export default function SocialScreen() {
       return;
     }
 
-    // Try joining session
-    const session = await joinBodyDoublingSession(joinCode.trim());
-    if (session) {
-      setSessions(prev => [session, ...prev]);
-      setJoinCode('');
-      Alert.alert('Success', `Joined session: ${session.title}`);
-      return;
-    }
-
-    Alert.alert('Error', 'Invalid code or challenge/session not found');
+    Alert.alert('Error', 'Invalid code or challenge not found');
   };
 
   if (!isAuthenticated) {
@@ -524,7 +436,7 @@ export default function SocialScreen() {
             Sign in to access social features
           </Text>
           <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-            Create and join challenges, participate in body doubling sessions, and connect with other declutterers.
+            Create and join challenges with other declutterers.
           </Text>
           <GlassButton
             title="Sign In"
@@ -603,50 +515,18 @@ export default function SocialScreen() {
             value={joinCode}
             onChangeText={setJoinCode}
             autoCapitalize="characters"
-            maxLength={6}
+            maxLength={8}
           />
           <Pressable
             style={[styles.joinButton, { backgroundColor: colors.primary }]}
             onPress={handleJoinWithCode}
             accessibilityRole="button"
             accessibilityLabel="Join with invite code"
-            accessibilityHint="Join a challenge or session using the entered code"
+            accessibilityHint="Join a challenge using the entered code"
           >
             <Text style={[styles.joinButtonText, { color: colors.textOnPrimary }]}>Join</Text>
           </Pressable>
         </View>
-      </Animated.View>
-
-      {/* Tabs */}
-      <Animated.View
-        entering={FadeInDown.delay(150).springify()}
-        style={styles.tabs}
-      >
-        {(['challenges', 'sessions', 'shared'] as SocialTab[]).map(tab => (
-          <Pressable
-            key={tab}
-            style={[
-              styles.tab,
-              activeTab === tab && { backgroundColor: colors.accentMuted },
-            ]}
-            onPress={() => {
-              Haptics.selectionAsync();
-              setActiveTab(tab);
-            }}
-            accessibilityRole="tab"
-            accessibilityState={{ selected: activeTab === tab }}
-            accessibilityLabel={`${tab.charAt(0).toUpperCase() + tab.slice(1)} tab`}
-          >
-            <Text
-              style={[
-                styles.tabText,
-                { color: activeTab === tab ? colors.primary : colors.textSecondary },
-              ]}
-            >
-              {tab.charAt(0).toUpperCase() + tab.slice(1)}
-            </Text>
-          </Pressable>
-        ))}
       </Animated.View>
 
       {/* Content */}
@@ -660,113 +540,25 @@ export default function SocialScreen() {
           <RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} />
         }
       >
-        {activeTab === 'challenges' && (
-          <>
-            {challenges.length === 0 ? (
-              <View style={styles.emptyTabState}>
-                <Ionicons name="trophy-outline" size={48} color={colors.textTertiary} />
-                <Text style={[styles.emptyTabText, { color: colors.textSecondary }]}>
-                  No challenges yet. Create one to get started!
-                </Text>
-              </View>
-            ) : (
-              challenges.map((challenge, index) => (
-                <Animated.View
-                  key={challenge.id}
-                  entering={SlideInRight.delay(index * 100).springify()}
-                >
-                  <ChallengeCard
-                    challenge={challenge}
-                    currentUserId={user?.uid}
-                  />
-                </Animated.View>
-              ))
-            )}
-          </>
-        )}
-
-        {activeTab === 'sessions' && (
-          <>
-            {sessions.length === 0 ? (
-              <View style={styles.emptyTabState}>
-                <Ionicons name="videocam-outline" size={48} color={colors.textTertiary} />
-                <Text style={[styles.emptyTabText, { color: colors.textSecondary }]}>
-                  No active sessions. Start body doubling with friends!
-                </Text>
-              </View>
-            ) : (
-              sessions.map((session, index) => (
-                <Animated.View
-                  key={session.id}
-                  entering={SlideInRight.delay(index * 100).springify()}
-                >
-                  <SessionCard
-                    session={session}
-                    onJoin={() => {
-                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                      Alert.alert(
-                        'Join Session',
-                        `Join "${session.title}" hosted by ${session.hostName}?`,
-                        [
-                          { text: 'Cancel', style: 'cancel' },
-                          { 
-                            text: 'Join', 
-                            onPress: () => {
-                              // In a real app, navigate to video/chat screen
-                              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-                              Alert.alert('Joined!', 'You are now in the session (simulated).'); 
-                            } 
-                          }
-                        ]
-                      );
-                    }}
-                  />
-                </Animated.View>
-              ))
-            )}
-          </>
-        )}
-
-        {activeTab === 'shared' && (
-          <>
-            {sharedRooms.length === 0 ? (
-              <View style={styles.emptyTabState}>
-                <Ionicons name="share-outline" size={48} color={colors.textTertiary} />
-                <Text style={[styles.emptyTabText, { color: colors.textSecondary }]}>
-                  No shared rooms. Ask friends to share their progress with you!
-                </Text>
-              </View>
-            ) : (
-              sharedRooms.map((room, index) => (
-                <Animated.View
-                  key={room.id}
-                  entering={SlideInRight.delay(index * 100).springify()}
-                >
-                  <Pressable
-                    onPress={() => {
-                      Haptics.selectionAsync();
-                      router.push(`/room/${room.id}`);
-                    }}
-                    style={({ pressed }) => ({ opacity: pressed ? 0.8 : 1 })}
-                  >
-                    <GlassCard style={styles.sharedRoomCard}>
-                      <View style={styles.sharedRoomHeader}>
-                        <Text style={styles.sharedRoomEmoji}>{room.roomEmoji}</Text>
-                        <View>
-                          <Text style={[styles.sharedRoomName, { color: colors.text }]}>
-                            {room.roomName}
-                          </Text>
-                          <Text style={[styles.sharedRoomOwner, { color: colors.textSecondary }]}>
-                            Shared by {room.ownerName}
-                          </Text>
-                        </View>
-                      </View>
-                    </GlassCard>
-                  </Pressable>
-                </Animated.View>
-              ))
-            )}
-          </>
+        {challenges.length === 0 ? (
+          <View style={styles.emptyTabState}>
+            <Ionicons name="trophy-outline" size={48} color={colors.textTertiary} />
+            <Text style={[styles.emptyTabText, { color: colors.textSecondary }]}>
+              No challenges yet. Create one to get started!
+            </Text>
+          </View>
+        ) : (
+          challenges.map((challenge, index) => (
+            <Animated.View
+              key={challenge.id}
+              entering={SlideInRight.delay(index * 100).springify()}
+            >
+              <ChallengeCard
+                challenge={challenge}
+                currentUserId={user?.uid}
+              />
+            </Animated.View>
+          ))
         )}
       </ScrollView>
 

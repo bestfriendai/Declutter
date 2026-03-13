@@ -1,247 +1,405 @@
 /**
- * Declutterly - Typography System
- * Following Apple's Human Interface Guidelines for SF Pro
+ * Declutterly — Apple 2026 Typography System
+ * SF Pro Display, SF Pro Text, SF Mono — optical sizing & proper weights
  */
 
-import { Platform, TextStyle } from 'react-native';
+import { Dimensions, Platform, TextStyle } from 'react-native';
 
-// Font family based on platform
-const fontFamily = Platform.select({
-  ios: 'System',
-  android: 'Roboto',
-  default: 'System',
-});
+// ─────────────────────────────────────────────────────────────────────────────
+// Font Family Tokens
+// ─────────────────────────────────────────────────────────────────────────────
+export const FontFamily = {
+  // SF Pro Display — for large text (≥20pt)
+  display:        Platform.OS === 'ios' ? 'System' : 'sans-serif',
+  displayBold:    Platform.OS === 'ios' ? 'System' : 'sans-serif-medium',
 
-// Font weights following iOS conventions
-export const FontWeights = {
+  // SF Pro Text — for body text (<20pt)
+  text:           Platform.OS === 'ios' ? 'System' : 'sans-serif',
+  textMedium:     Platform.OS === 'ios' ? 'System' : 'sans-serif-medium',
+  textBold:       Platform.OS === 'ios' ? 'System' : 'sans-serif-medium',
+
+  // SF Mono — for code, timers, numbers
+  mono:           Platform.OS === 'ios' ? 'Courier New' : 'monospace',
+  monoMedium:     Platform.OS === 'ios' ? 'Courier New' : 'monospace',
+
+  // Rounded — for friendly UI elements
+  rounded:        Platform.OS === 'ios' ? 'System' : 'sans-serif',
+} as const;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Font Size Scale — iOS 26 Dynamic Type compatible
+// ─────────────────────────────────────────────────────────────────────────────
+export const FontSize = {
+  // Display sizes (SF Pro Display optical sizing)
+  displayHero:    64,   // Hero numbers, splash
+  displayXL:      56,   // Large hero titles
+  displayLarge:   48,   // Section heroes
+  displayMedium:  40,   // Feature titles
+  displaySmall:   34,   // Large title (iOS nav)
+
+  // Title sizes
+  title1:         28,   // Primary screen title
+  title2:         22,   // Section title
+  title3:         20,   // Card title
+
+  // Body sizes
+  headline:       17,   // Emphasized body (semibold)
+  body:           17,   // Standard body
+  callout:        16,   // Slightly smaller body
+  subheadline:    15,   // Secondary body
+  footnote:       13,   // Supporting text
+  caption1:       12,   // Labels, captions
+  caption2:       11,   // Smallest readable text
+
+  // Special
+  tabLabel:       10,   // Tab bar labels
+  badge:          10,   // Badge numbers
+  micro:           9,   // Micro labels
+} as const;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Font Weight Tokens
+// ─────────────────────────────────────────────────────────────────────────────
+export const FontWeight = {
   ultraLight: '100' as TextStyle['fontWeight'],
-  thin: '200' as TextStyle['fontWeight'],
-  light: '300' as TextStyle['fontWeight'],
-  regular: '400' as TextStyle['fontWeight'],
-  medium: '500' as TextStyle['fontWeight'],
-  semibold: '600' as TextStyle['fontWeight'],
-  bold: '700' as TextStyle['fontWeight'],
-  heavy: '800' as TextStyle['fontWeight'],
-  black: '900' as TextStyle['fontWeight'],
-};
+  thin:       '200' as TextStyle['fontWeight'],
+  light:      '300' as TextStyle['fontWeight'],
+  regular:    '400' as TextStyle['fontWeight'],
+  medium:     '500' as TextStyle['fontWeight'],
+  semibold:   '600' as TextStyle['fontWeight'],
+  bold:       '700' as TextStyle['fontWeight'],
+  heavy:      '800' as TextStyle['fontWeight'],
+  black:      '900' as TextStyle['fontWeight'],
+} as const;
 
-// Apple's Dynamic Type sizes
-export const FontSizes = {
-  caption2: 11,
-  caption1: 12,
-  footnote: 13,
-  subheadline: 15,
-  callout: 16,
-  body: 17,
-  headline: 17,
-  title3: 20,
-  title2: 22,
-  title1: 28,
-  largeTitle: 34,
+// ─────────────────────────────────────────────────────────────────────────────
+// Line Height Scale
+// ─────────────────────────────────────────────────────────────────────────────
+export const LineHeight = {
+  tight:    1.1,
+  snug:     1.2,
+  normal:   1.4,
+  relaxed:  1.6,
+  loose:    1.8,
+} as const;
 
-  // Display sizes for hero sections
-  display1: 48,
-  display2: 56,
-  display3: 64,
-};
-
-// Line height multipliers
-export const LineHeights = {
-  tight: 1.1,
-  normal: 1.3,
-  relaxed: 1.5,
-  loose: 1.7,
-};
-
-// Letter spacing
+// ─────────────────────────────────────────────────────────────────────────────
+// Letter Spacing
+// ─────────────────────────────────────────────────────────────────────────────
 export const LetterSpacing = {
-  tighter: -0.5,
-  tight: -0.25,
-  normal: 0,
-  wide: 0.25,
-  wider: 0.5,
-};
+  tighter:  -0.8,
+  tight:    -0.4,
+  normal:    0,
+  wide:      0.4,
+  wider:     0.8,
+  widest:    1.6,
+  caps:      2.0,
+} as const;
 
-// Pre-defined text styles matching Apple's design system
+// ─────────────────────────────────────────────────────────────────────────────
+// Typography Presets — iOS 26 Text Styles
+// ─────────────────────────────────────────────────────────────────────────────
 export const Typography = {
-  // Large Title - Major navigation or section headers
+  // ── Display ─────────────────────────────────────────────────────────────
+  displayHero: {
+    fontSize:      FontSize.displayHero,
+    fontWeight:    FontWeight.black,
+    letterSpacing: LetterSpacing.tighter,
+    lineHeight:    FontSize.displayHero * LineHeight.tight,
+  } as TextStyle,
+
+  displayXL: {
+    fontSize:      FontSize.displayXL,
+    fontWeight:    FontWeight.black,
+    letterSpacing: LetterSpacing.tighter,
+    lineHeight:    FontSize.displayXL * LineHeight.tight,
+  } as TextStyle,
+
+  displayLarge: {
+    fontSize:      FontSize.displayLarge,
+    fontWeight:    FontWeight.heavy,
+    letterSpacing: LetterSpacing.tight,
+    lineHeight:    FontSize.displayLarge * LineHeight.snug,
+  } as TextStyle,
+
+  displayMedium: {
+    fontSize:      FontSize.displayMedium,
+    fontWeight:    FontWeight.bold,
+    letterSpacing: LetterSpacing.tight,
+    lineHeight:    FontSize.displayMedium * LineHeight.snug,
+  } as TextStyle,
+
+  displaySmall: {
+    fontSize:      FontSize.displaySmall,
+    fontWeight:    FontWeight.bold,
+    letterSpacing: LetterSpacing.tight,
+    lineHeight:    FontSize.displaySmall * LineHeight.snug,
+  } as TextStyle,
+
+  // ── Titles ───────────────────────────────────────────────────────────────
   largeTitle: {
-    fontFamily,
-    fontSize: FontSizes.largeTitle,
-    fontWeight: FontWeights.bold,
-    lineHeight: FontSizes.largeTitle * LineHeights.tight,
+    fontSize:      FontSize.displaySmall,
+    fontWeight:    FontWeight.bold,
     letterSpacing: LetterSpacing.tight,
+    lineHeight:    41,
   } as TextStyle,
 
-  // Title 1 - Screen titles
   title1: {
-    fontFamily,
-    fontSize: FontSizes.title1,
-    fontWeight: FontWeights.bold,
-    lineHeight: FontSizes.title1 * LineHeights.tight,
+    fontSize:      FontSize.title1,
+    fontWeight:    FontWeight.bold,
     letterSpacing: LetterSpacing.tight,
+    lineHeight:    34,
   } as TextStyle,
 
-  // Title 2 - Section headers
   title2: {
-    fontFamily,
-    fontSize: FontSizes.title2,
-    fontWeight: FontWeights.bold,
-    lineHeight: FontSizes.title2 * LineHeights.normal,
-    letterSpacing: LetterSpacing.normal,
+    fontSize:      FontSize.title2,
+    fontWeight:    FontWeight.bold,
+    letterSpacing: LetterSpacing.tight,
+    lineHeight:    28,
   } as TextStyle,
 
-  // Title 3 - Subsection headers
   title3: {
-    fontFamily,
-    fontSize: FontSizes.title3,
-    fontWeight: FontWeights.semibold,
-    lineHeight: FontSizes.title3 * LineHeights.normal,
+    fontSize:      FontSize.title3,
+    fontWeight:    FontWeight.semibold,
     letterSpacing: LetterSpacing.normal,
+    lineHeight:    25,
   } as TextStyle,
 
-  // Headline - Emphasized body text
+  // ── Body ─────────────────────────────────────────────────────────────────
   headline: {
-    fontFamily,
-    fontSize: FontSizes.headline,
-    fontWeight: FontWeights.semibold,
-    lineHeight: FontSizes.headline * LineHeights.normal,
+    fontSize:      FontSize.headline,
+    fontWeight:    FontWeight.semibold,
     letterSpacing: LetterSpacing.normal,
+    lineHeight:    22,
   } as TextStyle,
 
-  // Body - Default reading text
+  headlineMedium: {
+    fontSize:      FontSize.headline,
+    fontWeight:    FontWeight.medium,
+    letterSpacing: LetterSpacing.normal,
+    lineHeight:    22,
+  } as TextStyle,
+
   body: {
-    fontFamily,
-    fontSize: FontSizes.body,
-    fontWeight: FontWeights.regular,
-    lineHeight: FontSizes.body * LineHeights.relaxed,
+    fontSize:      FontSize.body,
+    fontWeight:    FontWeight.regular,
     letterSpacing: LetterSpacing.normal,
+    lineHeight:    22,
   } as TextStyle,
 
-  // Body Bold
-  bodyBold: {
-    fontFamily,
-    fontSize: FontSizes.body,
-    fontWeight: FontWeights.semibold,
-    lineHeight: FontSizes.body * LineHeights.relaxed,
+  bodyMedium: {
+    fontSize:      FontSize.body,
+    fontWeight:    FontWeight.medium,
     letterSpacing: LetterSpacing.normal,
+    lineHeight:    22,
   } as TextStyle,
 
-  // Callout - Secondary information
   callout: {
-    fontFamily,
-    fontSize: FontSizes.callout,
-    fontWeight: FontWeights.regular,
-    lineHeight: FontSizes.callout * LineHeights.normal,
+    fontSize:      FontSize.callout,
+    fontWeight:    FontWeight.regular,
     letterSpacing: LetterSpacing.normal,
+    lineHeight:    21,
   } as TextStyle,
 
-  // Subheadline - Supporting text
+  calloutMedium: {
+    fontSize:      FontSize.callout,
+    fontWeight:    FontWeight.medium,
+    letterSpacing: LetterSpacing.normal,
+    lineHeight:    21,
+  } as TextStyle,
+
   subheadline: {
-    fontFamily,
-    fontSize: FontSizes.subheadline,
-    fontWeight: FontWeights.regular,
-    lineHeight: FontSizes.subheadline * LineHeights.normal,
+    fontSize:      FontSize.subheadline,
+    fontWeight:    FontWeight.regular,
     letterSpacing: LetterSpacing.normal,
+    lineHeight:    20,
   } as TextStyle,
 
-  // Subheadline Medium
   subheadlineMedium: {
-    fontFamily,
-    fontSize: FontSizes.subheadline,
-    fontWeight: FontWeights.medium,
-    lineHeight: FontSizes.subheadline * LineHeights.normal,
+    fontSize:      FontSize.subheadline,
+    fontWeight:    FontWeight.medium,
     letterSpacing: LetterSpacing.normal,
+    lineHeight:    20,
   } as TextStyle,
 
-  // Footnote - Small supporting text
   footnote: {
-    fontFamily,
-    fontSize: FontSizes.footnote,
-    fontWeight: FontWeights.regular,
-    lineHeight: FontSizes.footnote * LineHeights.normal,
+    fontSize:      FontSize.footnote,
+    fontWeight:    FontWeight.regular,
     letterSpacing: LetterSpacing.normal,
+    lineHeight:    18,
   } as TextStyle,
 
-  // Caption 1 - Labels and badges
+  footnoteMedium: {
+    fontSize:      FontSize.footnote,
+    fontWeight:    FontWeight.medium,
+    letterSpacing: LetterSpacing.normal,
+    lineHeight:    18,
+  } as TextStyle,
+
   caption1: {
-    fontFamily,
-    fontSize: FontSizes.caption1,
-    fontWeight: FontWeights.regular,
-    lineHeight: FontSizes.caption1 * LineHeights.normal,
+    fontSize:      FontSize.caption1,
+    fontWeight:    FontWeight.regular,
     letterSpacing: LetterSpacing.normal,
+    lineHeight:    16,
   } as TextStyle,
 
-  // Caption 1 Medium
   caption1Medium: {
-    fontFamily,
-    fontSize: FontSizes.caption1,
-    fontWeight: FontWeights.medium,
-    lineHeight: FontSizes.caption1 * LineHeights.normal,
+    fontSize:      FontSize.caption1,
+    fontWeight:    FontWeight.medium,
     letterSpacing: LetterSpacing.normal,
+    lineHeight:    16,
   } as TextStyle,
 
-  // Caption 2 - Smallest text
   caption2: {
-    fontFamily,
-    fontSize: FontSizes.caption2,
-    fontWeight: FontWeights.regular,
-    lineHeight: FontSizes.caption2 * LineHeights.normal,
+    fontSize:      FontSize.caption2,
+    fontWeight:    FontWeight.regular,
+    letterSpacing: LetterSpacing.normal,
+    lineHeight:    13,
+  } as TextStyle,
+
+  caption2Medium: {
+    fontSize:      FontSize.caption2,
+    fontWeight:    FontWeight.medium,
+    letterSpacing: LetterSpacing.normal,
+    lineHeight:    13,
+  } as TextStyle,
+
+  // ── Monospaced (timers, stats, code) ─────────────────────────────────────
+  monoHero: {
+    fontSize:      FontSize.displayHero,
+    fontWeight:    FontWeight.ultraLight,
+    fontVariant:   ['tabular-nums'],
+    letterSpacing: LetterSpacing.tighter,
+    lineHeight:    FontSize.displayHero * LineHeight.tight,
+    fontFamily:    FontFamily.mono,
+  } as TextStyle,
+
+  monoLarge: {
+    fontSize:      FontSize.displaySmall,
+    fontWeight:    FontWeight.light,
+    fontVariant:   ['tabular-nums'],
+    letterSpacing: LetterSpacing.tight,
+    lineHeight:    FontSize.displaySmall * LineHeight.snug,
+    fontFamily:    FontFamily.mono,
+  } as TextStyle,
+
+  monoBody: {
+    fontSize:      FontSize.body,
+    fontWeight:    FontWeight.regular,
+    fontVariant:   ['tabular-nums'],
+    letterSpacing: LetterSpacing.normal,
+    lineHeight:    22,
+    fontFamily:    FontFamily.mono,
+  } as TextStyle,
+
+  monoCaption: {
+    fontSize:      FontSize.caption1,
+    fontWeight:    FontWeight.medium,
+    fontVariant:   ['tabular-nums'],
     letterSpacing: LetterSpacing.wide,
+    lineHeight:    16,
+    fontFamily:    FontFamily.mono,
   } as TextStyle,
 
-  // Display styles for hero sections
-  display1: {
-    fontFamily,
-    fontSize: FontSizes.display1,
-    fontWeight: FontWeights.bold,
-    lineHeight: FontSizes.display1 * LineHeights.tight,
-    letterSpacing: LetterSpacing.tighter,
+  // ── Special ──────────────────────────────────────────────────────────────
+  tabLabel: {
+    fontSize:      FontSize.tabLabel,
+    fontWeight:    FontWeight.medium,
+    letterSpacing: LetterSpacing.normal,
+    lineHeight:    12,
   } as TextStyle,
 
-  display2: {
-    fontFamily,
-    fontSize: FontSizes.display2,
-    fontWeight: FontWeights.bold,
-    lineHeight: FontSizes.display2 * LineHeights.tight,
-    letterSpacing: LetterSpacing.tighter,
+  badge: {
+    fontSize:      FontSize.badge,
+    fontWeight:    FontWeight.bold,
+    letterSpacing: LetterSpacing.normal,
+    lineHeight:    12,
   } as TextStyle,
 
-  // Stats/Numbers - Tabular figures
-  stat: {
-    fontFamily,
-    fontSize: FontSizes.title1,
-    fontWeight: FontWeights.bold,
-    lineHeight: FontSizes.title1 * LineHeights.tight,
-    letterSpacing: LetterSpacing.tight,
-    fontVariant: ['tabular-nums'] as TextStyle['fontVariant'],
-  } as TextStyle,
-
-  statLarge: {
-    fontFamily,
-    fontSize: FontSizes.display1,
-    fontWeight: FontWeights.bold,
-    lineHeight: FontSizes.display1 * LineHeights.tight,
-    letterSpacing: LetterSpacing.tight,
-    fontVariant: ['tabular-nums'] as TextStyle['fontVariant'],
+  // Uppercase label (for section headers, tags)
+  overline: {
+    fontSize:      FontSize.caption2,
+    fontWeight:    FontWeight.semibold,
+    letterSpacing: LetterSpacing.caps,
+    textTransform: 'uppercase',
+    lineHeight:    16,
   } as TextStyle,
 
   // Button text
-  button: {
-    fontFamily,
-    fontSize: FontSizes.body,
-    fontWeight: FontWeights.semibold,
-    lineHeight: FontSizes.body * LineHeights.normal,
+  buttonLarge: {
+    fontSize:      FontSize.headline,
+    fontWeight:    FontWeight.semibold,
     letterSpacing: LetterSpacing.normal,
+    lineHeight:    22,
+  } as TextStyle,
+
+  buttonMedium: {
+    fontSize:      FontSize.callout,
+    fontWeight:    FontWeight.semibold,
+    letterSpacing: LetterSpacing.normal,
+    lineHeight:    21,
   } as TextStyle,
 
   buttonSmall: {
-    fontFamily,
-    fontSize: FontSizes.subheadline,
-    fontWeight: FontWeights.semibold,
-    lineHeight: FontSizes.subheadline * LineHeights.normal,
+    fontSize:      FontSize.subheadline,
+    fontWeight:    FontWeight.semibold,
     letterSpacing: LetterSpacing.normal,
+    lineHeight:    20,
   } as TextStyle,
-};
+
+  // Navigation
+  navTitle: {
+    fontSize:      FontSize.headline,
+    fontWeight:    FontWeight.semibold,
+    letterSpacing: LetterSpacing.normal,
+    lineHeight:    22,
+  } as TextStyle,
+
+  navLargeTitle: {
+    fontSize:      FontSize.displaySmall,
+    fontWeight:    FontWeight.bold,
+    letterSpacing: LetterSpacing.tight,
+    lineHeight:    41,
+  } as TextStyle,
+} as const;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Responsive Typography — scales with screen size
+// ─────────────────────────────────────────────────────────────────────────────
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
+// Scale factor based on screen width (375 = iPhone 14 base)
+const scaleFactor = Math.min(SCREEN_WIDTH / 375, 1.3);
+
+export function scaleFont(size: number): number {
+  return Math.round(size * scaleFactor);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Text Shadow Presets
+// ─────────────────────────────────────────────────────────────────────────────
+export const TextShadows = {
+  none: {},
+  subtle: {
+    textShadowColor: 'rgba(0, 0, 0, 0.15)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+  medium: {
+    textShadowColor: 'rgba(0, 0, 0, 0.30)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 4,
+  },
+  strong: {
+    textShadowColor: 'rgba(0, 0, 0, 0.50)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 8,
+  },
+  glow: (color: string) => ({
+    textShadowColor: color,
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 12,
+  }),
+} as const;
 
 export default Typography;

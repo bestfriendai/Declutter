@@ -144,10 +144,94 @@ export interface SpawnEvent {
 }
 
 // =====================
+// TASK CATEGORY TYPES
+// =====================
+
+export type TaskCategory =
+  | 'trash_removal'
+  | 'surface_clearing'
+  | 'dishes'
+  | 'laundry'
+  | 'organization'
+  | 'deep_cleaning'
+  | 'maintenance'
+  | 'donation_sorting'
+  | 'setup';
+
+export type EnergyLevel = 'minimal' | 'low' | 'moderate' | 'high';
+export type DecisionLoad = 'none' | 'low' | 'medium' | 'high';
+export type VisualImpact = 'low' | 'medium' | 'high';
+export type ClutterDensity = 'low' | 'medium' | 'high' | 'extreme';
+export type ZoneType = 'floor' | 'surface' | 'storage' | 'fixture';
+export type ObjectCategory = 'trash' | 'dishes' | 'clothes' | 'papers' | 'belongs_elsewhere' | 'misc';
+export type ObjectCondition = 'clean' | 'dirty' | 'damaged' | 'misplaced' | 'unknown';
+
+// =====================
+// ZONE & OBJECT TYPES
+// =====================
+
+export interface Zone {
+  id: string;
+  name: string;
+  type: ZoneType;
+  description: string;
+  clutterDensity: ClutterDensity;
+  itemCount: number;
+  estimatedClearTime: number;
+  priority: Priority;
+  priorityReason: string;
+}
+
+export interface DetectedObject {
+  id?: string;
+  name: string;
+  category?: ObjectCategory;
+  zone?: string;
+  location?: string;
+  condition?: ObjectCondition;
+  suggestedAction?: string;
+  suggestedDestination?: string;
+  confidence?: number;
+}
+
+export interface TaskDestination {
+  location: string;
+  instructions?: string;
+  requiresSetup?: string;
+}
+
+// =====================
+// DECISION SUPPORT TYPES
+// =====================
+
+export interface DecisionOption {
+  answer: string;
+  action: string;
+  nextTask?: string;
+}
+
+export interface DecisionPoint {
+  id?: string;
+  trigger: string;
+  question: string;
+  options: DecisionOption[];
+  fiveSecondDefault?: string;
+  emotionalSupport?: string;
+  adhd_tip?: string;
+}
+
+// =====================
 // EXISTING TYPES (UPDATED)
 // =====================
 
-// A single cleaning/declutter task
+export interface SubTask {
+  id: string;
+  title: string;
+  completed: boolean;
+  estimatedSeconds?: number;
+  isCheckpoint?: boolean;
+}
+
 export interface CleaningTask {
   id: string;
   title: string;
@@ -155,18 +239,33 @@ export interface CleaningTask {
   emoji: string;
   priority: Priority;
   difficulty: TaskDifficulty;
-  estimatedMinutes: number; // ADHD-friendly: show time commitment
+  estimatedMinutes: number;
   completed: boolean;
   completedAt?: Date;
-  tips?: string[]; // Helpful tips for ADHD/motivation
-  subtasks?: SubTask[]; // Break down into even smaller pieces
-}
-
-// Sub-tasks for complex tasks
-export interface SubTask {
-  id: string;
-  title: string;
-  completed: boolean;
+  tips?: string[];
+  subtasks?: SubTask[];
+  
+  zone?: string;
+  targetObjects?: string[];
+  destination?: TaskDestination;
+  
+  dependencies?: string[];
+  enables?: string[];
+  parallelWith?: string[];
+  
+  category?: TaskCategory;
+  energyRequired?: EnergyLevel;
+  decisionLoad?: DecisionLoad;
+  visualImpact?: VisualImpact;
+  
+  whyThisMatters?: string;
+  resistanceHandler?: string;
+  decisionPoints?: DecisionPoint[];
+  
+  userSkipped?: boolean;
+  skipReason?: string;
+  actualMinutes?: number;
+  difficultyFeedback?: 'easier' | 'accurate' | 'harder';
 }
 
 // A photo capture session
@@ -206,12 +305,20 @@ export interface UserProfile {
 export interface UserStats {
   totalTasksCompleted: number;
   totalRoomsCleaned: number;
-  currentStreak: number; // Days in a row
+  currentStreak: number;
   longestStreak: number;
   totalMinutesCleaned: number;
   level: number;
   xp: number;
   badges: Badge[];
+  lastActivityDate?: string;
+  // Goal tracking
+  weeklyTaskGoal?: number;
+  weeklyTimeGoal?: number; // in minutes
+  // Streak protection
+  streakFreezesAvailable?: number;
+  streakFreezesUsedThisMonth?: number;
+  lastStreakFreezeUsed?: string;
 }
 
 // Achievement badges
@@ -225,18 +332,125 @@ export interface Badge {
   type: 'tasks' | 'rooms' | 'streak' | 'time';
 }
 
-// AI Analysis result
-export interface AIAnalysisResult {
-  messLevel: number; // 0-100
-  summary: string;
-  encouragement: string;
-  tasks: CleaningTask[];
-  quickWins: string[]; // Things that can be done in under 2 minutes
-  estimatedTotalTime: number; // Total minutes to complete all tasks
-  roomType?: RoomType; // AI detected room type
+export interface PhotoQuality {
+  lighting: 'good' | 'dim' | 'overexposed';
+  coverage: 'full' | 'partial' | 'limited';
+  clarity: 'clear' | 'blurry' | 'mixed';
+  confidence: number;
+  notes?: string;
+  suggestedRetake?: string;
 }
 
-// App settings
+export interface TaskGraph {
+  criticalPath: string[];
+  parallelGroups: string[][];
+  setupTasks?: string[];
+  optionalTasks?: string[];
+}
+
+export interface TimeProfile {
+  tasks: string[];
+  expectedImpact: number;
+  estimatedMinutes?: number;
+}
+
+export interface TimeProfiles {
+  minimal: TimeProfile;
+  quick: TimeProfile;
+  standard: TimeProfile;
+  complete: TimeProfile;
+}
+
+export interface EnergyProfiles {
+  exhausted: string[];
+  low: string[];
+  moderate: string[];
+  high: string[];
+}
+
+export interface QuickWin {
+  taskId?: string;
+  task?: string;
+  visualImpact?: VisualImpact;
+  timeMinutes?: number;
+  reason?: string;
+}
+
+export interface AIAnalysisResult {
+  photoQuality?: PhotoQuality;
+  messLevel: number;
+  summary: string;
+  encouragement: string;
+  roomType?: RoomType;
+  
+  zones?: Zone[];
+  detectedObjects?: DetectedObject[];
+  
+  tasks: CleaningTask[];
+  taskGraph?: TaskGraph;
+  
+  timeProfiles?: TimeProfiles;
+  energyProfiles?: EnergyProfiles;
+  
+  quickWins: (string | QuickWin)[];
+  decisionPoints?: DecisionPoint[];
+  
+  estimatedTotalTime: number;
+  beforeAfterMetrics?: string[];
+}
+
+export interface SessionContext {
+  energyLevel: EnergyLevel;
+  availableMinutes: number;
+  timeOfDay: 'morning' | 'afternoon' | 'evening' | 'night';
+  dayOfWeek: number;
+  visitorExpected?: boolean;
+  userMood?: string;
+  priorityFocus?: string;
+}
+
+export interface TaskPerformanceHistory {
+  category: TaskCategory;
+  completionRate: number;
+  averageTimeVsEstimate: number;
+  skipRate: number;
+  preferredTimeOfDay?: string;
+}
+
+export interface UserCleaningProfile {
+  taskHistory: TaskPerformanceHistory[];
+  
+  energyPatterns: {
+    dayOfWeek: number;
+    averageEnergy: number;
+    bestCleaningTime?: string;
+  }[];
+  
+  preferences: {
+    preferredTaskSize: 'tiny' | 'small' | 'medium';
+    preferredSessionLength: number;
+    needsMoreBreakdown: boolean;
+    respondsToGamification: boolean;
+    prefersQuickWinsFirst: boolean;
+    avoidsDecisionTasks: boolean;
+  };
+  
+  roomInsights: {
+    roomType: RoomType;
+    averageMessLevel: number;
+    commonClutterTypes: string[];
+    mostSkippedTaskTypes: TaskCategory[];
+    bestPerformingTaskTypes: TaskCategory[];
+  }[];
+  
+  motivationProfile: {
+    respondsToChallenges: boolean;
+    needsFrequentEncouragement: boolean;
+    preferredEncouragementStyle: 'cheerful' | 'calm' | 'matter-of-fact';
+    celebrationPreference: 'minimal' | 'moderate' | 'maximum';
+  };
+}
+
 export interface AppSettings {
   notifications: boolean;
   reminderTime?: string; // Time for daily reminders
@@ -291,16 +505,25 @@ export interface DeclutterState {
   // UI State
   isAnalyzing: boolean;
   analysisError: string | null;
+  syncError: string | null;
+
+  // Celebration State
+  pendingCelebration: Badge[];
 
   // Actions
   setUser: (user: UserProfile) => void;
-  addRoom: (room: Omit<Room, 'id' | 'createdAt' | 'photos' | 'tasks' | 'currentProgress'>) => Room;
+  addRoom: (room: Omit<Room, 'id' | 'createdAt' | 'photos' | 'tasks' | 'currentProgress'>) => Promise<Room>;
   updateRoom: (roomId: string, updates: Partial<Room>) => void;
   deleteRoom: (roomId: string) => void;
-  addPhotoToRoom: (roomId: string, photo: Omit<PhotoCapture, 'id'>) => void;
+  addPhotoToRoom: (roomId: string, photo: Omit<PhotoCapture, 'id'>) => Promise<void>;
+  deletePhotoFromRoom: (roomId: string, photoId: string) => void;
   setTasksForRoom: (roomId: string, tasks: CleaningTask[]) => void;
+  addTaskToRoom: (roomId: string, task: Omit<CleaningTask, 'id'>) => void;
   toggleTask: (roomId: string, taskId: string) => void;
   toggleSubTask: (roomId: string, taskId: string, subTaskId: string) => void;
+  deleteTask: (roomId: string, taskId: string) => void;
+  restoreTask: (roomId: string, task: CleaningTask, originalIndex?: number) => void;
+  updateTask: (roomId: string, taskId: string, updates: Partial<CleaningTask>) => void;
   setActiveRoom: (roomId: string | null) => void;
   updateSettings: (settings: Partial<AppSettings>) => void;
   updateStats: (updates: Partial<UserStats>) => void;
@@ -331,6 +554,12 @@ export interface DeclutterState {
   // Data Management
   clearAllData: () => Promise<void>;
   resetStats: () => void;
+
+  // Celebration Actions
+  clearCelebration: () => void;
+
+  // Sync Actions
+  clearSyncError: () => void;
 }
 
 // Predefined badges

@@ -381,7 +381,7 @@ function CameraScreenContent() {
       }
 
       const info = ROOM_TYPE_INFO[effectiveRoomType];
-      const newRoom = addRoom({
+      const newRoom = await addRoom({
         name: info.label,
         type: effectiveRoomType,
         emoji: info.emoji,

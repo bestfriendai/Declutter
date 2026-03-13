@@ -5,7 +5,6 @@
 
 import { Redirect } from 'expo-router';
 import { useAuth } from '@/context/AuthContext';
-import { useDeclutter } from '@/context/DeclutterContext';
 import { View, ActivityIndicator, StyleSheet, Text } from 'react-native';
 import { useTheme } from '@/theme/ThemeProvider';
 import { Typography } from '@/theme/typography';
@@ -14,8 +13,7 @@ import { StatusBar } from 'expo-status-bar';
 import Animated, { FadeIn } from 'react-native-reanimated';
 
 export default function Index() {
-  const { isAuthenticated, isLoading, isFirebaseReady } = useAuth();
-  const { user } = useDeclutter();
+  const { isAuthenticated, isLoading, isAuthReady } = useAuth();
   const { colors, isDark } = useTheme();
 
   if (isLoading) {
@@ -44,12 +42,8 @@ export default function Index() {
     );
   }
 
-  if (isFirebaseReady && !isAuthenticated) {
+  if (isAuthReady && !isAuthenticated) {
     return <Redirect href="/auth/login" />;
-  }
-
-  if (!user?.onboardingComplete) {
-    return <Redirect href="/onboarding" />;
   }
 
   return <Redirect href="/(tabs)" />;

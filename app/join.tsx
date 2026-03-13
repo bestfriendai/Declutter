@@ -1,6 +1,6 @@
 /**
  * Declutterly - Join Screen
- * Universal invite code entry for challenges, sessions, and shared rooms
+ * Challenge invite code entry
  * Accessible via deep link: declutterly://join or https://declutterly.app/join
  */
 
@@ -27,17 +27,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GlassButton } from '@/components/ui/GlassButton';
 import { GlassCard } from '@/components/ui/GlassCard';
 import { useAuth } from '@/context/AuthContext';
-import {
-    joinBodyDoublingSession,
-    joinChallenge,
-    joinSharedRoom,
-} from '@/services/social';
+import { joinChallenge } from '@/services/social';
 import { useTheme } from '@/theme/ThemeProvider';
 import { Typography } from '@/theme/typography';
 import { Spacing, BorderRadius } from '@/theme/spacing';
 const ROUTES = {
   CHALLENGE: (id: string) => `/challenge/${id}` as const,
-  SOCIAL: '/social' as const,
   AUTH: { LOGIN: '/auth/login' as const },
 };
 
@@ -77,7 +72,6 @@ export default function JoinScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     try {
-      // Try joining challenge first
       const challenge = await joinChallenge(trimmedCode);
       if (challenge) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -95,44 +89,7 @@ export default function JoinScreen() {
         return;
       }
 
-      // Try joining body doubling session
-      const session = await joinBodyDoublingSession(trimmedCode);
-      if (session) {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        Alert.alert(
-          'Joined Session!',
-          `You've joined "${session.title}" hosted by ${session.hostName}`,
-          [
-            {
-              text: 'Go to Social',
-              onPress: () => router.replace(ROUTES.SOCIAL),
-            },
-          ]
-        );
-        setIsJoining(false);
-        return;
-      }
-
-      // Try joining shared room
-      const room = await joinSharedRoom(trimmedCode);
-      if (room) {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        Alert.alert(
-          'Room Shared!',
-          `${room.ownerName} shared "${room.roomName}" with you`,
-          [
-            {
-              text: 'Go to Social',
-              onPress: () => router.replace(ROUTES.SOCIAL),
-            },
-          ]
-        );
-        setIsJoining(false);
-        return;
-      }
-
-      // Nothing found
-      setError('Invalid code. Make sure the code is correct and the challenge/session is still active.');
+      setError('Invalid code. Make sure the challenge code is correct and still active.');
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     } catch (err) {
       console.error('Join error:', err);
@@ -172,7 +129,7 @@ export default function JoinScreen() {
             Sign in to join
           </Text>
           <Text style={[styles.authText, { color: colors.textSecondary }]}>
-            Create an account or sign in to join challenges, sessions, and shared rooms.
+            Create an account or sign in to join challenges.
           </Text>
           <GlassButton
             title="Sign In"
@@ -226,7 +183,7 @@ export default function JoinScreen() {
               Enter Invite Code
             </Text>
             <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-              Join challenges, body doubling sessions, or view shared rooms
+              Join a challenge with a code from a friend
             </Text>
           </Animated.View>
 
@@ -279,8 +236,8 @@ export default function JoinScreen() {
 
           <Animated.View entering={FadeInDown.delay(400).springify()}>
             <Text style={[styles.helpText, { color: colors.textSecondary }]}>
-              Codes are 6-8 characters and are case-insensitive.{'\n'}
-              Ask a friend for their invite code to get started!
+              Codes are 8 characters and are case-insensitive.{'\n'}
+              Ask a friend for their challenge code to get started.
             </Text>
           </Animated.View>
         </View>

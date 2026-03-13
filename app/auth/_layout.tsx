@@ -19,13 +19,6 @@ export default function AuthLayout() {
     >
       <Stack.Screen name="login" />
       <Stack.Screen name="signup" />
-      <Stack.Screen
-        name="forgot-password"
-        options={{
-          presentation: 'modal',
-          animation: 'slide_from_bottom',
-        }}
-      />
     </Stack>
   );
 }

@@ -3,9 +3,9 @@ import { mutation, query } from "./_generated/server";
 import { getAuthUserId } from "@convex-dev/auth/server";
 
 function generateInviteCode(): string {
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   let code = "";
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < 8; i++) {
     code += chars.charAt(Math.floor(Math.random() * chars.length));
   }
   return code;
@@ -17,8 +17,8 @@ export const createChallenge = mutation({
     description: v.string(),
     type: v.optional(
       v.union(
-        v.literal("task_count"),
-        v.literal("time_based"),
+        v.literal("tasks_count"),
+        v.literal("time_spent"),
         v.literal("room_complete"),
         v.literal("streak"),
         v.literal("collectibles")
@@ -33,23 +33,37 @@ export const createChallenge = mutation({
     const userId = await getAuthUserId(ctx);
     if (!userId) throw new Error("Not authenticated");
 
+    const user = await ctx.db.get(userId);
+    const creatorName = user?.name?.trim() || "Declutterer";
     const inviteCode = generateInviteCode();
     const now = Date.now();
     const durationDays = args.durationDays ?? 7;
     const startDate = args.startDate ?? now;
-    const endDate = args.endDate ?? (startDate + durationDays * 24 * 60 * 60 * 1000);
+    const endDate =
+      args.endDate ?? startDate + durationDays * 24 * 60 * 60 * 1000;
 
     return await ctx.db.insert("challenges", {
       creatorId: userId,
+      creatorName,
       title: args.title,
       description: args.description,
-      type: args.type ?? "task_count",
+      type: args.type ?? "tasks_count",
       target: args.target ?? 10,
       startDate,
       endDate,
+      status: "in_progress",
+      createdAt: now,
       inviteCode,
       isActive: true,
-      participants: [userId as string],
+      participants: [
+        {
+          userId: userId as string,
+          displayName: creatorName,
+          progress: 0,
+          joined: now,
+          completed: false,
+        },
+      ],
     });
   },
 });
@@ -69,12 +83,24 @@ export const joinChallenge = mutation({
     if (!challenge.isActive) throw new Error("Challenge is no longer active");
 
     const participants = challenge.participants ?? [];
-    if (participants.includes(userId as string)) {
+    if (participants.some((participant) => participant.userId === (userId as string))) {
       return challenge._id;
     }
 
+    const user = await ctx.db.get(userId);
+    const displayName = user?.name?.trim() || "Declutterer";
+
     await ctx.db.patch(challenge._id, {
-      participants: [...participants, userId as string],
+      participants: [
+        ...participants,
+        {
+          userId: userId as string,
+          displayName,
+          progress: 0,
+          joined: Date.now(),
+          completed: false,
+        },
+      ],
     });
 
     return challenge._id;
@@ -92,11 +118,49 @@ export const getChallenge = query({
 
     // Only return if user is a participant or creator
     const participants = challenge.participants ?? [];
-    if (challenge.creatorId !== userId && !participants.includes(userId as string)) {
+    if (
+      challenge.creatorId !== userId &&
+      !participants.some((participant) => participant.userId === (userId as string))
+    ) {
       return null;
     }
 
     return challenge;
+  },
+});
+
+export const updateChallengeProgress = mutation({
+  args: {
+    id: v.id("challenges"),
+    progress: v.number(),
+    completed: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Not authenticated");
+
+    const challenge = await ctx.db.get(args.id);
+    if (!challenge) throw new Error("Challenge not found");
+
+    const nextParticipants = (challenge.participants ?? []).map((participant) => {
+      if (participant.userId !== (userId as string)) {
+        return participant;
+      }
+
+      const completed = args.completed ?? participant.completed;
+      return {
+        ...participant,
+        progress: args.progress,
+        completed,
+        completedAt: completed ? Date.now() : undefined,
+      };
+    });
+
+    await ctx.db.patch(args.id, {
+      participants: nextParticipants,
+    });
+
+    return args.id;
   },
 });
 
@@ -117,10 +181,14 @@ export const listChallenges = query({
     const joined = allChallenges.filter(
       (c) =>
         c.creatorId !== userId &&
-        (c.participants ?? []).includes(userId as string)
+        (c.participants ?? []).some(
+          (participant) => participant.userId === (userId as string)
+        )
     );
 
-    return [...created, ...joined];
+    return [...created, ...joined].sort(
+      (left, right) => (right.createdAt ?? 0) - (left.createdAt ?? 0)
+    );
   },
 });
 

@@ -1,301 +1,360 @@
 /**
  * Authentication Context
- * Manages user authentication state across the app
+ * Manages user authentication state across the app using Convex Auth.
  */
 
+import { api } from '@/convex/_generated/api';
+import { convex } from '@/config/convex';
+import { registerForPushNotifications } from '@/services/notifications';
+import { useAuthActions } from '@convex-dev/auth/react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import NetInfo from '@react-native-community/netinfo';
+import { useConvexAuth, useQuery } from 'convex/react';
 import React, {
   createContext,
-  useContext,
-  useState,
-  useEffect,
-  useCallback,
   ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
 } from 'react';
-import { User } from 'firebase/auth';
-import {
-  onAuthStateChange,
-  signInWithEmail,
-  signUpWithEmail,
-  signOut as authSignOut,
-  signInWithApple,
-  signInAnonymously,
-  resetPassword,
-  updateUserProfile,
-  changePassword,
-  deleteAccount,
-  isEmailVerified,
-  resendEmailVerification,
-  getCurrentUser,
-  AuthResult,
-} from '@/services/auth';
-import { isFirebaseConfigured } from '@/config/firebase';
-import {
-  syncAllDataToCloud,
-  loadAllDataFromCloud,
-  saveUserProfile,
-} from '@/services/firestore';
-import { registerForPushNotifications } from '@/services/notifications';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// Auth context state
+export interface AuthUser {
+  uid: string;
+  email: string | null;
+  displayName: string | null;
+  photoURL: string | null;
+  isAnonymous: boolean;
+  emailVerified: boolean;
+}
+
 interface AuthState {
-  user: User | null;
+  user: AuthUser | null;
   isLoading: boolean;
   isAuthenticated: boolean;
   isAnonymous: boolean;
   isEmailVerified: boolean;
-  isFirebaseReady: boolean;
+  isAuthReady: boolean;
   error: string | null;
 }
 
-// Auth context actions
-interface AuthContextValue extends AuthState {
-  signIn: (email: string, password: string) => Promise<AuthResult>;
-  signUp: (email: string, password: string, displayName?: string) => Promise<AuthResult>;
-  signOut: () => Promise<void>;
-  signInWithApple: () => Promise<AuthResult>;
-  continueAsGuest: () => Promise<AuthResult>;
-  resetPassword: (email: string) => Promise<AuthResult>;
-  updateProfile: (updates: { displayName?: string; photoURL?: string }) => Promise<AuthResult>;
-  changePassword: (currentPassword: string, newPassword: string) => Promise<AuthResult>;
-  deleteAccount: (password?: string) => Promise<AuthResult>;
-  resendVerification: () => Promise<AuthResult>;
-  clearError: () => void;
-  syncToCloud: () => Promise<void>;
-  loadFromCloud: () => Promise<any>;
+export interface SyncData {
+  profile?: any;
+  rooms: any[];
+  stats: any;
+  settings: any;
+  mascot?: any;
+  collection: any[];
+  collectionStats: any;
 }
 
-const AuthContext = createContext<AuthContextValue | null>(null);
+export type SyncStatus = 'idle' | 'syncing' | 'success' | 'error';
 
-// Storage key for offline auth state
-const AUTH_STATE_KEY = '@declutterly_auth_state';
+interface AuthResult {
+  success: boolean;
+  user?: AuthUser;
+  error?: string;
+}
 
-export function AuthProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<AuthState>({
-    user: null,
-    isLoading: true,
-    isAuthenticated: false,
-    isAnonymous: false,
-    isEmailVerified: false,
-    isFirebaseReady: isFirebaseConfigured(),
-    error: null,
-  });
-
-  // Listen for auth state changes
-  useEffect(() => {
-    if (!isFirebaseConfigured()) {
-      setState(prev => ({
-        ...prev,
-        isLoading: false,
-        isFirebaseReady: false,
-      }));
-      return;
-    }
-
-    const unsubscribe = onAuthStateChange(async (user) => {
-      if (user) {
-        setState({
-          user,
-          isLoading: false,
-          isAuthenticated: true,
-          isAnonymous: user.isAnonymous,
-          isEmailVerified: user.emailVerified,
-          isFirebaseReady: true,
-          error: null,
-        });
-
-        // Register for push notifications
-        await registerForPushNotifications();
-
-        // Save auth state for offline access
-        await AsyncStorage.setItem(AUTH_STATE_KEY, JSON.stringify({
-          uid: user.uid,
-          email: user.email,
-          displayName: user.displayName,
-          isAnonymous: user.isAnonymous,
-        }));
-      } else {
-        setState({
-          user: null,
-          isLoading: false,
-          isAuthenticated: false,
-          isAnonymous: false,
-          isEmailVerified: false,
-          isFirebaseReady: true,
-          error: null,
-        });
-
-        // Clear auth state
-        await AsyncStorage.removeItem(AUTH_STATE_KEY);
-      }
-    });
-
-    return () => unsubscribe();
-  }, []);
-
-  // Sign in with email
-  const signIn = useCallback(async (email: string, password: string): Promise<AuthResult> => {
-    setState(prev => ({ ...prev, isLoading: true, error: null }));
-
-    const result = await signInWithEmail(email, password);
-
-    if (!result.success) {
-      setState(prev => ({ ...prev, isLoading: false, error: result.error ?? null }));
-    }
-
-    return result;
-  }, []);
-
-  // Sign up with email
-  const signUp = useCallback(async (
+interface AuthContextValue extends AuthState {
+  signIn: (email: string, password: string) => Promise<AuthResult>;
+  signUp: (
     email: string,
     password: string,
     displayName?: string
-  ): Promise<AuthResult> => {
-    setState(prev => ({ ...prev, isLoading: true, error: null }));
-
-    const result = await signUpWithEmail(email, password, displayName);
-
-    if (!result.success) {
-      setState(prev => ({ ...prev, isLoading: false, error: result.error ?? null }));
-    } else if (result.user) {
-      // Create initial user profile in Firestore
-      await saveUserProfile({
-        id: result.user.uid,
-        name: displayName || 'Declutterer',
-        createdAt: new Date(),
-        onboardingComplete: false,
-      });
-    }
-
-    return result;
-  }, []);
-
-  // Sign out
-  const handleSignOut = useCallback(async (): Promise<void> => {
-    setState(prev => ({ ...prev, isLoading: true, error: null }));
-    await authSignOut();
-  }, []);
-
-  // Sign in with Apple
-  const handleAppleSignIn = useCallback(async (): Promise<AuthResult> => {
-    setState(prev => ({ ...prev, isLoading: true, error: null }));
-
-    const result = await signInWithApple();
-
-    if (!result.success) {
-      setState(prev => ({ ...prev, isLoading: false, error: result.error ?? null }));
-    } else if (result.user) {
-      // Create initial user profile if new user
-      const profile = await loadAllDataFromCloud();
-      if (!profile?.profile) {
-        await saveUserProfile({
-          id: result.user.uid,
-          name: result.user.displayName || 'Declutterer',
-          createdAt: new Date(),
-          onboardingComplete: false,
-        });
-      }
-    }
-
-    return result;
-  }, []);
-
-  // Continue as guest (anonymous auth)
-  const continueAsGuest = useCallback(async (): Promise<AuthResult> => {
-    setState(prev => ({ ...prev, isLoading: true, error: null }));
-
-    const result = await signInAnonymously();
-
-    if (!result.success) {
-      setState(prev => ({ ...prev, isLoading: false, error: result.error ?? null }));
-    }
-
-    return result;
-  }, []);
-
-  // Reset password
-  const handleResetPassword = useCallback(async (email: string): Promise<AuthResult> => {
-    setState(prev => ({ ...prev, error: null }));
-    return resetPassword(email);
-  }, []);
-
-  // Update profile
-  const handleUpdateProfile = useCallback(async (
-    updates: { displayName?: string; photoURL?: string }
-  ): Promise<AuthResult> => {
-    setState(prev => ({ ...prev, error: null }));
-    return updateUserProfile(updates);
-  }, []);
-
-  // Change password
-  const handleChangePassword = useCallback(async (
-    currentPassword: string,
-    newPassword: string
-  ): Promise<AuthResult> => {
-    setState(prev => ({ ...prev, error: null }));
-    return changePassword(currentPassword, newPassword);
-  }, []);
-
-  // Delete account
-  const handleDeleteAccount = useCallback(async (password?: string): Promise<AuthResult> => {
-    setState(prev => ({ ...prev, isLoading: true, error: null }));
-
-    const result = await deleteAccount(password);
-
-    if (!result.success) {
-      setState(prev => ({ ...prev, isLoading: false, error: result.error ?? null }));
-    }
-
-    return result;
-  }, []);
-
-  // Resend verification email
-  const handleResendVerification = useCallback(async (): Promise<AuthResult> => {
-    return resendEmailVerification();
-  }, []);
-
-  // Clear error
-  const clearError = useCallback(() => {
-    setState(prev => ({ ...prev, error: null }));
-  }, []);
-
-  // Sync local data to cloud
-  const syncToCloud = useCallback(async (): Promise<void> => {
-    // This will be called from DeclutterContext with the actual data
-  }, []);
-
-  // Load data from cloud
-  const loadFromCloud = useCallback(async () => {
-    if (!state.isAuthenticated) return null;
-    return loadAllDataFromCloud();
-  }, [state.isAuthenticated]);
-
-  const value: AuthContextValue = {
-    ...state,
-    signIn,
-    signUp,
-    signOut: handleSignOut,
-    signInWithApple: handleAppleSignIn,
-    continueAsGuest,
-    resetPassword: handleResetPassword,
-    updateProfile: handleUpdateProfile,
-    changePassword: handleChangePassword,
-    deleteAccount: handleDeleteAccount,
-    resendVerification: handleResendVerification,
-    clearError,
-    syncToCloud,
-    loadFromCloud,
-  };
-
-  return (
-    <AuthContext.Provider value={value}>
-      {children}
-    </AuthContext.Provider>
-  );
+  ) => Promise<AuthResult>;
+  signOut: () => Promise<void>;
+  continueAsGuest: () => Promise<AuthResult>;
+  updateProfile: (updates: {
+    displayName?: string;
+    photoURL?: string;
+  }) => Promise<AuthResult>;
+  deleteAccount: (password?: string) => Promise<AuthResult>;
+  clearError: () => void;
+  syncToCloud: (data: SyncData) => Promise<void>;
+  loadFromCloud: () => Promise<any>;
+  syncStatus: SyncStatus;
+  lastSyncTime: Date | null;
+  isOnline: boolean;
 }
 
-// Hook to use auth context
+const AuthContext = createContext<AuthContextValue | null>(null);
+const AUTH_STATE_KEY = '@declutterly_auth_state';
+
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+  return 'An unexpected authentication error occurred.';
+}
+
+function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
+
+function toSerializableData<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function mapUser(user: any | null | undefined): AuthUser | null {
+  if (!user?._id) return null;
+  return {
+    uid: String(user._id),
+    email: user.email ?? null,
+    displayName: user.name ?? null,
+    photoURL: user.avatar ?? null,
+    isAnonymous: !!user.isAnonymous,
+    emailVerified: !!user.emailVerificationTime || !user.email,
+  };
+}
+
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const { signIn: authSignIn, signOut: authSignOut } = useAuthActions();
+  const { isAuthenticated, isLoading: authIsLoading } = useConvexAuth();
+  const currentUser = useQuery(api.users.get, isAuthenticated ? {} : 'skip');
+
+  const [error, setError] = useState<string | null>(null);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>('idle');
+  const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
+  const [isOnline, setIsOnline] = useState(true);
+  const [pendingAuthAction, setPendingAuthAction] = useState(false);
+
+  const user = useMemo(() => mapUser(currentUser), [currentUser]);
+  const isResolvingUser = isAuthenticated && currentUser === undefined;
+  const isLoading = authIsLoading || pendingAuthAction || isResolvingUser;
+
+  useEffect(() => {
+    const unsubscribe = NetInfo.addEventListener((state) => {
+      setIsOnline(state.isConnected ?? true);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (!isAuthenticated || !user) {
+      void AsyncStorage.removeItem(AUTH_STATE_KEY);
+      return;
+    }
+
+    void (async () => {
+      await AsyncStorage.setItem(AUTH_STATE_KEY, JSON.stringify(user));
+      await registerForPushNotifications();
+    })();
+  }, [isAuthenticated, user]);
+
+  const runAuthFlow = useCallback(
+    async (
+      provider: string,
+      params?: Record<string, string | boolean | number | undefined>
+    ): Promise<AuthResult> => {
+      setPendingAuthAction(true);
+      setError(null);
+
+      try {
+        const cleanedParams = Object.fromEntries(
+          Object.entries(params ?? {}).filter(([, value]) => value !== undefined)
+        ) as Record<string, string | boolean | number>;
+        const result = await authSignIn(provider, cleanedParams);
+        if (!result.signingIn) {
+          throw new Error('Additional verification is not configured for this sign-in flow.');
+        }
+        return { success: true };
+      } catch (authError) {
+        const message = getErrorMessage(authError);
+        setError(message);
+        return { success: false, error: message };
+      } finally {
+        setPendingAuthAction(false);
+      }
+    },
+    [authSignIn]
+  );
+
+  const signIn = useCallback(
+    async (email: string, password: string): Promise<AuthResult> =>
+      runAuthFlow('password', {
+        flow: 'signIn',
+        email: normalizeEmail(email),
+        password,
+      }),
+    [runAuthFlow]
+  );
+
+  const signUp = useCallback(
+    async (
+      email: string,
+      password: string,
+      displayName?: string
+    ): Promise<AuthResult> =>
+      runAuthFlow('password', {
+        flow: 'signUp',
+        email: normalizeEmail(email),
+        password,
+        name: displayName?.trim() || undefined,
+      }),
+    [runAuthFlow]
+  );
+
+  const signOut = useCallback(async (): Promise<void> => {
+    setPendingAuthAction(true);
+    setError(null);
+
+    try {
+      await authSignOut();
+      await AsyncStorage.removeItem(AUTH_STATE_KEY);
+    } finally {
+      setPendingAuthAction(false);
+    }
+  }, [authSignOut]);
+
+  const continueAsGuest = useCallback(
+    async (): Promise<AuthResult> => runAuthFlow('anonymous'),
+    [runAuthFlow]
+  );
+
+  const updateProfile = useCallback(
+    async (updates: { displayName?: string; photoURL?: string }): Promise<AuthResult> => {
+      if (!user) {
+        return { success: false, error: 'No user signed in.' };
+      }
+
+      try {
+        await convex.mutation(api.users.update, {
+          name: updates.displayName,
+          avatar: updates.photoURL,
+        });
+        return {
+          success: true,
+          user: {
+            ...user,
+            displayName: updates.displayName ?? user.displayName,
+            photoURL: updates.photoURL ?? user.photoURL,
+          },
+        };
+      } catch (updateError) {
+        const message = getErrorMessage(updateError);
+        setError(message);
+        return { success: false, error: message };
+      }
+    },
+    [user]
+  );
+
+  const deleteAccount = useCallback(
+    async (_password?: string): Promise<AuthResult> => {
+      if (!user) {
+        return { success: false, error: 'No user signed in.' };
+      }
+
+      setPendingAuthAction(true);
+      setError(null);
+
+      try {
+        await convex.mutation(api.users.deleteAccount, {});
+        await authSignOut();
+        await AsyncStorage.removeItem(AUTH_STATE_KEY);
+        return { success: true };
+      } catch (deleteError) {
+        const message = getErrorMessage(deleteError);
+        setError(message);
+        return { success: false, error: message };
+      } finally {
+        setPendingAuthAction(false);
+      }
+    },
+    [authSignOut, user]
+  );
+
+  const clearError = useCallback(() => {
+    setError(null);
+  }, []);
+
+  const syncToCloud = useCallback(async (_data: SyncData): Promise<void> => {
+    if (!isAuthenticated) return;
+
+    setSyncStatus('syncing');
+
+    try {
+      const data = toSerializableData(_data);
+      await convex.mutation(api.sync.replaceUserState, {
+        profile: data.profile,
+        rooms: data.rooms,
+        stats: data.stats,
+        settings: data.settings,
+        mascot: data.mascot,
+        collection: data.collection,
+        collectionStats: data.collectionStats,
+      });
+      setSyncStatus('success');
+      setLastSyncTime(new Date());
+
+      setTimeout(() => {
+        setSyncStatus('idle');
+      }, 1000);
+    } catch (syncError) {
+      const message = getErrorMessage(syncError);
+      console.error('Convex sync failed:', syncError);
+      setError(message);
+      setSyncStatus('error');
+
+      setTimeout(() => {
+        setSyncStatus('idle');
+      }, 2000);
+    }
+  }, [isAuthenticated]);
+
+  const loadFromCloud = useCallback(async () => {
+    if (!isAuthenticated) return null;
+    return convex.query(api.sync.getUserState, {});
+  }, [isAuthenticated]);
+
+  const value = useMemo<AuthContextValue>(
+    () => ({
+      user,
+      isLoading,
+      isAuthenticated,
+      isAnonymous: !!user?.isAnonymous,
+      isEmailVerified: !!user?.emailVerified,
+      isAuthReady: !authIsLoading,
+      error,
+      signIn,
+      signUp,
+      signOut,
+      continueAsGuest,
+      updateProfile,
+      deleteAccount,
+      clearError,
+      syncToCloud,
+      loadFromCloud,
+      syncStatus,
+      lastSyncTime,
+      isOnline,
+    }),
+    [
+      authIsLoading,
+      clearError,
+      continueAsGuest,
+      deleteAccount,
+      error,
+      isAuthenticated,
+      isLoading,
+      isOnline,
+      lastSyncTime,
+      loadFromCloud,
+      signIn,
+      signOut,
+      signUp,
+      syncStatus,
+      syncToCloud,
+      updateProfile,
+      user,
+    ]
+  );
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+}
+
 export function useAuth(): AuthContextValue {
   const context = useContext(AuthContext);
   if (!context) {
@@ -304,7 +363,6 @@ export function useAuth(): AuthContextValue {
   return context;
 }
 
-// Hook to check if user needs to complete profile
 export function useNeedsProfile(): boolean {
   const { user, isAuthenticated, isAnonymous } = useAuth();
   return isAuthenticated && !isAnonymous && !!user;

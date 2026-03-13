@@ -1,13 +1,19 @@
 /**
- * Declutterly - Gemini AI Service
- * Handles image/video analysis for room decluttering
+ * Declutterly - Z.AI GLM-4.6V Service
+ * Handles image/video analysis for room decluttering using Z.AI's vision model
+ * 
+ * GLM-4.6V Features:
+ * - Native multimodal tool calling
+ * - Full object detection with bounding boxes
+ * - 128K context window
+ * - Thinking mode for transparent reasoning
  */
 
 import { AIAnalysisResult, CleaningTask, Priority, TaskDifficulty, RoomType } from '@/types/declutter';
 import { AIAnalysisResponseSchema, ProgressAnalysisResponseSchema } from '@/types/schemas';
 import { apiRateLimiter } from '@/services/secureStorage';
 import NetInfo from '@react-native-community/netinfo';
-import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
+import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import * as FileSystem from 'expo-file-system/legacy';
 
 const { cacheDirectory } = FileSystem;
@@ -20,26 +26,22 @@ async function isOnline(): Promise<boolean> {
     const networkState = await NetInfo.fetch();
     return networkState.isConnected === true && networkState.isInternetReachable !== false;
   } catch {
-    // If we can't check, assume online and let the request fail naturally
     return true;
   }
 }
 
 /**
  * Optimize image for API upload - resize to max 1920px and compress
- * This reduces memory usage, API payload size, and improves upload speed
  */
 const MAX_IMAGE_DIMENSION = 1920;
 const IMAGE_COMPRESSION_QUALITY = 0.8;
 
 async function optimizeImage(base64Image: string): Promise<string> {
   try {
-    // Remove data URL prefix if present to get pure base64
     const base64Data = base64Image.includes('base64,')
       ? base64Image.split('base64,')[1]
       : base64Image;
 
-    // Check if cacheDirectory is available
     if (!cacheDirectory) {
       if (__DEV__) {
         console.warn('FileSystem cacheDirectory not available, skipping optimization');
@@ -47,45 +49,62 @@ async function optimizeImage(base64Image: string): Promise<string> {
       return base64Data;
     }
 
-    // Create a temporary file URI from the base64 data
     const tempUri = `${cacheDirectory}temp_image_${Date.now()}.jpg`;
     await FileSystem.writeAsStringAsync(tempUri, base64Data, {
       encoding: 'base64' as const,
     });
 
-    // Manipulate the image - resize if needed and compress
-    const context = ImageManipulator.manipulate(tempUri);
-    context.resize({ width: MAX_IMAGE_DIMENSION });
-    const renderedImage = await context.renderAsync();
-    const savedImage = await renderedImage.saveAsync({
-      compress: IMAGE_COMPRESSION_QUALITY,
-      format: SaveFormat.JPEG,
-      base64: true,
-    });
+    const manipResult = await manipulateAsync(
+      tempUri,
+      [{ resize: { width: MAX_IMAGE_DIMENSION } }],
+      {
+        compress: IMAGE_COMPRESSION_QUALITY,
+        format: SaveFormat.JPEG,
+        base64: true,
+      }
+    );
 
-    // Clean up temp file
-    await FileSystem.deleteAsync(tempUri, { idempotent: true }).catch(() => {
-      // Ignore cleanup errors
-    });
+    await FileSystem.deleteAsync(tempUri, { idempotent: true }).catch(() => {});
 
-    // Return the optimized base64 (without data URL prefix)
-    return (savedImage as { base64?: string }).base64 || base64Data;
+    return manipResult.base64 || base64Data;
   } catch (error) {
     if (__DEV__) {
       console.warn('Image optimization failed, using original:', error);
     }
-    // Fallback to original image if optimization fails
     return base64Image.includes('base64,')
       ? base64Image.split('base64,')[1]
       : base64Image;
   }
 }
 
-// Using Gemini 2.5 Flash - production-ready with excellent multimodal capabilities
-// Alternative: 'gemini-3-flash-preview' for cutting-edge (preview) performance
-const GEMINI_MODEL = 'gemini-2.5-flash';
-const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
-const GEMINI_API_URL = `${GEMINI_API_BASE}/${GEMINI_MODEL}:generateContent`;
+// Z.AI API configuration - Using GLM-4.6V (flagship vision model)
+const ZAI_MODEL = 'glm-4.6v';
+const ZAI_MODEL_FREE = 'glm-4.6v-flash';
+
+// Endpoint configuration
+// Coding Plan: https://api.z.ai/api/coding/paas/v4 (subscription users)
+// Standard:    https://api.z.ai/api/paas/v4 (pay-as-you-go)
+const ZAI_API_BASE_STANDARD = 'https://api.z.ai/api/paas/v4';
+const ZAI_API_BASE_CODING = 'https://api.z.ai/api/coding/paas/v4';
+
+const ENV_USE_CODING_PLAN = process.env.EXPO_PUBLIC_ZAI_CODING_PLAN === 'true';
+let useCodingPlan = ENV_USE_CODING_PLAN;
+
+export function setZaiCodingPlan(enabled: boolean) {
+  useCodingPlan = enabled;
+}
+
+export function isUsingCodingPlan(): boolean {
+  return useCodingPlan;
+}
+
+function getApiBaseUrl(): string {
+  return useCodingPlan ? ZAI_API_BASE_CODING : ZAI_API_BASE_STANDARD;
+}
+
+function getApiUrl(): string {
+  return `${getApiBaseUrl()}/chat/completions`;
+}
 
 /**
  * Sanitizes error messages to prevent leaking sensitive information
@@ -93,9 +112,8 @@ const GEMINI_API_URL = `${GEMINI_API_BASE}/${GEMINI_MODEL}:generateContent`;
 function sanitizeErrorMessage(error: unknown): string {
   if (error instanceof Error) {
     const message = error.message.toLowerCase();
-    // Check for common API error patterns and return generic messages
-    if (message.includes('api key') || message.includes('apikey')) {
-      return 'API configuration error. Please check your settings.';
+    if (message.includes('api key') || message.includes('apikey') || message.includes('authorization')) {
+      return 'API configuration error. Please check your Z.AI API key in Settings.';
     }
     if (message.includes('quota') || message.includes('rate limit')) {
       return 'Too many requests. Please try again in a moment.';
@@ -106,39 +124,54 @@ function sanitizeErrorMessage(error: unknown): string {
     if (message.includes('timeout')) {
       return 'Request timed out. Please try again.';
     }
-    // For other errors, return a generic message in production
     if (!__DEV__) {
       return 'An error occurred. Please try again.';
     }
-    // In dev, return the actual message but without sensitive data
     return error.message.replace(/key=[^&\s]+/gi, 'key=[REDACTED]');
   }
   return 'An unexpected error occurred.';
 }
 
-// API Key from environment variable (preferred) or runtime override
-const ENV_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY || '';
+// API Key from environment variable or runtime override
+const ENV_API_KEY = process.env.EXPO_PUBLIC_ZAI_API_KEY || '';
 let runtimeApiKey = '';
+let useFreeTier = false;
 
-export function setGeminiApiKey(key: string) {
+export function setZaiApiKey(key: string) {
   runtimeApiKey = key;
 }
 
-export function getGeminiApiKey(): string {
+export function getZaiApiKey(): string {
   return runtimeApiKey || ENV_API_KEY;
 }
 
-// Check if API key is configured
-export function isApiKeyConfigured(): boolean {
+export function isZaiApiKeyConfigured(): boolean {
   return !!(runtimeApiKey || ENV_API_KEY);
 }
 
-// Get the active API key (prefers runtime override, then env)
+export function setZaiFreeTier(free: boolean) {
+  useFreeTier = free;
+}
+
+export function isUsingFreeTier(): boolean {
+  return useFreeTier;
+}
+
 function getActiveApiKey(): string {
   return runtimeApiKey || ENV_API_KEY;
 }
 
+function getActiveModel(): string {
+  return useFreeTier ? ZAI_MODEL_FREE : ZAI_MODEL;
+}
+
+// System prompt for declutter analysis - Enhanced for GLM-4.6V capabilities
 const DECLUTTER_SYSTEM_PROMPT = `You are a friendly, expert cleaning coach helping people declutter and clean their spaces. You specialize in helping people with ADHD, anxiety, and those who feel overwhelmed by cleaning tasks.
+
+## Your Capabilities (GLM-4.6V):
+- Full object detection with precise location identification
+- Multi-image understanding for before/after comparisons
+- Native visual reasoning for clutter assessment
 
 ## YOUR APPROACH
 1. Be WARM and NON-JUDGMENTAL - never shame the user for mess
@@ -171,30 +204,39 @@ For EACH visible item that needs action, identify:
 Categorize items as: trash, dishes, clothes, papers, belongs_elsewhere, misc
 
 ### Step 4: Task Generation
-Create 4-6 actionable tasks (not more) that:
+Create tasks that:
 - Reference SPECIFIC objects you identified
 - Include exact source AND destination locations
 - Have clear dependencies (what must happen first)
-- Keep descriptions concise (2-3 sentences max)
-- Include 1-2 practical tips per task
+- Provide decision support for sorting tasks
+- Include tips for HOW to do each step
 
 ### Step 5: Time & Energy Profiles
-Generate task lists for different scenarios (use task references, not full details):
-- MINIMAL (5 min): 2 quick tasks
-- QUICK (15 min): 3-4 tasks
-- STANDARD (30 min): 4-5 tasks
-- COMPLETE (60+ min): All tasks
+Generate task lists for different scenarios:
+- MINIMAL (5 min, exhausted): 2-3 maintenance tasks, no decisions
+- QUICK (15 min, low energy): 4-5 quick wins, minimal decisions
+- STANDARD (30 min, moderate energy): 8-10 tasks with some organization
+- COMPLETE (60+ min, high energy): Full cleaning with deep organization
 
 ## TASK REQUIREMENTS
 
-Each task MUST include (keep responses concise):
+Each task MUST include:
 - zone: Which zone this task addresses
-- targetObjects: List of specific items (max 3-4)
+- targetObjects: List of specific items this task handles
 - destination: Where items should end up
+- dependencies: What tasks must complete first (if any)
 - energyRequired: minimal/low/moderate/high
-- visualImpact: low/medium/high
-- tips: 1-2 brief practical tips
-- subtasks: 2-3 tiny steps with estimatedSeconds
+- decisionLoad: none/low/medium/high (how many choices user must make)
+- visualImpact: low/medium/high (how much cleaner room will LOOK)
+- whyThisMatters: Brief psychological benefit
+- resistanceHandler: Pre-emptive response to "I don't want to do this"
+
+## DECISION SUPPORT
+
+For sorting tasks (clothes, papers, misc), provide decisionPoints with:
+- Clear criteria for keep/donate/trash decisions
+- The "5-second rule": if hesitating >5 seconds, use default action
+- Emotional support for letting go of items
 
 ## OUTPUT FORMAT
 
@@ -240,44 +282,72 @@ Respond with valid JSON:
   "tasks": [
     {
       "title": "Action verb + specific task",
-      "description": "Brief instructions (2-3 sentences)",
+      "description": "Detailed instructions with locations and methods",
       "emoji": "relevant emoji",
       "priority": "high|medium|low",
       "difficulty": "quick|medium|challenging",
       "estimatedMinutes": number,
       "zone": "zone-id",
-      "targetObjects": ["max 3-4 items"],
-      "destination": {"location": "where"},
-      "category": "trash_removal|surface_clearing|dishes|laundry|organization|maintenance",
+      "targetObjects": ["object names"],
+      "destination": {"location": "where", "instructions": "how"},
+      "dependencies": ["task-ids that must complete first"],
+      "category": "trash_removal|surface_clearing|dishes|laundry|organization|deep_cleaning|maintenance|donation_sorting|setup",
       "energyRequired": "minimal|low|moderate|high",
+      "decisionLoad": "none|low|medium|high",
       "visualImpact": "low|medium|high",
-      "tips": ["1-2 brief tips"],
-      "subtasks": [{"title": "tiny action", "estimatedSeconds": 60}]
+      "tips": ["practical tip 1", "practical tip 2"],
+      "subtasks": [{"title": "tiny action", "estimatedSeconds": 60}],
+      "whyThisMatters": "psychological benefit",
+      "resistanceHandler": "response to not wanting to do this"
     }
   ],
   
-  "quickWins": ["task title 1", "task title 2"],
-  "estimatedTotalTime": total minutes
+  "taskGraph": {
+    "criticalPath": ["task-ids in importance order"],
+    "parallelGroups": [["tasks", "that", "can run together"]],
+    "setupTasks": ["enabling tasks"],
+    "optionalTasks": ["nice-to-have"]
+  },
+  
+  "timeProfiles": {
+    "minimal": {"tasks": ["task-ids"], "expectedImpact": 0-100},
+    "quick": {"tasks": ["task-ids"], "expectedImpact": 0-100},
+    "standard": {"tasks": ["task-ids"], "expectedImpact": 0-100},
+    "complete": {"tasks": ["task-ids"], "expectedImpact": 0-100}
+  },
+  
+  "energyProfiles": {
+    "exhausted": ["task-ids"],
+    "low": ["task-ids"],
+    "moderate": ["task-ids"],
+    "high": ["task-ids"]
+  },
+  
+  "quickWins": [
+    {"taskId": "ref", "visualImpact": "high|medium", "timeMinutes": number, "reason": "why quick win"}
+  ],
+  
+  "decisionPoints": [
+    {
+      "trigger": "when sorting clothes",
+      "question": "Have I worn this in 6 months?",
+      "options": [
+        {"answer": "Yes, clean", "action": "Hang in closet"},
+        {"answer": "Yes, dirty", "action": "Put in hamper"},
+        {"answer": "No", "action": "Donate pile"}
+      ],
+      "fiveSecondDefault": "Keep for now, decide later",
+      "emotionalSupport": "Letting go creates space for what matters"
+    }
+  ],
+  
+  "estimatedTotalTime": total minutes,
+  "beforeAfterMetrics": ["Floor visibility", "Surfaces cleared", "Items removed"]
 }`;
-
-// Helper to convert base64 image for API
-function createImagePart(base64Image: string, mimeType: string = 'image/jpeg') {
-  // Remove data URL prefix if present
-  const base64Data = base64Image.includes('base64,')
-    ? base64Image.split('base64,')[1]
-    : base64Image;
-
-  return {
-    inlineData: {
-      data: base64Data,
-      mimeType,
-    },
-  };
-}
 
 // Generate unique IDs
 function generateId(): string {
-  return `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+  return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 }
 
 function extractJsonFromResponse(responseText: string): string {
@@ -285,76 +355,10 @@ function extractJsonFromResponse(responseText: string): string {
   return jsonMatch ? jsonMatch[1].trim() : responseText;
 }
 
-/**
- * Attempt to repair truncated JSON by closing open brackets/braces
- */
-function repairTruncatedJson(jsonStr: string): string {
-  // Count open brackets and braces
-  let openBraces = 0;
-  let openBrackets = 0;
-  let inString = false;
-  let escapeNext = false;
-
-  for (const char of jsonStr) {
-    if (escapeNext) {
-      escapeNext = false;
-      continue;
-    }
-    if (char === '\\' && inString) {
-      escapeNext = true;
-      continue;
-    }
-    if (char === '"') {
-      inString = !inString;
-      continue;
-    }
-    if (inString) continue;
-
-    if (char === '{') openBraces++;
-    else if (char === '}') openBraces--;
-    else if (char === '[') openBrackets++;
-    else if (char === ']') openBrackets--;
-  }
-
-  // If we're in a string, close it
-  let repaired = jsonStr;
-  if (inString) {
-    repaired += '"';
-  }
-
-  // Remove any trailing incomplete key-value pairs
-  repaired = repaired.replace(/,\s*"[^"]*"?\s*:?\s*"?[^"{}[\]]*$/, '');
-  repaired = repaired.replace(/,\s*$/, '');
-
-  // Close open brackets and braces
-  for (let i = 0; i < openBrackets; i++) {
-    repaired += ']';
-  }
-  for (let i = 0; i < openBraces; i++) {
-    repaired += '}';
-  }
-
-  return repaired;
-}
-
 function parseAIResponse(responseText: string): AIAnalysisResult {
   try {
-    let jsonStr = extractJsonFromResponse(responseText);
-    let rawParsed: any;
-
-    try {
-      rawParsed = JSON.parse(jsonStr);
-    } catch (parseError) {
-      // Try to repair truncated JSON
-      if (__DEV__) {
-        console.log('Initial JSON parse failed, attempting repair...');
-      }
-      const repairedJson = repairTruncatedJson(jsonStr);
-      rawParsed = JSON.parse(repairedJson);
-      if (__DEV__) {
-        console.log('JSON repair successful');
-      }
-    }
+    const jsonStr = extractJsonFromResponse(responseText);
+    const rawParsed = JSON.parse(jsonStr);
     
     const validationResult = AIAnalysisResponseSchema.safeParse(rawParsed);
     
@@ -432,6 +436,7 @@ function parseAIResponse(responseText: string): AIAnalysisResult {
   }
 }
 
+// Default tasks when AI analysis fails
 function getDefaultTasks(): CleaningTask[] {
   return [
     {
@@ -583,12 +588,14 @@ function getDefaultTasks(): CleaningTask[] {
   ];
 }
 
-// Main analysis function - analyzes an image of a room
-export async function analyzeRoomImage(
+/**
+ * Main analysis function using Z.AI GLM-4.6V
+ */
+export async function analyzeRoomImageWithZai(
   base64Image: string,
   additionalContext?: string
 ): Promise<AIAnalysisResult> {
-  // Check network connectivity first
+  // Check network connectivity
   const online = await isOnline();
   if (!online) {
     throw new Error('No internet connection. Please check your network and try again.');
@@ -596,11 +603,7 @@ export async function analyzeRoomImage(
 
   const apiKey = getActiveApiKey();
   if (!apiKey) {
-    throw new Error('Gemini API key not configured. Please add your API key in Settings.');
-  }
-
-  if (__DEV__) {
-    console.log('Gemini API key configured:', apiKey.length, 'chars, starts with:', apiKey.substring(0, 6));
+    throw new Error('Z.AI API key not configured. Please add your API key in Settings.');
   }
 
   // Check rate limit
@@ -609,7 +612,7 @@ export async function analyzeRoomImage(
     throw new Error(`Too many requests. Please wait ${waitTime} seconds before trying again.`);
   }
 
-  // Sanitize additional context to prevent injection
+  // Sanitize additional context
   const sanitizedContext = additionalContext
     ? additionalContext.slice(0, 500).replace(/[<>{}]/g, '')
     : undefined;
@@ -618,32 +621,45 @@ export async function analyzeRoomImage(
     ? `Analyze this room and create a decluttering plan. Additional context: ${sanitizedContext}`
     : 'Analyze this room and create a decluttering plan. Be encouraging and break tasks into small, manageable steps.';
 
-  // Optimize image before sending to API
+  // Optimize image before sending
   const optimizedImage = await optimizeImage(base64Image);
 
   const requestBody = {
-    contents: [
+    model: getActiveModel(),
+    messages: [
       {
-        parts: [
-          { text: DECLUTTER_SYSTEM_PROMPT },
-          { text: userPrompt },
-          createImagePart(optimizedImage),
+        role: 'system',
+        content: DECLUTTER_SYSTEM_PROMPT,
+      },
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'image_url',
+            image_url: {
+              url: `data:image/jpeg;base64,${optimizedImage}`,
+            },
+          },
+          {
+            type: 'text',
+            text: userPrompt,
+          },
         ],
       },
     ],
-    generationConfig: {
-      temperature: 0.7,
-      topP: 0.95,
-      maxOutputTokens: 16384,
+    thinking: {
+      type: 'enabled', // Enable thinking mode for better reasoning
     },
+    temperature: 0.7,
+    max_tokens: 8192,
   };
 
   try {
-    const response = await fetch(GEMINI_API_URL, {
+    const response = await fetch(getApiUrl(), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-goog-api-key': apiKey,
+        'Authorization': `Bearer ${apiKey}`,
       },
       body: JSON.stringify(requestBody),
     });
@@ -651,32 +667,34 @@ export async function analyzeRoomImage(
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
       const rawMessage = errorData.error?.message || `API request failed with status ${response.status}`;
-      if (__DEV__) {
-        console.error('Gemini API raw error:', response.status, rawMessage);
-      }
       throw new Error(sanitizeErrorMessage(new Error(rawMessage)));
     }
 
     const data = await response.json();
-    const responseText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    
+    const responseText = data.choices?.[0]?.message?.content;
 
     if (!responseText) {
       throw new Error('No response from AI. Please try again.');
     }
 
+    if (__DEV__ && data.choices?.[0]?.message?.reasoning_content) {
+      console.log('GLM-4.6V Thinking:', data.choices[0].message.reasoning_content);
+    }
+
     return parseAIResponse(responseText);
   } catch (error) {
-    // Log sanitized error in dev only
     if (__DEV__) {
-      console.error('Gemini API error:', sanitizeErrorMessage(error));
+      console.error('Z.AI API error:', sanitizeErrorMessage(error));
     }
-    // Re-throw with sanitized message
     throw new Error(sanitizeErrorMessage(error));
   }
 }
 
-// Analyze progress between two photos
-export async function analyzeProgress(
+/**
+ * Analyze progress between two photos using GLM-4.6V
+ */
+export async function analyzeProgressWithZai(
   beforeImage: string,
   afterImage: string
 ): Promise<{
@@ -685,7 +703,6 @@ export async function analyzeProgress(
   remainingTasks: string[];
   encouragement: string;
 }> {
-  // Check network connectivity first
   const online = await isOnline();
   if (!online) {
     return {
@@ -698,10 +715,9 @@ export async function analyzeProgress(
 
   const apiKey = getActiveApiKey();
   if (!apiKey) {
-    throw new Error('Gemini API key not configured. Please add your API key in Settings.');
+    throw new Error('Z.AI API key not configured. Please add your API key in Settings.');
   }
 
-  // Check rate limit
   if (!apiRateLimiter.canMakeRequest()) {
     return {
       progressPercentage: 50,
@@ -723,36 +739,57 @@ Analyze the progress made and respond with JSON:
 
 Be very encouraging! Focus on what WAS accomplished, not what wasn't.`;
 
-  // Optimize both images before sending to API
   const [optimizedBefore, optimizedAfter] = await Promise.all([
     optimizeImage(beforeImage),
     optimizeImage(afterImage),
   ]);
 
   const requestBody = {
-    contents: [
+    model: getActiveModel(),
+    messages: [
       {
-        parts: [
-          { text: progressPrompt },
-          { text: 'Before image:' },
-          createImagePart(optimizedBefore),
-          { text: 'After image:' },
-          createImagePart(optimizedAfter),
+        role: 'user',
+        content: [
+          {
+            type: 'text',
+            text: progressPrompt,
+          },
+          {
+            type: 'text',
+            text: 'Before image:',
+          },
+          {
+            type: 'image_url',
+            image_url: {
+              url: `data:image/jpeg;base64,${optimizedBefore}`,
+            },
+          },
+          {
+            type: 'text',
+            text: 'After image:',
+          },
+          {
+            type: 'image_url',
+            image_url: {
+              url: `data:image/jpeg;base64,${optimizedAfter}`,
+            },
+          },
         ],
       },
     ],
-    generationConfig: {
-      temperature: 0.7,
-      maxOutputTokens: 2048,
+    thinking: {
+      type: 'enabled',
     },
+    temperature: 0.7,
+    max_tokens: 2048,
   };
 
   try {
-    const response = await fetch(GEMINI_API_URL, {
+    const response = await fetch(getApiUrl(), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-goog-api-key': apiKey,
+        'Authorization': `Bearer ${apiKey}`,
       },
       body: JSON.stringify(requestBody),
     });
@@ -762,7 +799,7 @@ Be very encouraging! Focus on what WAS accomplished, not what wasn't.`;
     }
 
     const data = await response.json();
-    const responseText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    const responseText = data.choices?.[0]?.message?.content;
 
     const jsonStr = extractJsonFromResponse(responseText);
     const rawParsed = JSON.parse(jsonStr);
@@ -789,47 +826,141 @@ Be very encouraging! Focus on what WAS accomplished, not what wasn't.`;
   }
 }
 
-// Get a motivational message
-export async function getMotivation(context: string): Promise<string> {
+/**
+ * Get object detection with bounding boxes using GLM-4.6V
+ * This is a specialized feature of GLM-4.6V for precise object location
+ */
+export async function detectObjectsInRoom(
+  base64Image: string
+): Promise<Array<{
+  label: string;
+  bbox_2d: [number, number, number, number];
+  condition: string;
+  priority: string;
+}>> {
+  const apiKey = getActiveApiKey();
+  if (!apiKey) {
+    throw new Error('Z.AI API key not configured.');
+  }
+
+  const optimizedImage = await optimizeImage(base64Image);
+
+  const detectionPrompt = `Identify ALL objects in this room that need attention for cleaning/organizing. 
+
+Return results in valid JSON format as a list where each element is:
+{
+  "label": "object name with number if multiple (e.g., clothes-pile-1)",
+  "bbox_2d": [xmin, ymin, xmax, ymax],
+  "condition": "clean|dirty|damaged|misplaced",
+  "priority": "high|medium|low|keep"
+}
+
+Focus on:
+- Clutter and items out of place
+- Dirty dishes, cups
+- Clothes on floor/furniture
+- Papers and documents
+- Trash
+- Items that need organizing
+
+Example:
+[
+  {"label": "clothes-pile-1", "bbox_2d": [100, 200, 300, 400], "condition": "misplaced", "priority": "high"},
+  {"label": "coffee-mug-1", "bbox_2d": [450, 150, 520, 220], "condition": "dirty", "priority": "medium"}
+]`;
+
+  const requestBody = {
+    model: getActiveModel(),
+    messages: [
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'image_url',
+            image_url: {
+              url: `data:image/jpeg;base64,${optimizedImage}`,
+            },
+          },
+          {
+            type: 'text',
+            text: detectionPrompt,
+          },
+        ],
+      },
+    ],
+    thinking: {
+      type: 'enabled',
+    },
+    temperature: 0.5, // Lower temperature for more precise detection
+    max_tokens: 4096,
+  };
+
+  try {
+    const response = await fetch(getApiUrl(), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    if (!response.ok) {
+      throw new Error(`API request failed with status ${response.status}`);
+    }
+
+    const data = await response.json();
+    const responseText = data.choices?.[0]?.message?.content;
+    const jsonStr = extractJsonFromResponse(responseText);
+    
+    return JSON.parse(jsonStr);
+  } catch (error) {
+    if (__DEV__) {
+      console.error('Object detection error:', error);
+    }
+    return [];
+  }
+}
+
+/**
+ * Get a motivational message using GLM-4.6V
+ */
+export async function getMotivationWithZai(context: string): Promise<string> {
   const apiKey = getActiveApiKey();
   if (!apiKey) {
     return getRandomMotivation();
   }
 
-  // Check rate limit - use fallback if limited
   if (!apiRateLimiter.canMakeRequest()) {
     return getRandomMotivation();
   }
 
-  // Sanitize context to prevent injection
   const sanitizedContext = context.slice(0, 200).replace(/[<>{}]/g, '');
 
   try {
     const requestBody = {
-      contents: [
+      model: getActiveModel(),
+      messages: [
         {
-          parts: [
-            { text: `You are a supportive friend helping someone clean their space. They might be feeling overwhelmed or unmotivated. Give them a short (1-2 sentences), warm, encouraging message. Context: ${sanitizedContext}. Be genuine, not cheesy.` },
-          ],
+          role: 'user',
+          content: `You are a supportive friend helping someone clean their space. They might be feeling overwhelmed or unmotivated. Give them a short (1-2 sentences), warm, encouraging message. Context: ${sanitizedContext}. Be genuine, not cheesy.`,
         },
       ],
-      generationConfig: {
-        temperature: 0.9,
-        maxOutputTokens: 100,
-      },
+      temperature: 0.9,
+      max_tokens: 100,
     };
 
-    const response = await fetch(GEMINI_API_URL, {
+    const response = await fetch(getApiUrl(), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-goog-api-key': apiKey,
+        'Authorization': `Bearer ${apiKey}`,
       },
       body: JSON.stringify(requestBody),
     });
 
     const data = await response.json();
-    return data.candidates?.[0]?.content?.parts?.[0]?.text || getRandomMotivation();
+    return data.choices?.[0]?.message?.content || getRandomMotivation();
   } catch {
     return getRandomMotivation();
   }

@@ -1,9 +1,7 @@
 import { AIAnalysisResult } from '@/types/declutter';
+import { api } from '@/convex/_generated/api';
+import { convex } from '@/config/convex';
 import {
-  analyzeRoomImage as analyzeWithGemini,
-  analyzeProgress as analyzeProgressWithGemini,
-  getMotivation as getMotivationWithGemini,
-  isApiKeyConfigured as isGeminiConfigured,
   setGeminiApiKey,
   getGeminiApiKey,
 } from './gemini';
@@ -39,7 +37,7 @@ export function isCurrentProviderConfigured(): boolean {
   if (currentProvider === 'zai') {
     return isZaiApiKeyConfigured();
   }
-  return isGeminiConfigured();
+  return true;
 }
 
 export function setApiKey(key: string, provider?: AIProvider) {
@@ -76,7 +74,10 @@ export async function analyzeRoomImage(
     setZaiCodingPlan(ENV_ZAI_CODING_PLAN);
     return analyzeRoomImageWithZai(base64Image, additionalContext);
   }
-  return analyzeWithGemini(base64Image, additionalContext);
+  return convex.action(api.gemini.analyzeRoom, {
+    base64Image,
+    additionalContext,
+  });
 }
 
 export async function analyzeProgress(
@@ -93,7 +94,10 @@ export async function analyzeProgress(
     setZaiCodingPlan(ENV_ZAI_CODING_PLAN);
     return analyzeProgressWithZai(beforeImage, afterImage);
   }
-  return analyzeProgressWithGemini(beforeImage, afterImage);
+  return convex.action(api.gemini.analyzeProgress, {
+    beforeImage,
+    afterImage,
+  });
 }
 
 export async function getMotivation(context: string): Promise<string> {
@@ -102,7 +106,9 @@ export async function getMotivation(context: string): Promise<string> {
     setZaiCodingPlan(ENV_ZAI_CODING_PLAN);
     return getMotivationWithZai(context);
   }
-  return getMotivationWithGemini(context);
+  return convex.action(api.gemini.getMotivation, {
+    context,
+  });
 }
 
 export { detectObjectsInRoom };
