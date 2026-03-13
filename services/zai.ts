@@ -205,10 +205,12 @@ For EACH visible item that needs action, identify:
 Categorize items as: trash, dishes, clothes, papers, belongs_elsewhere, misc
 
 ### Step 4: Task Generation - SCALED BY MESS LEVEL
-IMPORTANT: Scale the number of tasks based on the messLevel you assessed:
-- messLevel < 40 (light mess): Generate 4-6 tasks, each with 3-5 subtasks
-- messLevel 40-70 (moderate mess): Generate 6-10 tasks, each with 4-6 subtasks
-- messLevel > 70 (heavy mess): Generate 10-15 tasks, each with 5-8 MICRO-STEPS (even tinier actions for overwhelmed users)
+CRITICAL — You MUST generate the MINIMUM number of tasks specified below. Do NOT generate fewer:
+- messLevel < 40 (light mess): Generate EXACTLY 4-6 tasks, each with 3-5 subtasks
+- messLevel 40-70 (moderate mess): Generate EXACTLY 8-10 tasks, each with 4-6 subtasks
+- messLevel > 70 (heavy mess): Generate EXACTLY 12-15 tasks, each with 5-8 MICRO-STEPS (even tinier actions for overwhelmed users)
+
+If messLevel is above 70, you MUST generate at least 12 tasks. Break large actions into multiple separate tasks rather than combining them. For example, "Gather clothes" should be split into "Gather clothes from the floor near the bed", "Gather clothes from the desk chair", "Gather clothes from the floor by the door" etc.
 
 Each task MUST:
 - Reference SPECIFIC objects you identified by name
@@ -420,6 +422,10 @@ function parseAIResponse(responseText: string): AIAnalysisResult {
       suppliesNeeded: task.suppliesNeeded || [],
       decisionPoints: task.decisionPoints,
     }));
+
+    // Sort tasks by visual impact: high first, then medium, then low
+    const impactOrder: Record<string, number> = { high: 0, medium: 1, low: 2 };
+    tasks.sort((a, b) => (impactOrder[a.visualImpact || 'medium'] ?? 1) - (impactOrder[b.visualImpact || 'medium'] ?? 1));
 
     return {
       photoQuality: validated.photoQuality,
