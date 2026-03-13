@@ -324,6 +324,24 @@ export default function TaskCard({
                 </Text>
               </View>
 
+              {/* Why This Matters — always visible as motivation */}
+              {!expanded && task.whyThisMatters && !task.completed && (
+                <Text
+                  style={[
+                    Typography.caption1,
+                    {
+                      color: colors.success,
+                      marginTop: 4,
+                      lineHeight: 16,
+                      fontStyle: 'italic',
+                    },
+                  ]}
+                  numberOfLines={2}
+                >
+                  {task.whyThisMatters}
+                </Text>
+              )}
+
               <View style={styles.taskMeta}>
                 <Text style={[Typography.caption1, { color: colors.textSecondary }]}>
                   ~{task.estimatedMinutes} min
@@ -342,7 +360,7 @@ export default function TaskCard({
                 )}
               </View>
 
-              {!expanded && task.description && (
+              {!expanded && task.description && !task.whyThisMatters && (
                 <Text
                   style={[
                     Typography.caption1,

@@ -912,6 +912,37 @@ export default function RoomDetailScreen() {
           </Animated.View>
         )}
 
+        {/* "Good enough for today" Button */}
+        {room.tasks.length > 0 && completedCount > 0 && completedCount < room.tasks.length && !singleTaskMode && (
+          <Animated.View
+            entering={FadeInDown.delay(720).springify()}
+            style={styles.goodEnoughSection}
+          >
+            <Pressable
+              onPress={() => {
+                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                setShowGoodEnough(true);
+              }}
+              style={[styles.goodEnoughButton, {
+                backgroundColor: colorScheme === 'dark' ? colors.surface : colors.backgroundSecondary,
+                borderColor: colorScheme === 'dark' ? colors.cardBorder : colors.borderLight,
+              }]}
+              accessibilityRole="button"
+              accessibilityLabel="Good enough for today"
+            >
+              <Text style={{ fontSize: 20 }}>🌿</Text>
+              <View style={styles.goodEnoughText}>
+                <Text style={[Typography.subheadlineMedium, { color: colors.text }]}>
+                  Good enough for today
+                </Text>
+                <Text style={[Typography.caption1, { color: colors.textSecondary, marginTop: 2 }]}>
+                  You did {completedCount} task{completedCount !== 1 ? 's' : ''}. That&apos;s real progress.
+                </Text>
+              </View>
+            </Pressable>
+          </Animated.View>
+        )}
+
         {/* No Tasks Empty State */}
         {room.tasks.length === 0 && (
           <Animated.View
@@ -1416,6 +1447,21 @@ const styles = StyleSheet.create({
   featureEmoji: {
     fontSize: 28,
     marginBottom: 4,
+  },
+  goodEnoughSection: {
+    paddingHorizontal: Spacing.ml,
+    marginBottom: Spacing.md,
+  },
+  goodEnoughButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: Spacing.md,
+    borderRadius: BorderRadius.card,
+    borderWidth: 0.5,
+    gap: Spacing.sm,
+  },
+  goodEnoughText: {
+    flex: 1,
   },
   motivationSection: {
     paddingHorizontal: 20,

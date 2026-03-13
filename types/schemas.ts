@@ -8,6 +8,7 @@ import { z } from 'zod';
 export const SubtaskSchema = z.object({
   title: z.string().min(1),
   estimatedSeconds: z.number().optional(),
+  estimatedMinutes: z.number().optional(),
   isCheckpoint: z.boolean().optional(), // Good stopping point
 });
 
@@ -134,7 +135,10 @@ export const AITaskSchema = z.object({
   // NEW: Psychological Support
   whyThisMatters: z.string().optional(),
   resistanceHandler: z.string().optional(),
-  
+
+  // NEW: Supplies needed for this task
+  suppliesNeeded: z.array(z.string()).optional(),
+
   // NEW: Decision Points
   decisionPoints: z.array(DecisionPointSchema).optional(),
 });
@@ -252,14 +256,20 @@ export const ProgressAnalysisResponseSchema = z.object({
   completedTasks: z.array(z.string()).default([]),
   remainingTasks: z.array(z.string()).default([]),
   encouragement: z.string().default('Great progress! Keep going!'),
-  
+
+  // Structured result fields (aliases for UI consumption)
+  percentImproved: z.number().min(0).max(100).optional(),
+  areasImproved: z.array(z.string()).optional(),
+  areasRemaining: z.array(z.string()).optional(),
+  encouragingMessage: z.string().optional(),
+
   // NEW: Detailed comparison
   improvements: z.array(z.object({
     area: z.string(),
     before: z.string(),
     after: z.string(),
   })).optional(),
-  
+
   celebrationLevel: z.enum(['small', 'medium', 'big', 'massive']).optional(),
 });
 

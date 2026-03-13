@@ -1,6 +1,7 @@
 /**
  * Declutterly — Apple 2026 Tab Bar Layout
- * iOS 26 floating pill tab bar with emoji icons and adaptive colors
+ * iOS 26 floating pill tab bar with text labels and adaptive colors
+ * Improved active indicator contrast for both light and dark mode
  */
 
 import { Colors, ColorTokens } from '@/constants/Colors';
@@ -19,12 +20,13 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
+import { Ionicons } from '@expo/vector-icons';
 
-// Tab icon mapping
+// Tab icon mapping — SF Symbol / Ionicons fallbacks alongside emoji
 const TAB_ICONS = {
-  index:    { default: '🏠', active: '🏠' },
-  progress: { default: '📊', active: '📊' },
-  profile:  { default: '👤', active: '👤' },
+  index:    { icon: 'home', iconActive: 'home' },
+  progress: { icon: 'bar-chart-outline', iconActive: 'bar-chart' },
+  profile:  { icon: 'person-outline', iconActive: 'person' },
 } as const;
 
 // Tab labels
@@ -75,9 +77,7 @@ export default function TabLayout() {
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Custom Tab Bar — iOS 26 floating pill style
-// ─────────────────────────────────────────────────────────────────────────────
+// Custom Tab Bar
 interface CustomTabBarProps {
   state: { index: number; routes: Array<{ key: string; name: string }> };
   descriptors: Record<string, { options: { title?: string; tabBarAccessibilityLabel?: string } }>;
@@ -148,9 +148,7 @@ function CustomTabBar({ state, descriptors, navigation, colors, isDark, insets }
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Individual Tab Item
-// ─────────────────────────────────────────────────────────────────────────────
 interface TabItemProps {
   label: string;
   routeName: keyof typeof TAB_ICONS;
@@ -192,7 +190,7 @@ function TabItem({ label, routeName, isFocused, onPress, colors, isDark, accessi
   }));
 
   const iconData = TAB_ICONS[routeName];
-  const emoji = iconData?.[isFocused ? 'active' : 'default'] ?? '●';
+  const iconName = iconData?.[isFocused ? 'iconActive' : 'icon'] ?? 'ellipse';
 
   return (
     <Pressable
@@ -205,36 +203,38 @@ function TabItem({ label, routeName, isFocused, onPress, colors, isDark, accessi
       style={styles.tabItem}
     >
       <Animated.View style={[styles.tabItemInner, animatedStyle]}>
-        {/* Active indicator pill */}
+        {/* Active indicator pill — higher contrast */}
         <Animated.View
           style={[
             styles.activeIndicator,
             {
               backgroundColor: isDark
-                ? 'rgba(255, 255, 255, 0.12)'
-                : 'rgba(0, 0, 0, 0.06)',
+                ? 'rgba(10, 132, 255, 0.25)'
+                : 'rgba(0, 122, 255, 0.12)',
             },
             indicatorStyle,
           ]}
         />
 
-        {/* Icon */}
+        {/* Icon — using Ionicons for proper SF Symbol fallback */}
         <View style={styles.iconContainer}>
-          <Text
-            style={[styles.tabIcon, { opacity: isFocused ? 1 : 0.5 }]}
-            accessibilityElementsHidden
-          >
-            {emoji}
-          </Text>
+          <Ionicons
+            name={iconName as any}
+            size={22}
+            color={isFocused
+              ? (isDark ? '#0A84FF' : '#007AFF')
+              : (colors.tabIconDefault as string)}
+          />
         </View>
 
-        {/* Label */}
+        {/* Text label under icon */}
         <Text
           style={[
-            Typography.tabLabel,
             styles.tabLabel,
             {
-              color: isFocused ? colors.text : colors.tabIconDefault,
+              color: isFocused
+                ? (isDark ? '#0A84FF' : '#007AFF')
+                : (colors.tabIconDefault as string),
               fontWeight: isFocused ? '600' : '400',
             },
           ]}
@@ -299,10 +299,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  tabIcon: {
-    fontSize: 20,
-  },
   tabLabel: {
+    fontSize: 10,
     marginTop: 2,
   },
 });

@@ -1,6 +1,7 @@
 /**
  * Social & Challenges Screen
- * Convex-backed challenge hub
+ * Convex-backed challenge hub with quick challenge templates
+ * Simplified create form: title + type (auto-fill defaults)
  */
 
 import { GlassButton } from '@/components/ui/GlassButton';
@@ -39,6 +40,7 @@ import Animated, {
     SlideInRight,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useReducedMotion } from '@/hooks/useReducedMotion';
 
 // Challenge type info
 const CHALLENGE_TYPES: Record<ChallengeType, { icon: string; label: string; unit: string }> = {
@@ -48,6 +50,49 @@ const CHALLENGE_TYPES: Record<ChallengeType, { icon: string; label: string; unit
   streak: { icon: 'flame', label: 'Maintain Streak', unit: 'days' },
   collectibles: { icon: 'sparkles', label: 'Collect Items', unit: 'items' },
 };
+
+// Quick Challenge Templates
+const QUICK_CHALLENGES: Array<{
+  title: string;
+  type: ChallengeType;
+  target: number;
+  duration: number;
+  description: string;
+  icon: string;
+}> = [
+  {
+    title: '15-Minute Speed Clean',
+    type: 'time_spent',
+    target: 15,
+    duration: 1,
+    description: 'Spend 15 minutes cleaning as fast as you can!',
+    icon: 'flash',
+  },
+  {
+    title: 'Trash Bag Challenge',
+    type: 'tasks_count',
+    target: 5,
+    duration: 3,
+    description: 'Complete 5 tasks focused on clearing trash',
+    icon: 'trash',
+  },
+  {
+    title: 'Weekend Room Blitz',
+    type: 'room_complete',
+    target: 1,
+    duration: 2,
+    description: 'Fully clean one room over the weekend',
+    icon: 'home',
+  },
+  {
+    title: '7-Day Streak',
+    type: 'streak',
+    target: 7,
+    duration: 7,
+    description: 'Clean something every day for a week',
+    icon: 'flame',
+  },
+];
 
 // Challenge card component
 function ChallengeCard({
@@ -159,7 +204,7 @@ function ChallengeCard({
   );
 }
 
-// Create challenge modal
+// Simplified Create Challenge Modal — just title + type
 function CreateChallengeModal({
   visible,
   onClose,
@@ -173,10 +218,18 @@ function CreateChallengeModal({
   const insets = useSafeAreaInsets();
 
   const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
   const [type, setType] = useState<ChallengeType>('tasks_count');
-  const [target, setTarget] = useState('10');
-  const [duration, setDuration] = useState('7');
+
+  // Default values based on type
+  const getDefaults = (t: ChallengeType) => {
+    switch (t) {
+      case 'tasks_count': return { target: 10, duration: 7, description: 'Complete tasks together!' };
+      case 'time_spent': return { target: 60, duration: 7, description: 'Spend time cleaning together!' };
+      case 'room_complete': return { target: 1, duration: 7, description: 'Finish a room together!' };
+      case 'streak': return { target: 7, duration: 7, description: 'Build a streak together!' };
+      case 'collectibles': return { target: 10, duration: 7, description: 'Collect items while cleaning!' };
+    }
+  };
 
   const handleCreate = () => {
     if (!title.trim()) {
@@ -184,21 +237,19 @@ function CreateChallengeModal({
       return;
     }
 
+    const defaults = getDefaults(type);
+
     onCreate({
       type,
       title: title.trim(),
-      description: description.trim(),
-      target: parseInt(target) || 10,
+      description: defaults.description,
+      target: defaults.target,
       startDate: new Date(),
-      endDate: new Date(Date.now() + (parseInt(duration) || 7) * 24 * 60 * 60 * 1000),
+      endDate: new Date(Date.now() + defaults.duration * 24 * 60 * 60 * 1000),
     });
 
-    // Reset form
     setTitle('');
-    setDescription('');
     setType('tasks_count');
-    setTarget('10');
-    setDuration('7');
   };
 
   return (
@@ -243,22 +294,7 @@ function CreateChallengeModal({
               placeholderTextColor={colors.textTertiary}
               value={title}
               onChangeText={setTitle}
-            />
-
-            <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>
-              Description
-            </Text>
-            <TextInput
-              style={[
-                styles.modalInput,
-                styles.textArea,
-                { color: colors.text, borderColor: colors.border },
-              ]}
-              placeholder="Describe the challenge..."
-              placeholderTextColor={colors.textTertiary}
-              value={description}
-              onChangeText={setDescription}
-              multiline
+              accessibilityLabel="Challenge title"
             />
 
             <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>
@@ -300,39 +336,11 @@ function CreateChallengeModal({
               ))}
             </View>
 
-            <View style={styles.inputRow}>
-              <View style={styles.inputHalf}>
-                <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>
-                  Target ({CHALLENGE_TYPES[type].unit})
-                </Text>
-                <TextInput
-                  style={[
-                    styles.modalInput,
-                    { color: colors.text, borderColor: colors.border },
-                  ]}
-                  placeholder="10"
-                  placeholderTextColor={colors.textTertiary}
-                  value={target}
-                  onChangeText={setTarget}
-                  keyboardType="number-pad"
-                />
-              </View>
-              <View style={styles.inputHalf}>
-                <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>
-                  Duration (days)
-                </Text>
-                <TextInput
-                  style={[
-                    styles.modalInput,
-                    { color: colors.text, borderColor: colors.border },
-                  ]}
-                  placeholder="7"
-                  placeholderTextColor={colors.textTertiary}
-                  value={duration}
-                  onChangeText={setDuration}
-                  keyboardType="number-pad"
-                />
-              </View>
+            {/* Auto-generated defaults info */}
+            <View style={[styles.defaultsInfo, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)' }]}>
+              <Text style={[styles.defaultsText, { color: colors.textSecondary }]}>
+                Target: {getDefaults(type).target} {CHALLENGE_TYPES[type].unit} in {getDefaults(type).duration} days
+              </Text>
             </View>
 
             <GlassButton
@@ -354,6 +362,7 @@ export default function SocialScreen() {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
   const { isAuthenticated, user } = useAuth();
+  const reducedMotion = useReducedMotion();
 
   const [challenges, setChallenges] = useState<Challenge[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -365,7 +374,7 @@ export default function SocialScreen() {
     try {
       setChallenges(await getMyChallenges());
     } catch {
-      // Failed to load challenges — user will see empty state
+      // Failed to load challenges
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
@@ -399,6 +408,27 @@ export default function SocialScreen() {
     if (newChallenge) {
       setChallenges(prev => [newChallenge, ...prev]);
       setShowCreateModal(false);
+      Alert.alert(
+        'Challenge Created!',
+        `Share code: ${newChallenge.inviteCode}`,
+        [{ text: 'OK' }]
+      );
+    }
+  };
+
+  const handleQuickChallenge = async (template: typeof QUICK_CHALLENGES[0]) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+    const newChallenge = await createChallenge(
+      template.type,
+      template.title,
+      template.description,
+      template.target,
+      template.duration
+    );
+
+    if (newChallenge) {
+      setChallenges(prev => [newChallenge, ...prev]);
       Alert.alert(
         'Challenge Created!',
         `Share code: ${newChallenge.inviteCode}`,
@@ -496,15 +526,54 @@ export default function SocialScreen() {
             setShowCreateModal(true);
           }}
           accessibilityRole="button"
-          accessibilityLabel="Create challenge"
+          accessibilityLabel="Create custom challenge"
         >
           <Ionicons name="add" size={24} color={colors.primary} />
         </Pressable>
       </View>
 
+      {/* Quick Challenge Templates */}
+      <Animated.View
+        entering={reducedMotion ? undefined : FadeInDown.delay(50).springify()}
+        style={styles.quickSection}
+      >
+        <Text style={[styles.quickTitle, { color: colors.text }]}>Quick Challenges</Text>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.quickRow}
+        >
+          {QUICK_CHALLENGES.map((template, index) => (
+            <Pressable
+              key={template.title}
+              onPress={() => handleQuickChallenge(template)}
+              style={({ pressed }) => [
+                styles.quickCard,
+                {
+                  backgroundColor: colors.accentMuted,
+                  borderColor: colors.accent,
+                  opacity: pressed ? 0.8 : 1,
+                },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel={`Start ${template.title} challenge`}
+              accessibilityHint={template.description}
+            >
+              <Ionicons name={template.icon as any} size={24} color={colors.accent} />
+              <Text style={[styles.quickCardTitle, { color: colors.text }]} numberOfLines={1}>
+                {template.title}
+              </Text>
+              <Text style={[styles.quickCardDesc, { color: colors.textSecondary }]} numberOfLines={2}>
+                {template.description}
+              </Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+      </Animated.View>
+
       {/* Join Code Input */}
       <Animated.View
-        entering={FadeInDown.delay(100).springify()}
+        entering={reducedMotion ? undefined : FadeInDown.delay(100).springify()}
         style={styles.joinSection}
       >
         <View style={[styles.joinInput, { borderColor: colors.border }]}>
@@ -516,6 +585,8 @@ export default function SocialScreen() {
             onChangeText={setJoinCode}
             autoCapitalize="characters"
             maxLength={8}
+            accessibilityLabel="Invite code"
+            accessibilityHint="Enter a code to join an existing challenge"
           />
           <Pressable
             style={[styles.joinButton, { backgroundColor: colors.primary }]}
@@ -544,14 +615,14 @@ export default function SocialScreen() {
           <View style={styles.emptyTabState}>
             <Ionicons name="trophy-outline" size={48} color={colors.textTertiary} />
             <Text style={[styles.emptyTabText, { color: colors.textSecondary }]}>
-              No challenges yet. Create one to get started!
+              No challenges yet. Tap a quick challenge above to get started!
             </Text>
           </View>
         ) : (
           challenges.map((challenge, index) => (
             <Animated.View
               key={challenge.id}
-              entering={SlideInRight.delay(index * 100).springify()}
+              entering={reducedMotion ? undefined : SlideInRight.delay(index * 100).springify()}
             >
               <ChallengeCard
                 challenge={challenge}
@@ -583,9 +654,9 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
   },
   backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -596,11 +667,39 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   addButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  // Quick Challenge Templates
+  quickSection: {
+    paddingHorizontal: 16,
+    marginBottom: 12,
+  },
+  quickTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  quickRow: {
+    gap: 10,
+  },
+  quickCard: {
+    width: 150,
+    padding: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    gap: 6,
+  },
+  quickCardTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  quickCardDesc: {
+    fontSize: 11,
+    lineHeight: 15,
   },
   joinSection: {
     paddingHorizontal: 16,
@@ -627,22 +726,6 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: 11,
   },
   joinButtonText: {
-    fontWeight: '600',
-  },
-  tabs: {
-    flexDirection: 'row',
-    paddingHorizontal: 16,
-    gap: 8,
-    marginBottom: 16,
-  },
-  tab: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  tabText: {
-    fontSize: 14,
     fontWeight: '600',
   },
   scrollContent: {
@@ -736,67 +819,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 2,
   },
-  sessionCard: {
-    padding: 16,
-  },
-  sessionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 8,
-  },
-  liveIndicator: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 4,
-  },
-  liveText: {
-    fontSize: 10,
-    fontWeight: '700',
-  },
-  sessionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  sessionHost: {
-    fontSize: 13,
-    marginBottom: 6,
-  },
-  sessionDesc: {
-    fontSize: 13,
-    marginBottom: 12,
-  },
-  sessionMeta: {
-    flexDirection: 'row',
-    gap: 16,
-    marginBottom: 12,
-  },
-  metaItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  metaText: {
-    fontSize: 13,
-  },
-  sharedRoomCard: {
-    padding: 16,
-  },
-  sharedRoomHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  sharedRoomEmoji: {
-    fontSize: 32,
-  },
-  sharedRoomName: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  sharedRoomOwner: {
-    fontSize: 13,
-  },
   emptyState: {
     flex: 1,
     alignItems: 'center',
@@ -861,10 +883,6 @@ const styles = StyleSheet.create({
     padding: 14,
     fontSize: 16,
   },
-  textArea: {
-    height: 80,
-    textAlignVertical: 'top',
-  },
   typeGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -883,15 +901,17 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '500',
   },
-  inputRow: {
-    flexDirection: 'row',
-    gap: 16,
+  defaultsInfo: {
+    marginTop: 16,
+    padding: 12,
+    borderRadius: 10,
   },
-  inputHalf: {
-    flex: 1,
+  defaultsText: {
+    fontSize: 13,
+    textAlign: 'center',
   },
   createButton: {
-    marginTop: 32,
+    marginTop: 24,
     marginBottom: 40,
   },
 });

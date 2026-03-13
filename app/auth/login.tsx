@@ -1,6 +1,7 @@
 /**
  * Declutterly — Login Screen (Apple 2026)
  * Full-bleed gradient, glass form card, animated entry
+ * Guest mode + loading spinner + success haptics
  */
 
 import { Colors } from '@/constants/Colors';
@@ -27,6 +28,7 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BlurView } from 'expo-blur';
 import { useAuth } from '@/context/AuthContext';
+import { useReducedMotion } from '@/hooks/useReducedMotion';
 
 export default function LoginScreen() {
   const rawScheme = useColorScheme();
@@ -34,12 +36,14 @@ export default function LoginScreen() {
   const colors = Colors[colorScheme];
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
+  const reducedMotion = useReducedMotion();
 
-  const { signIn } = useAuth();
+  const { signIn, continueAsGuest } = useAuth();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [guestLoading, setGuestLoading] = useState(false);
   const [error, setError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
@@ -57,6 +61,7 @@ export default function LoginScreen() {
     try {
       const result = await signIn(email.trim(), password);
       if (result.success) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         router.replace('/(tabs)');
       } else {
         setError(result.error ?? 'Login failed. Please try again.');
@@ -70,19 +75,42 @@ export default function LoginScreen() {
     }
   }, [email, password, signIn]);
 
+  const handleGuestLogin = useCallback(async () => {
+    setError('');
+    setGuestLoading(true);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    try {
+      const result = await continueAsGuest();
+      if (result.success) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        router.replace('/(tabs)');
+      } else {
+        setError(result.error ?? 'Guest login failed. Please try again.');
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      }
+    } catch (e: any) {
+      setError(e?.message ?? 'Guest login failed. Please try again.');
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    } finally {
+      setGuestLoading(false);
+    }
+  }, [continueAsGuest]);
+
   const togglePassword = useCallback(() => {
     Haptics.selectionAsync();
     setShowPassword(v => !v);
   }, []);
 
+  const isAnyLoading = loading || guestLoading;
+
   return (
     <View style={styles.container} accessibilityLabel="Sign in screen">
       <StatusBar style={isDark ? 'light' : 'dark'} />
 
-      {/* Background gradient */}
+      {/* Background gradient — lightened dark mode base */}
       <LinearGradient
         colors={isDark
-          ? ['#000000', '#0A0A0F', '#0D0D1A']
+          ? ['#1C1C1E', '#141418', '#1A1A24']
           : ['#F2F2F7', '#E8E8F0', '#FFFFFF']}
         style={StyleSheet.absoluteFill}
       />
@@ -100,13 +128,13 @@ export default function LoginScreen() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          {/* ── Logo / Brand ─────────────────────────────────────────── */}
-          <Animated.View entering={FadeInDown.delay(0).springify()} style={styles.brandSection}>
+          {/* Logo / Brand */}
+          <Animated.View entering={reducedMotion ? undefined : FadeInDown.delay(0).springify()} style={styles.brandSection}>
             <View style={[styles.logoContainer, {
               backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
               borderColor: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)',
             }]}>
-              <Text style={styles.logoEmoji} accessibilityElementsHidden>{'🧹'}</Text>
+              <Text style={styles.logoEmoji} accessibilityElementsHidden>{'B'}</Text>
             </View>
             <Text
               style={[Typography.displaySmall, { color: colors.text, marginTop: Spacing.md }]}
@@ -119,8 +147,8 @@ export default function LoginScreen() {
             </Text>
           </Animated.View>
 
-          {/* ── Form Card ────────────────────────────────────────────── */}
-          <Animated.View entering={FadeInDown.delay(80).springify()} style={styles.formSection}>
+          {/* Form Card */}
+          <Animated.View entering={reducedMotion ? undefined : FadeInDown.delay(80).springify()} style={styles.formSection}>
             <View style={[styles.formCard, {
               backgroundColor: isDark ? 'rgba(28,28,30,0.85)' : 'rgba(255,255,255,0.90)',
               borderColor: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.06)',
@@ -140,7 +168,6 @@ export default function LoginScreen() {
                   backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
                   borderColor: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.08)',
                 }]}>
-                  <Text style={styles.inputIcon} accessibilityElementsHidden>{'✉️'}</Text>
                   <TextInput
                     style={[styles.input, Typography.callout, { color: colors.text }]}
                     placeholder="you@example.com"
@@ -172,7 +199,6 @@ export default function LoginScreen() {
                   backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
                   borderColor: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.08)',
                 }]}>
-                  <Text style={styles.inputIcon} accessibilityElementsHidden>{'🔒'}</Text>
                   <TextInput
                     ref={passwordRef}
                     style={[styles.input, Typography.callout, { color: colors.text }]}
@@ -204,10 +230,10 @@ export default function LoginScreen() {
 
           </Animated.View>
 
-          {/* ── Error ────────────────────────────────────────────────── */}
+          {/* Error */}
           {error ? (
             <Animated.View
-              entering={FadeInDown.springify()}
+              entering={reducedMotion ? undefined : FadeInDown.springify()}
               style={[styles.errorBanner, {
                 backgroundColor: colors.errorMuted,
                 borderColor: colors.error,
@@ -219,16 +245,16 @@ export default function LoginScreen() {
             </Animated.View>
           ) : null}
 
-          {/* ── Sign In Button ───────────────────────────────────────── */}
-          <Animated.View entering={FadeInDown.delay(160).springify()} style={styles.ctaSection}>
+          {/* Sign In Button */}
+          <Animated.View entering={reducedMotion ? undefined : FadeInDown.delay(160).springify()} style={styles.ctaSection}>
             <Pressable
               onPress={handleLogin}
-              disabled={loading}
+              disabled={isAnyLoading}
               accessibilityRole="button"
               accessibilityLabel="Sign in"
-              accessibilityState={{ disabled: loading, busy: loading }}
+              accessibilityState={{ disabled: isAnyLoading, busy: loading }}
               style={({ pressed }) => ({
-                opacity: loading ? 0.7 : pressed ? 0.85 : 1,
+                opacity: isAnyLoading ? 0.7 : pressed ? 0.85 : 1,
               })}
             >
               <LinearGradient
@@ -243,6 +269,31 @@ export default function LoginScreen() {
                   <Text style={[Typography.headline, { color: '#FFFFFF' }]}>Sign In</Text>
                 )}
               </LinearGradient>
+            </Pressable>
+
+            {/* Continue as Guest */}
+            <Pressable
+              onPress={handleGuestLogin}
+              disabled={isAnyLoading}
+              accessibilityRole="button"
+              accessibilityLabel="Try without account"
+              accessibilityHint="Continue as a guest without creating an account"
+              accessibilityState={{ disabled: isAnyLoading, busy: guestLoading }}
+              style={({ pressed }) => [
+                styles.guestButton,
+                {
+                  opacity: isAnyLoading ? 0.5 : pressed ? 0.7 : 1,
+                  borderColor: isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.10)',
+                },
+              ]}
+            >
+              {guestLoading ? (
+                <ActivityIndicator color={colors.textSecondary} size="small" accessibilityLabel="Setting up guest account" />
+              ) : (
+                <Text style={[Typography.subheadlineMedium, { color: colors.textSecondary }]}>
+                  Try without account
+                </Text>
+              )}
             </Pressable>
 
             {/* Sign Up Link */}
@@ -316,7 +367,6 @@ const styles = StyleSheet.create({
     minHeight: 48,
     gap: Spacing.xs + 2,
   },
-  inputIcon: { fontSize: 16 },
   input: {
     flex: 1,
     paddingVertical: Spacing.sm,
@@ -330,14 +380,6 @@ const styles = StyleSheet.create({
   inputDivider: {
     height: StyleSheet.hairlineWidth,
     marginHorizontal: -Spacing.ml,
-  },
-
-  forgotButton: {
-    alignSelf: 'flex-end',
-    marginTop: Spacing.sm,
-    paddingVertical: Spacing.xxs,
-    minHeight: 44,
-    justifyContent: 'center',
   },
 
   errorBanner: {
@@ -354,6 +396,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 56,
+  },
+  guestButton: {
+    borderRadius: BorderRadius.lg,
+    paddingVertical: Spacing.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 48,
+    borderWidth: 1,
   },
   signUpRow: {
     flexDirection: 'row',

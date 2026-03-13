@@ -1,6 +1,7 @@
 /**
  * Declutterly — Signup Screen (Apple 2026)
  * Full-bleed gradient, glass form card, password strength, animated entry
+ * Name field is optional, guest mode available
  */
 
 import { Colors } from '@/constants/Colors';
@@ -28,6 +29,7 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BlurView } from 'expo-blur';
 import { useAuth } from '@/context/AuthContext';
+import { useReducedMotion } from '@/hooks/useReducedMotion';
 
 export default function SignupScreen() {
   const rawScheme = useColorScheme();
@@ -35,13 +37,15 @@ export default function SignupScreen() {
   const colors = Colors[colorScheme];
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
+  const reducedMotion = useReducedMotion();
 
-  const { signUp } = useAuth();
+  const { signUp, continueAsGuest } = useAuth();
 
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [guestLoading, setGuestLoading] = useState(false);
   const [error, setError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
@@ -49,11 +53,7 @@ export default function SignupScreen() {
   const passwordRef = useRef<TextInput>(null);
 
   const handleSignup = useCallback(async () => {
-    if (!name.trim()) {
-      setError('Please enter your name.');
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-      return;
-    }
+    // Name is now optional — skip validation for it
     if (!email.trim()) {
       setError('Please enter your email.');
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
@@ -70,8 +70,9 @@ export default function SignupScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     try {
-      const result = await signUp(email.trim(), password, name.trim());
+      const result = await signUp(email.trim(), password, name.trim() || undefined);
       if (result.success) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         router.replace('/(tabs)');
       } else {
         setError(result.error ?? 'Sign up failed. Please try again.');
@@ -85,19 +86,42 @@ export default function SignupScreen() {
     }
   }, [name, email, password, signUp]);
 
+  const handleGuestLogin = useCallback(async () => {
+    setError('');
+    setGuestLoading(true);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    try {
+      const result = await continueAsGuest();
+      if (result.success) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        router.replace('/(tabs)');
+      } else {
+        setError(result.error ?? 'Guest login failed. Please try again.');
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      }
+    } catch (e: any) {
+      setError(e?.message ?? 'Guest login failed. Please try again.');
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    } finally {
+      setGuestLoading(false);
+    }
+  }, [continueAsGuest]);
+
   const togglePassword = useCallback(() => {
     Haptics.selectionAsync();
     setShowPassword(v => !v);
   }, []);
 
+  const isAnyLoading = loading || guestLoading;
+
   return (
     <View style={styles.container} accessibilityLabel="Create account screen">
       <StatusBar style={isDark ? 'light' : 'dark'} />
 
-      {/* Background gradient */}
+      {/* Background gradient — lightened dark mode base */}
       <LinearGradient
         colors={isDark
-          ? ['#000000', '#0A0A0F', '#0D0D1A']
+          ? ['#1C1C1E', '#141418', '#1A1A24']
           : ['#F2F2F7', '#E8E8F0', '#FFFFFF']}
         style={StyleSheet.absoluteFill}
       />
@@ -114,13 +138,13 @@ export default function SignupScreen() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          {/* ── Brand ────────────────────────────────────────────────── */}
-          <Animated.View entering={FadeInDown.delay(0).springify()} style={styles.brandSection}>
+          {/* Brand */}
+          <Animated.View entering={reducedMotion ? undefined : FadeInDown.delay(0).springify()} style={styles.brandSection}>
             <View style={[styles.logoContainer, {
               backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
               borderColor: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)',
             }]}>
-              <Text style={styles.logoEmoji} accessibilityElementsHidden>{'🧹'}</Text>
+              <Text style={styles.logoEmoji} accessibilityElementsHidden>{'B'}</Text>
             </View>
             <Text
               style={[Typography.displaySmall, { color: colors.text, marginTop: Spacing.md }]}
@@ -133,8 +157,8 @@ export default function SignupScreen() {
             </Text>
           </Animated.View>
 
-          {/* ── Form Card ────────────────────────────────────────────── */}
-          <Animated.View entering={FadeInDown.delay(80).springify()} style={styles.formSection}>
+          {/* Form Card */}
+          <Animated.View entering={reducedMotion ? undefined : FadeInDown.delay(80).springify()} style={styles.formSection}>
             <View style={[styles.formCard, {
               backgroundColor: isDark ? 'rgba(28,28,30,0.85)' : 'rgba(255,255,255,0.90)',
               borderColor: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.06)',
@@ -145,36 +169,7 @@ export default function SignupScreen() {
                 style={StyleSheet.absoluteFill}
               />
 
-              {/* Name */}
-              <View style={styles.inputGroup}>
-                <Text style={[Typography.footnoteMedium, styles.inputLabel, { color: colors.textSecondary }]}>
-                  Name
-                </Text>
-                <View style={[styles.inputContainer, {
-                  backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
-                  borderColor: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.08)',
-                }]}>
-                  <Text style={styles.inputIcon} accessibilityElementsHidden>{'👤'}</Text>
-                  <TextInput
-                    style={[styles.input, Typography.callout, { color: colors.text }]}
-                    placeholder="Your name"
-                    placeholderTextColor={colors.textTertiary}
-                    value={name}
-                    onChangeText={setName}
-                    autoCapitalize="words"
-                    autoComplete="name"
-                    textContentType="name"
-                    returnKeyType="next"
-                    onSubmitEditing={() => emailRef.current?.focus()}
-                    accessibilityLabel="Your name"
-                    accessibilityHint="Enter your full name"
-                  />
-                </View>
-              </View>
-
-              <View style={[styles.inputDivider, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)' }]} />
-
-              {/* Email */}
+              {/* Email — primary field */}
               <View style={styles.inputGroup}>
                 <Text style={[Typography.footnoteMedium, styles.inputLabel, { color: colors.textSecondary }]}>
                   Email
@@ -183,7 +178,6 @@ export default function SignupScreen() {
                   backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
                   borderColor: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.08)',
                 }]}>
-                  <Text style={styles.inputIcon} accessibilityElementsHidden>{'✉️'}</Text>
                   <TextInput
                     ref={emailRef}
                     style={[styles.input, Typography.callout, { color: colors.text }]}
@@ -214,7 +208,6 @@ export default function SignupScreen() {
                   backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
                   borderColor: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.08)',
                 }]}>
-                  <Text style={styles.inputIcon} accessibilityElementsHidden>{'🔒'}</Text>
                   <TextInput
                     ref={passwordRef}
                     style={[styles.input, Typography.callout, { color: colors.text }]}
@@ -245,13 +238,41 @@ export default function SignupScreen() {
                 {/* Password Strength Indicator */}
                 <PasswordStrengthBar password={password} />
               </View>
+
+              <View style={[styles.inputDivider, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)' }]} />
+
+              {/* Name — optional, moved to end */}
+              <View style={styles.inputGroup}>
+                <Text style={[Typography.footnoteMedium, styles.inputLabel, { color: colors.textSecondary }]}>
+                  Name <Text style={{ color: colors.textTertiary }}>(optional)</Text>
+                </Text>
+                <View style={[styles.inputContainer, {
+                  backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+                  borderColor: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.08)',
+                }]}>
+                  <TextInput
+                    style={[styles.input, Typography.callout, { color: colors.text }]}
+                    placeholder="What should we call you?"
+                    placeholderTextColor={colors.textTertiary}
+                    value={name}
+                    onChangeText={setName}
+                    autoCapitalize="words"
+                    autoComplete="name"
+                    textContentType="name"
+                    returnKeyType="done"
+                    onSubmitEditing={handleSignup}
+                    accessibilityLabel="Your name, optional"
+                    accessibilityHint="You can add your name later in settings"
+                  />
+                </View>
+              </View>
             </View>
           </Animated.View>
 
-          {/* ── Error ────────────────────────────────────────────────── */}
+          {/* Error */}
           {error ? (
             <Animated.View
-              entering={FadeInDown.springify()}
+              entering={reducedMotion ? undefined : FadeInDown.springify()}
               style={[styles.errorBanner, {
                 backgroundColor: colors.errorMuted,
                 borderColor: colors.error,
@@ -263,16 +284,16 @@ export default function SignupScreen() {
             </Animated.View>
           ) : null}
 
-          {/* ── CTA ──────────────────────────────────────────────────── */}
-          <Animated.View entering={FadeInDown.delay(160).springify()} style={styles.ctaSection}>
+          {/* CTA */}
+          <Animated.View entering={reducedMotion ? undefined : FadeInDown.delay(160).springify()} style={styles.ctaSection}>
             <Pressable
               onPress={handleSignup}
-              disabled={loading}
+              disabled={isAnyLoading}
               accessibilityRole="button"
               accessibilityLabel="Create account"
-              accessibilityState={{ disabled: loading, busy: loading }}
+              accessibilityState={{ disabled: isAnyLoading, busy: loading }}
               style={({ pressed }) => ({
-                opacity: loading ? 0.7 : pressed ? 0.85 : 1,
+                opacity: isAnyLoading ? 0.7 : pressed ? 0.85 : 1,
               })}
             >
               <LinearGradient
@@ -289,6 +310,31 @@ export default function SignupScreen() {
                   </Text>
                 )}
               </LinearGradient>
+            </Pressable>
+
+            {/* Continue as Guest */}
+            <Pressable
+              onPress={handleGuestLogin}
+              disabled={isAnyLoading}
+              accessibilityRole="button"
+              accessibilityLabel="Try without account"
+              accessibilityHint="Continue as a guest without creating an account"
+              accessibilityState={{ disabled: isAnyLoading, busy: guestLoading }}
+              style={({ pressed }) => [
+                styles.guestButton,
+                {
+                  opacity: isAnyLoading ? 0.5 : pressed ? 0.7 : 1,
+                  borderColor: isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.10)',
+                },
+              ]}
+            >
+              {guestLoading ? (
+                <ActivityIndicator color={colors.textSecondary} size="small" accessibilityLabel="Setting up guest account" />
+              ) : (
+                <Text style={[Typography.subheadlineMedium, { color: colors.textSecondary }]}>
+                  Try without account
+                </Text>
+              )}
             </Pressable>
 
             {/* Terms */}
@@ -370,7 +416,6 @@ const styles = StyleSheet.create({
     minHeight: 48,
     gap: Spacing.xs + 2,
   },
-  inputIcon: { fontSize: 16 },
   input: {
     flex: 1,
     paddingVertical: Spacing.sm,
@@ -400,6 +445,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 56,
+  },
+  guestButton: {
+    borderRadius: BorderRadius.lg,
+    paddingVertical: Spacing.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 48,
+    borderWidth: 1,
   },
   signInRow: {
     flexDirection: 'row',

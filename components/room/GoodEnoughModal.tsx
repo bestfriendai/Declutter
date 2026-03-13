@@ -41,13 +41,13 @@ export function GoodEnoughModal({
           entering={ZoomIn.springify()}
           style={styles.content}
         >
-          <Text style={styles.emoji}>🎉</Text>
-          <Text style={styles.title}>Amazing Progress!</Text>
+          <Text style={styles.emoji}>🌿</Text>
+          <Text style={styles.title}>You did real work today.</Text>
           <Text style={styles.subtitle}>
-            You&apos;ve completed 70% — that&apos;s genuinely impressive!
+            Progress isn&apos;t about finishing everything — it&apos;s about showing up. And you did.
           </Text>
           <Text style={styles.message}>
-            &quot;Good enough&quot; is still a win ✓
+            Rest is part of the process.
           </Text>
           <View style={styles.buttons}>
             <Pressable
@@ -63,20 +63,20 @@ export function GoodEnoughModal({
                 colors={[...colors.gradientPrimary]}
                 style={styles.buttonGradient}
               >
-                <Text style={styles.buttonText}>Keep Going! 💪</Text>
+                <Text style={styles.buttonText}>I want to keep going</Text>
               </LinearGradient>
             </Pressable>
             <Pressable
               onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
                 onDone();
               }}
               style={styles.secondaryButton}
               accessibilityRole="button"
-              accessibilityLabel="This is good enough for today"
+              accessibilityLabel="Done for today"
             >
               <Text style={[styles.secondaryText, { color: colors.primary }]}>
-                This is good enough for today
+                Done for today — and that&apos;s OK
               </Text>
             </Pressable>
           </View>
@@ -113,6 +113,7 @@ const styles = StyleSheet.create({
     color: 'rgba(255, 255, 255, 0.8)',
     textAlign: 'center',
     marginBottom: Spacing.sm,
+    lineHeight: 24,
   },
   message: {
     ...Typography.subheadline,

@@ -1,9 +1,10 @@
 /**
  * Declutterly - Camera Screen
  * Apple TV style camera with glass overlay controls
+ * Combined preview + room selection flow
  */
 
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -28,6 +29,7 @@ import Animated, {
   withSpring,
   withTiming,
   withSequence,
+  cancelAnimation,
 } from 'react-native-reanimated';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -45,6 +47,7 @@ import { useDeclutter } from '@/context/DeclutterContext';
 import { ROOM_TYPE_INFO, RoomType } from '@/types/declutter';
 import { useCardPress } from '@/hooks/useAnimatedPress';
 import { ScreenErrorBoundary } from '@/components/ErrorBoundary';
+import { useReducedMotion } from '@/hooks/useReducedMotion';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -55,15 +58,17 @@ function CameraScreenContent() {
   const insets = useSafeAreaInsets();
   const { activeRoomId, rooms, addRoom, addPhotoToRoom, setActiveRoom } = useDeclutter();
   const cameraRef = useRef<CameraView>(null);
+  const reducedMotion = useReducedMotion();
 
   const [permission, requestPermission] = useCameraPermissions();
   const [capturedMedia, setCapturedMedia] = useState<{ uri: string; type: 'photo' | 'video' } | null>(null);
   const [isCapturing, setIsCapturing] = useState(false);
-  const [showRoomSelector, setShowRoomSelector] = useState(false);
   const [selectedRoomType, setSelectedRoomType] = useState<RoomType | null>(null);
   const [flashEnabled, setFlashEnabled] = useState(false);
   const [countdownActive, setCountdownActive] = useState(false);
   const [countdownValue, setCountdownValue] = useState(0);
+  const [photoQualityHint, setPhotoQualityHint] = useState<string | null>(null);
+  const [cornerSteady, setCornerSteady] = useState(false);
 
   const activeRoom = activeRoomId ? rooms.find(r => r.id === activeRoomId) : null;
 
@@ -97,7 +102,6 @@ function CameraScreenContent() {
     })
     .onEnd(() => {
       savedScale.value = previewScale.value;
-      // Snap back to 1 if close
       if (previewScale.value < 1.1) {
         previewScale.value = withSpring(1);
         savedScale.value = 1;
@@ -152,8 +156,10 @@ function CameraScreenContent() {
     ],
   }));
 
-  // Pulsing animation for capture button
+  // Pulsing animation for corner guides — stop after 2 seconds
   useEffect(() => {
+    if (reducedMotion || cornerSteady) return;
+
     const pulse = () => {
       cornerScale.value = withSequence(
         withTiming(1.02, { duration: 1500 }),
@@ -162,8 +168,20 @@ function CameraScreenContent() {
     };
     const interval = setInterval(pulse, 3000);
     pulse();
-    return () => clearInterval(interval);
-  }, []);
+
+    // Stop pulsing after 2 seconds of steady hold
+    const steadyTimer = setTimeout(() => {
+      clearInterval(interval);
+      cancelAnimation(cornerScale);
+      cornerScale.value = withTiming(1, { duration: 200 });
+      setCornerSteady(true);
+    }, 2000);
+
+    return () => {
+      clearInterval(interval);
+      clearTimeout(steadyTimer);
+    };
+  }, [reducedMotion, cornerSteady]);
 
   const cornerAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: cornerScale.value }],
@@ -177,13 +195,27 @@ function CameraScreenContent() {
     opacity: flashOpacity.value,
   }));
 
+  // Generate photo quality hint based on flash status
+  const generatePhotoQualityHint = useCallback(() => {
+    if (flashEnabled) {
+      setPhotoQualityHint('Flash on — good for dim rooms');
+    } else {
+      // Default hint
+      setPhotoQualityHint(null);
+    }
+  }, [flashEnabled]);
+
+  useEffect(() => {
+    generatePhotoQualityHint();
+  }, [flashEnabled, generatePhotoQualityHint]);
+
   // Handle permission states
   if (!permission) {
     return (
       <View style={[styles.container, styles.permissionContainer]}>
         <BlurView intensity={60} tint="dark" style={StyleSheet.absoluteFill} />
-        <Animated.View entering={ZoomIn.springify()} style={styles.permissionContent}>
-          <Text style={styles.permissionEmoji}>📸</Text>
+        <Animated.View entering={reducedMotion ? undefined : ZoomIn.springify()} style={styles.permissionContent}>
+          <Text style={styles.permissionEmoji} accessibilityLabel="Camera">C</Text>
           <Text style={[Typography.title2, { color: '#FFFFFF', marginTop: 16 }]}>
             Loading Camera...
           </Text>
@@ -210,8 +242,8 @@ function CameraScreenContent() {
           colors={['#1a1a2e', '#16213e', '#0f3460']}
           style={StyleSheet.absoluteFill}
         />
-        <Animated.View entering={FadeInDown.springify()} style={styles.permissionContent}>
-          <Text style={styles.permissionEmoji} accessibilityElementsHidden>📸</Text>
+        <Animated.View entering={reducedMotion ? undefined : FadeInDown.springify()} style={styles.permissionContent}>
+          <Text style={styles.permissionEmoji} accessibilityLabel="Camera">C</Text>
           <Text style={[Typography.title1, { color: '#FFFFFF', marginTop: 20 }]} accessibilityRole="header">
             Camera Access Needed
           </Text>
@@ -279,7 +311,6 @@ function CameraScreenContent() {
     setCountdownValue(3);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
-    // Countdown sequence
     let count = 3;
     const countdownInterval = setInterval(() => {
       count--;
@@ -321,6 +352,8 @@ function CameraScreenContent() {
 
       if (photo?.uri) {
         setCapturedMedia({ uri: photo.uri, type: 'photo' });
+        // Show quality hint
+        setPhotoQualityHint('Good lighting! Ready for analysis.');
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       }
     } catch (error) {
@@ -332,7 +365,6 @@ function CameraScreenContent() {
   };
 
   const takePicture = async () => {
-    // Use countdown for more deliberate capture
     startCountdown();
   };
 
@@ -364,8 +396,9 @@ function CameraScreenContent() {
   const handleRetake = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setCapturedMedia(null);
-    setShowRoomSelector(false);
     setSelectedRoomType(null);
+    setPhotoQualityHint(null);
+    setCornerSteady(false);
   };
 
   const handleAnalyze = async (roomTypeOverride?: RoomType) => {
@@ -376,19 +409,27 @@ function CameraScreenContent() {
 
     if (!roomId) {
       if (!effectiveRoomType) {
-        setShowRoomSelector(true);
-        return;
+        // Default to 'other' if no room type selected (skip room type)
+        const info = ROOM_TYPE_INFO['other'];
+        const newRoom = await addRoom({
+          name: info.label,
+          type: 'other',
+          emoji: info.emoji,
+          messLevel: 0,
+        });
+        roomId = newRoom.id;
+        setActiveRoom(roomId);
+      } else {
+        const info = ROOM_TYPE_INFO[effectiveRoomType];
+        const newRoom = await addRoom({
+          name: info.label,
+          type: effectiveRoomType,
+          emoji: info.emoji,
+          messLevel: 0,
+        });
+        roomId = newRoom.id;
+        setActiveRoom(roomId);
       }
-
-      const info = ROOM_TYPE_INFO[effectiveRoomType];
-      const newRoom = await addRoom({
-        name: info.label,
-        type: effectiveRoomType,
-        emoji: info.emoji,
-        messLevel: 0,
-      });
-      roomId = newRoom.id;
-      setActiveRoom(roomId);
     }
 
     const photoType = activeRoom && activeRoom.photos.length > 0
@@ -419,70 +460,12 @@ function CameraScreenContent() {
   const selectRoomType = (type: RoomType) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setSelectedRoomType(type);
-    setShowRoomSelector(false);
-    // Pass type directly to avoid race condition with state update
-    handleAnalyze(type);
   };
 
-  // Room selector modal
-  if (showRoomSelector && capturedMedia) {
-    return (
-      <View style={styles.container} accessibilityViewIsModal>
-        <Image
-          source={{ uri: capturedMedia.uri }}
-          style={StyleSheet.absoluteFill}
-          contentFit="cover"
-          blurRadius={20}
-          accessibilityElementsHidden
-        />
-        <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.6)' }]} accessibilityElementsHidden />
-
-        <Animated.View
-          entering={SlideInUp.springify()}
-          style={[styles.roomSelectorContainer, { paddingTop: insets.top + 20 }]}
-        >
-          {/* Header */}
-          <Pressable
-            onPress={() => setShowRoomSelector(false)}
-            style={styles.selectorBackButton}
-            accessibilityRole="button"
-            accessibilityLabel="Go back"
-          >
-            <BlurView intensity={60} tint="dark" style={StyleSheet.absoluteFill} />
-            <Text style={[Typography.body, { color: '#FFFFFF' }]}>← Back</Text>
-          </Pressable>
-
-          <Text style={[Typography.largeTitle, { color: '#FFFFFF', textAlign: 'center', marginTop: 24 }]} accessibilityRole="header">
-            What type of space?
-          </Text>
-          <Text style={[Typography.body, { color: 'rgba(255,255,255,0.7)', textAlign: 'center', marginTop: 8 }]}>
-            Select the room type for better analysis
-          </Text>
-
-          {/* Room type grid */}
-          <ScrollView
-            style={styles.roomTypeScroll}
-            contentContainerStyle={styles.roomTypeGrid}
-            showsVerticalScrollIndicator={false}
-            accessibilityRole="list"
-          >
-            {(Object.keys(ROOM_TYPE_INFO) as RoomType[]).map((type, index) => (
-              <RoomTypeCard
-                key={type}
-                type={type}
-                info={ROOM_TYPE_INFO[type]}
-                onPress={() => selectRoomType(type)}
-                delay={index * 50}
-              />
-            ))}
-          </ScrollView>
-        </Animated.View>
-      </View>
-    );
-  }
-
-  // Preview captured media
+  // Combined preview + room selection screen
   if (capturedMedia) {
+    const needsRoomSelection = !activeRoomId;
+
     return (
       <View style={styles.container}>
         {/* Full screen preview with pinch-to-zoom */}
@@ -497,10 +480,10 @@ function CameraScreenContent() {
         </GestureDetector>
 
         {/* Zoom hint */}
-        <Animated.View entering={FadeIn.delay(500)} exiting={FadeOut} style={styles.zoomHint}>
+        <Animated.View entering={reducedMotion ? undefined : FadeIn.delay(500)} exiting={FadeOut} style={styles.zoomHint}>
           <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFill} />
           <Text style={[Typography.caption2, { color: 'rgba(255,255,255,0.8)' }]}>
-            Pinch to zoom • Double-tap to reset
+            Pinch to zoom
           </Text>
         </Animated.View>
 
@@ -510,25 +493,35 @@ function CameraScreenContent() {
           style={styles.topGradient}
         />
 
+        {/* Photo quality indicator */}
+        {photoQualityHint && (
+          <Animated.View
+            entering={reducedMotion ? undefined : FadeIn.delay(300)}
+            style={[styles.qualityHint, { top: insets.top + 56 }]}
+          >
+            <BlurView intensity={60} tint="dark" style={StyleSheet.absoluteFill} />
+            <Text style={[Typography.caption1, { color: '#30D158' }]}>
+              {photoQualityHint}
+            </Text>
+          </Animated.View>
+        )}
+
         {/* Video indicator */}
         {capturedMedia.type === 'video' && (
-          <Animated.View entering={FadeIn} style={styles.videoIndicator}>
+          <Animated.View entering={reducedMotion ? undefined : FadeIn} style={styles.videoIndicator}>
             <BlurView intensity={60} tint="dark" style={StyleSheet.absoluteFill} />
             <Text style={styles.videoIndicatorText}>VIDEO</Text>
           </Animated.View>
         )}
 
-        {/* Bottom controls */}
+        {/* Bottom controls — combined preview + room selection */}
         <Animated.View
-          entering={SlideInUp.delay(200).springify()}
+          entering={reducedMotion ? undefined : SlideInUp.delay(200).springify()}
           style={[styles.previewControls, { paddingBottom: insets.bottom + 20 }]}
         >
           <BlurView intensity={80} tint="dark" style={StyleSheet.absoluteFill} />
 
           <View style={styles.previewContent}>
-            <Text style={styles.previewEmoji}>
-              {capturedMedia.type === 'video' ? '🎬' : '📸'}
-            </Text>
             <Text style={[Typography.title2, { color: '#FFFFFF', marginTop: 8 }]}>
               {capturedMedia.type === 'video' ? 'Video Ready' : 'Photo Ready'}
             </Text>
@@ -544,6 +537,46 @@ function CameraScreenContent() {
               </View>
             )}
           </View>
+
+          {/* Room type selector — inline when no active room */}
+          {needsRoomSelection && (
+            <View style={styles.inlineRoomSelector}>
+              <Text style={[Typography.caption1Medium, { color: 'rgba(255,255,255,0.7)', marginBottom: 8 }]}>
+                Room type (optional)
+              </Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.roomTypeRow}
+              >
+                {(Object.keys(ROOM_TYPE_INFO) as RoomType[]).map((type) => {
+                  const info = ROOM_TYPE_INFO[type];
+                  const isSelected = selectedRoomType === type;
+                  return (
+                    <Pressable
+                      key={type}
+                      onPress={() => selectRoomType(type)}
+                      style={[
+                        styles.roomTypeChip,
+                        isSelected && styles.roomTypeChipSelected,
+                      ]}
+                      accessibilityRole="radio"
+                      accessibilityState={{ selected: isSelected }}
+                      accessibilityLabel={`${info.label} room type`}
+                    >
+                      <Text style={styles.roomTypeChipEmoji} accessibilityElementsHidden>{info.emoji}</Text>
+                      <Text style={[
+                        Typography.caption1Medium,
+                        { color: isSelected ? '#FFFFFF' : 'rgba(255,255,255,0.7)' },
+                      ]}>
+                        {info.label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+            </View>
+          )}
 
           <View style={styles.previewButtons}>
             <Pressable
@@ -576,7 +609,7 @@ function CameraScreenContent() {
                 style={StyleSheet.absoluteFill}
               />
               <Text style={[Typography.headline, { color: '#FFFFFF' }]}>
-                ✨ Analyze
+                Analyze
               </Text>
             </Pressable>
           </View>
@@ -584,13 +617,15 @@ function CameraScreenContent() {
 
         {/* Back button */}
         <Animated.View
-          entering={FadeIn}
+          entering={reducedMotion ? undefined : FadeIn}
           style={[styles.previewBackButton, { top: insets.top + 12 }]}
         >
           <Pressable
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
               setCapturedMedia(null);
+              setSelectedRoomType(null);
+              setCornerSteady(false);
             }}
             style={styles.glassButton}
             accessibilityRole="button"
@@ -598,17 +633,16 @@ function CameraScreenContent() {
             accessibilityHint="Remove this photo and return to camera"
           >
             <BlurView intensity={60} tint="dark" style={StyleSheet.absoluteFill} />
-            <Text style={{ color: '#FFFFFF', fontSize: 18 }}>✕</Text>
+            <Text style={{ color: '#FFFFFF', fontSize: 18 }} accessibilityElementsHidden>X</Text>
           </Pressable>
         </Animated.View>
       </View>
     );
   }
 
-  // Camera view - CameraView doesn't support children, so overlay is a sibling
+  // Camera view
   return (
     <View style={styles.container}>
-      {/* Camera - no children allowed */}
       <CameraView
         ref={cameraRef}
         style={styles.camera}
@@ -616,7 +650,7 @@ function CameraScreenContent() {
         flash={flashEnabled ? 'on' : 'off'}
       />
 
-      {/* Overlay container - positioned absolutely over camera */}
+      {/* Overlay container */}
       <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
         {/* Flash overlay */}
         <Animated.View
@@ -636,7 +670,7 @@ function CameraScreenContent() {
 
         {/* Header */}
         <Animated.View
-          entering={FadeInDown.delay(100)}
+          entering={reducedMotion ? undefined : FadeInDown.delay(100)}
           style={[styles.header, { paddingTop: insets.top + 8 }]}
         >
           <Pressable
@@ -650,11 +684,11 @@ function CameraScreenContent() {
             accessibilityHint="Go back to previous screen"
           >
             <BlurView intensity={60} tint="dark" style={StyleSheet.absoluteFill} />
-            <Text style={{ color: '#FFFFFF', fontSize: 18 }}>✕</Text>
+            <Text style={{ color: '#FFFFFF', fontSize: 18 }} accessibilityElementsHidden>X</Text>
           </Pressable>
 
           {activeRoom && (
-            <Animated.View entering={FadeIn.delay(200)} style={styles.roomBadge}>
+            <Animated.View entering={reducedMotion ? undefined : FadeIn.delay(200)} style={styles.roomBadge}>
               <BlurView intensity={60} tint="dark" style={StyleSheet.absoluteFill} />
               <Text style={[Typography.caption1Medium, { color: '#FFFFFF' }]}>
                 {activeRoom.emoji} {activeRoom.name}
@@ -667,7 +701,7 @@ function CameraScreenContent() {
 
         {/* Guide overlay */}
         <View style={styles.guideOverlay}>
-          <Animated.View style={[styles.corners, cornerAnimatedStyle]}>
+          <Animated.View style={[styles.corners, cornerSteady ? undefined : cornerAnimatedStyle]}>
             <View style={[styles.corner, styles.cornerTL]} />
             <View style={[styles.corner, styles.cornerTR]} />
             <View style={[styles.corner, styles.cornerBL]} />
@@ -677,7 +711,7 @@ function CameraScreenContent() {
           {/* Countdown overlay */}
           {countdownActive && countdownValue > 0 && (
             <Animated.View
-              entering={ZoomIn.springify()}
+              entering={reducedMotion ? undefined : ZoomIn.springify()}
               style={styles.countdownOverlay}
               accessibilityLiveRegion="polite"
               accessibilityLabel={`Taking photo in ${countdownValue}`}
@@ -688,7 +722,7 @@ function CameraScreenContent() {
           )}
 
           {!countdownActive && (
-            <Animated.View entering={FadeIn.delay(400)} style={styles.guideBadge}>
+            <Animated.View entering={reducedMotion ? undefined : FadeIn.delay(400)} style={styles.guideBadge}>
               <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFill} />
               <Text style={[Typography.caption1, { color: 'rgba(255,255,255,0.9)' }]}>
                 Position the room in frame
@@ -705,24 +739,26 @@ function CameraScreenContent() {
 
         {/* Controls */}
         <Animated.View
-          entering={FadeInUp.delay(200).springify()}
+          entering={reducedMotion ? undefined : FadeInUp.delay(200).springify()}
           style={[styles.controls, { paddingBottom: insets.bottom + 20 }]}
         >
           {/* Tip */}
           <View style={styles.tipContainer}>
             <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFill} />
-            <Text style={[Typography.caption1, { color: 'rgba(255,255,255,0.9)' }]}>
-              💡 Capture the whole area for best results
+            <Text style={[Typography.caption1, { color: 'rgba(255,255,255,0.9)' }]}
+              accessibilityLabel="Tip: Capture the whole area for best results"
+            >
+              Capture the whole area for best results
             </Text>
           </View>
 
           {/* Capture controls */}
           <View style={styles.captureRow}>
-            {/* Gallery button */}
+            {/* Gallery button — increased touch target to 64x64 */}
             <Pressable
               onPress={pickMedia}
               style={({ pressed }) => [
-                styles.sideControlButton,
+                styles.galleryButton,
                 { transform: [{ scale: pressed ? 0.9 : 1 }] },
               ]}
               accessibilityRole="button"
@@ -730,7 +766,7 @@ function CameraScreenContent() {
               accessibilityHint="Choose a photo from your gallery instead"
             >
               <BlurView intensity={60} tint="dark" style={StyleSheet.absoluteFill} />
-              <Text style={{ fontSize: 24 }}>🖼️</Text>
+              <Text style={{ fontSize: 24 }} accessibilityElementsHidden>G</Text>
             </Pressable>
 
             {/* Capture button */}
@@ -755,7 +791,7 @@ function CameraScreenContent() {
                 setFlashEnabled(prev => !prev);
               }}
               style={({ pressed }) => [
-                styles.sideControlButton,
+                styles.galleryButton,
                 flashEnabled && styles.flashEnabledButton,
                 { transform: [{ scale: pressed ? 0.9 : 1 }] },
               ]}
@@ -764,7 +800,7 @@ function CameraScreenContent() {
               accessibilityHint="Toggle camera flash"
             >
               <BlurView intensity={60} tint="dark" style={StyleSheet.absoluteFill} />
-              <Text style={{ fontSize: 20 }}>{flashEnabled ? '⚡' : '🔦'}</Text>
+              <Text style={{ fontSize: 20 }} accessibilityElementsHidden>{flashEnabled ? 'F' : 'F'}</Text>
               <Text style={[styles.flashLabel, flashEnabled && styles.flashLabelEnabled]}>{flashEnabled ? 'On' : 'Off'}</Text>
             </Pressable>
           </View>
@@ -774,7 +810,7 @@ function CameraScreenContent() {
   );
 }
 
-// Room Type Card Component
+// Room Type Card Component (kept for potential future use but not used in new flow)
 function RoomTypeCard({
   type: _type,
   info,
@@ -969,6 +1005,14 @@ const styles = StyleSheet.create({
   flashLabelEnabled: {
     color: '#FFD700',
   },
+  qualityHint: {
+    position: 'absolute',
+    alignSelf: 'center',
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs,
+    borderRadius: BorderRadius.chip,
+    overflow: 'hidden',
+  },
   zoomHint: {
     position: 'absolute',
     top: 100,
@@ -999,10 +1043,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 40,
   },
-  sideControlButton: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+  // Gallery button with 64x64 touch target
+  galleryButton: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
@@ -1059,15 +1104,12 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     overflow: 'hidden',
-    paddingTop: 24,
+    paddingTop: 20,
     paddingHorizontal: 20,
   },
   previewContent: {
     alignItems: 'center',
-    marginBottom: 24,
-  },
-  previewEmoji: {
-    fontSize: 40,
+    marginBottom: 12,
   },
   roomTag: {
     marginTop: Spacing.sm,
@@ -1075,6 +1117,32 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.xs,
     borderRadius: BorderRadius.chip,
     backgroundColor: 'rgba(255,255,255,0.15)',
+  },
+  // Inline room selector in combined view
+  inlineRoomSelector: {
+    marginBottom: 16,
+  },
+  roomTypeRow: {
+    gap: 8,
+    paddingHorizontal: 4,
+  },
+  roomTypeChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.15)',
+  },
+  roomTypeChipSelected: {
+    backgroundColor: 'rgba(10, 132, 255, 0.4)',
+    borderColor: '#0A84FF',
+  },
+  roomTypeChipEmoji: {
+    fontSize: 16,
   },
   previewButtons: {
     flexDirection: 'row',
@@ -1098,7 +1166,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     minHeight: 44,
   },
-  // Room selector styles
+  // Room selector styles (kept for backward compat)
   roomSelectorContainer: {
     flex: 1,
     paddingHorizontal: 20,

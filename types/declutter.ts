@@ -229,6 +229,7 @@ export interface SubTask {
   title: string;
   completed: boolean;
   estimatedSeconds?: number;
+  estimatedMinutes?: number;
   isCheckpoint?: boolean;
 }
 
@@ -260,8 +261,9 @@ export interface CleaningTask {
   
   whyThisMatters?: string;
   resistanceHandler?: string;
+  suppliesNeeded?: string[];
   decisionPoints?: DecisionPoint[];
-  
+
   userSkipped?: boolean;
   skipReason?: string;
   actualMinutes?: number;
@@ -407,6 +409,19 @@ export interface SessionContext {
   visitorExpected?: boolean;
   userMood?: string;
   priorityFocus?: string;
+}
+
+export interface PhotoQualityFeedback {
+  isAcceptable: boolean;
+  suggestions: string[];
+  overallMessage: string;
+}
+
+export interface ProgressAnalysisResult {
+  percentImproved: number;
+  areasImproved: string[];
+  areasRemaining: string[];
+  encouragingMessage: string;
 }
 
 export interface TaskPerformanceHistory {

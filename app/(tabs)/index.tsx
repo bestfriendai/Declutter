@@ -1,6 +1,7 @@
 /**
  * Declutterly — Home Screen (Apple 2026)
- * Smart greeting, tinted glass cards, room progress, quick actions
+ * Simplified: smart CTA, time selector, energy check-in, grace messaging
+ * Designed for ADHD / executive dysfunction — minimal decisions, maximum encouragement
  */
 
 import { Colors, ColorTokens } from '@/constants/Colors';
@@ -9,11 +10,11 @@ import { useDeclutter } from '@/context/DeclutterContext';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { Typography } from '@/theme/typography';
 import { Spacing, BorderRadius } from '@/theme/spacing';
-import { MASCOT_PERSONALITIES } from '@/types/declutter';
+import { MASCOT_PERSONALITIES, CleaningTask, EnergyLevel } from '@/types/declutter';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import * as Haptics from 'expo-haptics';
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   Dimensions,
   Pressable,
@@ -25,74 +26,90 @@ import {
 } from 'react-native';
 import Animated, {
   FadeInDown,
+  FadeOut,
   useAnimatedStyle,
   useSharedValue,
   withSpring,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useReducedMotion } from '@/hooks/useReducedMotion';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CARD_WIDTH = (SCREEN_WIDTH - 48 - 12) / 2;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Smart Greeting
+// Time options for task filtering
 // ─────────────────────────────────────────────────────────────────────────────
-function getGreeting(name: string): { greeting: string; emoji: string; subtitle: string } {
+type TimeOption = 5 | 15 | 30 | 60;
+
+const TIME_OPTIONS: { label: string; minutes: TimeOption }[] = [
+  { label: '5 min', minutes: 5 },
+  { label: '15 min', minutes: 15 },
+  { label: '30 min', minutes: 30 },
+  { label: '60 min', minutes: 60 },
+];
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Energy levels for task filtering
+// ─────────────────────────────────────────────────────────────────────────────
+type UserEnergy = 'exhausted' | 'low' | 'moderate' | 'high';
+
+interface EnergyOption {
+  level: UserEnergy;
+  emoji: string;
+  label: string;
+}
+
+const ENERGY_OPTIONS: EnergyOption[] = [
+  { level: 'exhausted', emoji: '😴', label: 'Exhausted' },
+  { level: 'low', emoji: '😐', label: 'Low' },
+  { level: 'moderate', emoji: '🙂', label: 'Moderate' },
+  { level: 'high', emoji: '⚡', label: 'High' },
+];
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Smart Greeting — with grace messaging
+// ─────────────────────────────────────────────────────────────────────────────
+function getGreeting(
+  name: string,
+  lastActivityDate?: string,
+): { greeting: string; emoji: string; subtitle: string; isWelcomeBack: boolean } {
   const hour = new Date().getHours();
   const firstName = name.split(' ')[0] || 'Friend';
 
-  if (hour < 5)  return { greeting: `Night owl, ${firstName}`,  emoji: '🌙', subtitle: 'Still up? Even small wins count.' };
-  if (hour < 12) return { greeting: `Good morning, ${firstName}`, emoji: '☀️', subtitle: 'Fresh start — what will you tackle?' };
-  if (hour < 17) return { greeting: `Good afternoon, ${firstName}`, emoji: '🌤️', subtitle: 'Afternoon energy — let\'s use it!' };
-  if (hour < 20) return { greeting: `Good evening, ${firstName}`, emoji: '🌅', subtitle: 'Wind down with a quick win.' };
-  return { greeting: `Good night, ${firstName}`, emoji: '🌙', subtitle: 'One last task before bed?' };
+  // Check if user has been away 2+ days
+  let isWelcomeBack = false;
+  if (lastActivityDate) {
+    const lastDate = new Date(lastActivityDate);
+    const now = new Date();
+    const daysDiff = Math.floor((now.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24));
+    isWelcomeBack = daysDiff >= 2;
+  }
+
+  if (isWelcomeBack) {
+    return {
+      greeting: `Hey, ${firstName}!`,
+      emoji: '💜',
+      subtitle: 'You came back. That\'s the hardest part.',
+      isWelcomeBack: true,
+    };
+  }
+
+  if (hour < 5)  return { greeting: `Night owl, ${firstName}`,  emoji: '🌙', subtitle: 'Still up? Even small wins count.', isWelcomeBack: false };
+  if (hour < 12) return { greeting: `Good morning, ${firstName}`, emoji: '☀️', subtitle: 'Fresh start — what will you tackle?', isWelcomeBack: false };
+  if (hour < 17) return { greeting: `Good afternoon, ${firstName}`, emoji: '🌤️', subtitle: 'Afternoon energy — let\'s use it!', isWelcomeBack: false };
+  if (hour < 20) return { greeting: `Good evening, ${firstName}`, emoji: '🌅', subtitle: 'Wind down with a quick win.', isWelcomeBack: false };
+  return { greeting: `Good night, ${firstName}`, emoji: '🌙', subtitle: 'One last task before bed?', isWelcomeBack: false };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Quick Action Button
+// Grace streak text
 // ─────────────────────────────────────────────────────────────────────────────
-interface QuickActionProps {
-  emoji: string;
-  label: string;
-  sublabel?: string;
-  onPress: () => void;
-  gradient: readonly [string, string];
-  colors: ColorTokens;
-}
-
-function QuickActionButton({ emoji, label, sublabel, onPress, gradient, colors: _colors }: QuickActionProps) {
-  const scale = useSharedValue(1);
-
-  const animStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
-
-  return (
-    <Pressable
-      onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); onPress(); }}
-      onPressIn={() => { scale.value = withSpring(0.94, { damping: 15, stiffness: 400 }); }}
-      onPressOut={() => { scale.value = withSpring(1, { damping: 12, stiffness: 300 }); }}
-      accessibilityRole="button"
-      accessibilityLabel={label}
-    >
-      <Animated.View style={animStyle}>
-        <LinearGradient
-          colors={gradient}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.quickActionCard}
-        >
-          <Text style={styles.quickActionEmoji}>{emoji}</Text>
-          <Text style={[styles.quickActionLabel, { color: '#FFFFFF' }]}>{label}</Text>
-          {sublabel && (
-            <Text style={[styles.quickActionSublabel, { color: 'rgba(255,255,255,0.75)' }]}>
-              {sublabel}
-            </Text>
-          )}
-        </LinearGradient>
-      </Animated.View>
-    </Pressable>
-  );
+function getStreakMessage(streak: number): string {
+  if (streak >= 7) return `${streak} day streak — incredible!`;
+  if (streak >= 3) return `${streak} day streak — keep it up!`;
+  if (streak >= 1) return `${streak} day streak`;
+  return 'Life happens. Start fresh today.';
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -104,18 +121,18 @@ interface RoomCardProps {
     name: string;
     emoji: string;
     currentProgress: number;
-    tasks: Array<{ completed: boolean; estimatedMinutes: number }>;
+    tasks: Array<{ completed: boolean; estimatedMinutes: number; completedAt?: Date }>;
     updatedAt?: Date;
   };
   colors: ColorTokens;
   isDark: boolean;
   onPress: () => void;
+  weeklyDoneCount: number;
 }
 
-function RoomCard({ room, colors, isDark, onPress }: RoomCardProps) {
+function RoomCard({ room, colors, isDark, onPress, weeklyDoneCount }: RoomCardProps) {
   const scale = useSharedValue(1);
   const pendingCount = room.tasks.filter(t => !t.completed).length;
-  const remainingMin = room.tasks.filter(t => !t.completed).reduce((a, t) => a + t.estimatedMinutes, 0);
   const progress = Math.round(room.currentProgress);
 
   const animStyle = useAnimatedStyle(() => ({
@@ -133,7 +150,7 @@ function RoomCard({ room, colors, isDark, onPress }: RoomCardProps) {
       onPressIn={() => { scale.value = withSpring(0.95, { damping: 15, stiffness: 400 }); }}
       onPressOut={() => { scale.value = withSpring(1, { damping: 12, stiffness: 300 }); }}
       accessibilityRole="button"
-      accessibilityLabel={`${room.name}, ${progress}% complete`}
+      accessibilityLabel={`${room.name}, ${weeklyDoneCount} tasks done this week`}
     >
       <Animated.View style={[styles.roomCard, animStyle, {
         backgroundColor: isDark ? colors.surface : colors.backgroundSecondary,
@@ -157,15 +174,10 @@ function RoomCard({ room, colors, isDark, onPress }: RoomCardProps) {
           </Text>
 
           <Text style={[styles.roomCardMeta, { color: colors.textSecondary }]}>
-            {pendingCount > 0 ? `${pendingCount} tasks · ~${remainingMin}m` : '✓ Complete!'}
+            {pendingCount > 0
+              ? `${weeklyDoneCount} tasks done this week!`
+              : 'All done!'}
           </Text>
-
-          {/* Progress % */}
-          <View style={styles.roomCardFooter}>
-            <Text style={[styles.roomCardProgress, { color: ringColor }]}>
-              {progress}%
-            </Text>
-          </View>
         </View>
       </Animated.View>
     </Pressable>
@@ -173,22 +185,125 @@ function RoomCard({ room, colors, isDark, onPress }: RoomCardProps) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Stat Pill
+// Energy Check-In Component
 // ─────────────────────────────────────────────────────────────────────────────
-function StatPill({ value, label, color, colors, isDark }: {
-  value: string | number;
-  label: string;
-  color: string;
+function EnergyCheckIn({
+  selectedEnergy,
+  onSelect,
+  colors,
+  isDark,
+}: {
+  selectedEnergy: UserEnergy | null;
+  onSelect: (energy: UserEnergy) => void;
   colors: ColorTokens;
   isDark: boolean;
 }) {
   return (
-    <View style={[styles.statPill, {
-      backgroundColor: isDark ? colors.surface : colors.backgroundSecondary,
-      borderColor: isDark ? colors.cardBorder : colors.borderLight,
-    }]}>
-      <Text style={[styles.statPillValue, { color }]}>{value}</Text>
-      <Text style={[styles.statPillLabel, { color: colors.textSecondary }]}>{label}</Text>
+    <View style={styles.energyCheckIn}>
+      <Text style={[Typography.subheadlineMedium, { color: colors.text, marginBottom: Spacing.sm }]}>
+        How&apos;s your energy?
+      </Text>
+      <View style={styles.energyOptions}>
+        {ENERGY_OPTIONS.map((option) => {
+          const isSelected = selectedEnergy === option.level;
+          return (
+            <Pressable
+              key={option.level}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                onSelect(option.level);
+              }}
+              style={[
+                styles.energyOption,
+                {
+                  backgroundColor: isSelected
+                    ? (isDark ? colors.accentMuted : colors.accent)
+                    : (isDark ? colors.surface : colors.backgroundSecondary),
+                  borderColor: isSelected
+                    ? colors.accent
+                    : (isDark ? colors.cardBorder : colors.borderLight),
+                },
+              ]}
+              accessibilityRole="radio"
+              accessibilityState={{ selected: isSelected }}
+              accessibilityLabel={`Energy: ${option.label}`}
+            >
+              <Text style={styles.energyEmoji}>{option.emoji}</Text>
+              <Text style={[
+                Typography.caption2,
+                {
+                  color: isSelected
+                    ? (isDark ? colors.accent : colors.textOnPrimary)
+                    : colors.textSecondary,
+                  marginTop: 2,
+                },
+              ]}>
+                {option.label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Time Selector Component
+// ─────────────────────────────────────────────────────────────────────────────
+function TimeSelector({
+  selectedTime,
+  onSelect,
+  colors,
+  isDark,
+}: {
+  selectedTime: TimeOption | null;
+  onSelect: (time: TimeOption) => void;
+  colors: ColorTokens;
+  isDark: boolean;
+}) {
+  return (
+    <View style={styles.timeSelector}>
+      <Text style={[Typography.subheadlineMedium, { color: colors.text, marginBottom: Spacing.xs }]}>
+        I have:
+      </Text>
+      <View style={styles.timeOptions}>
+        {TIME_OPTIONS.map((option) => {
+          const isSelected = selectedTime === option.minutes;
+          return (
+            <Pressable
+              key={option.minutes}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                onSelect(option.minutes);
+              }}
+              style={[
+                styles.timeOption,
+                {
+                  backgroundColor: isSelected
+                    ? colors.accent
+                    : (isDark ? colors.surface : colors.backgroundSecondary),
+                  borderColor: isSelected
+                    ? colors.accent
+                    : (isDark ? colors.cardBorder : colors.borderLight),
+                },
+              ]}
+              accessibilityRole="radio"
+              accessibilityState={{ selected: isSelected }}
+              accessibilityLabel={`${option.label} available`}
+            >
+              <Text style={[
+                Typography.subheadlineMedium,
+                {
+                  color: isSelected ? colors.textOnPrimary : colors.text,
+                },
+              ]}>
+                {option.label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
     </View>
   );
 }
@@ -212,24 +327,135 @@ export default function HomeScreen() {
   } = useDeclutter();
 
   const streak = stats?.currentStreak ?? 0;
+  const lastActivityDate = stats?.lastActivityDate;
+  const reducedMotion = useReducedMotion();
 
   const [refreshing, setRefreshing] = React.useState(false);
+  const [selectedTime, setSelectedTime] = useState<TimeOption | null>(null);
+  const [selectedEnergy, setSelectedEnergy] = useState<UserEnergy | null>(null);
+  const [showDoneForToday, setShowDoneForToday] = useState(false);
 
-  const greeting = useMemo(() => getGreeting(user?.name || 'Friend'), [user?.name]);
+  const greeting = useMemo(
+    () => getGreeting(user?.name || 'Friend', lastActivityDate),
+    [user?.name, lastActivityDate],
+  );
 
-  const totalRooms = rooms.length;
-  const completedRooms = rooms.filter(r => r.currentProgress >= 100).length;
   const completedTasks = rooms.reduce((a, r) => a + r.tasks.filter(t => t.completed).length, 0);
 
-  // Quick win — fastest incomplete task
-  const quickWinTask = useMemo(() => {
+  // Tasks done this week per room
+  const weeklyDoneCounts = useMemo(() => {
+    const weekAgo = new Date();
+    weekAgo.setDate(weekAgo.getDate() - 7);
+    const counts: Record<string, number> = {};
+    rooms.forEach(r => {
+      counts[r.id] = r.tasks.filter(t => {
+        if (!t.completed || !t.completedAt) return false;
+        return new Date(t.completedAt) >= weekAgo;
+      }).length;
+    });
+    return counts;
+  }, [rooms]);
+
+  const totalWeeklyDone = useMemo(() => {
+    return Object.values(weeklyDoneCounts).reduce((a, b) => a + b, 0);
+  }, [weeklyDoneCounts]);
+
+  // Map UserEnergy to EnergyLevel for task filtering
+  const energyToEnergyLevel = (energy: UserEnergy): EnergyLevel => {
+    switch (energy) {
+      case 'exhausted': return 'minimal';
+      case 'low': return 'low';
+      case 'moderate': return 'moderate';
+      case 'high': return 'high';
+    }
+  };
+
+  // Smart "next best task" — filters by time and energy
+  const smartNextTask = useMemo(() => {
     const allPending = rooms.flatMap(r =>
       r.tasks
         .filter(t => !t.completed)
         .map(t => ({ ...t, roomId: r.id, roomName: r.name, roomEmoji: r.emoji }))
     );
-    return allPending.sort((a, b) => a.estimatedMinutes - b.estimatedMinutes)[0] ?? null;
-  }, [rooms]);
+
+    let candidates = allPending;
+
+    // Filter by time
+    if (selectedTime) {
+      candidates = candidates.filter(t => t.estimatedMinutes <= selectedTime);
+    }
+
+    // Filter by energy
+    if (selectedEnergy) {
+      const energyOrder: EnergyLevel[] = ['minimal', 'low', 'moderate', 'high'];
+      const maxIndex = energyOrder.indexOf(energyToEnergyLevel(selectedEnergy));
+      if (selectedEnergy === 'exhausted') {
+        // Only show zero-decision quick wins
+        candidates = candidates.filter(t => {
+          const energyOk = !t.energyRequired || energyOrder.indexOf(t.energyRequired) <= maxIndex;
+          const lowDecision = !t.decisionLoad || t.decisionLoad === 'none' || t.decisionLoad === 'low';
+          return energyOk && lowDecision;
+        });
+      } else {
+        candidates = candidates.filter(t => {
+          if (!t.energyRequired) return true;
+          return energyOrder.indexOf(t.energyRequired) <= maxIndex;
+        });
+      }
+    }
+
+    // Sort by visual impact (high first), then by time (short first)
+    candidates.sort((a, b) => {
+      const impactOrder = { high: 0, medium: 1, low: 2, undefined: 1 };
+      const aImpact = impactOrder[a.visualImpact as keyof typeof impactOrder] ?? 1;
+      const bImpact = impactOrder[b.visualImpact as keyof typeof impactOrder] ?? 1;
+      if (aImpact !== bImpact) return aImpact - bImpact;
+      return a.estimatedMinutes - b.estimatedMinutes;
+    });
+
+    return candidates[0] ?? null;
+  }, [rooms, selectedTime, selectedEnergy]);
+
+  // Today's focus tasks — filtered
+  const todaysFocusTasks = useMemo(() => {
+    const allPending = rooms.flatMap(r =>
+      r.tasks
+        .filter(t => !t.completed)
+        .map(t => ({ ...t, roomId: r.id, roomName: r.name, roomEmoji: r.emoji }))
+    );
+
+    let candidates = allPending;
+
+    if (selectedTime) {
+      let cumulativeTime = 0;
+      candidates = candidates.filter(t => {
+        if (cumulativeTime + t.estimatedMinutes <= selectedTime) {
+          cumulativeTime += t.estimatedMinutes;
+          return true;
+        }
+        return false;
+      });
+    }
+
+    if (selectedEnergy) {
+      const energyOrder: EnergyLevel[] = ['minimal', 'low', 'moderate', 'high'];
+      const maxIndex = energyOrder.indexOf(energyToEnergyLevel(selectedEnergy));
+      if (selectedEnergy === 'exhausted') {
+        candidates = candidates.filter(t => {
+          const energyOk = !t.energyRequired || energyOrder.indexOf(t.energyRequired) <= maxIndex;
+          const lowDecision = !t.decisionLoad || t.decisionLoad === 'none' || t.decisionLoad === 'low';
+          return energyOk && lowDecision;
+        });
+      } else {
+        candidates = candidates.filter(t => {
+          if (!t.energyRequired) return true;
+          return energyOrder.indexOf(t.energyRequired) <= maxIndex;
+        });
+      }
+    }
+
+    return candidates.slice(0, 5);
+  }, [rooms, selectedTime, selectedEnergy]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
@@ -246,16 +472,17 @@ export default function HomeScreen() {
     router.push(`/room/${roomId}`);
   };
 
-  const handleFocusMode = () => {
+  const handleSmartCTA = () => {
+    if (!smartNextTask) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    router.push('/focus');
+    setActiveRoom(smartNextTask.roomId);
+    router.push(`/room/${smartNextTask.roomId}`);
   };
 
-  const handleQuickWin = () => {
-    if (!quickWinTask) return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setActiveRoom(quickWinTask.roomId);
-    router.push(`/room/${quickWinTask.roomId}`);
+  const handleDoneForToday = () => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    setShowDoneForToday(true);
+    setTimeout(() => setShowDoneForToday(false), 3000);
   };
 
   return (
@@ -277,7 +504,7 @@ export default function HomeScreen() {
         }
       >
         {/* ── Hero Header ─────────────────────────────────────────────── */}
-        <Animated.View entering={FadeInDown.delay(0).springify()} style={styles.heroSection}>
+        <Animated.View entering={reducedMotion ? undefined : FadeInDown.delay(0).springify()} style={styles.heroSection}>
           <View style={styles.greetingRow}>
             <View style={styles.greetingText}>
               <Text style={[Typography.displaySmall, { color: colors.text }]} numberOfLines={1}>
@@ -290,93 +517,192 @@ export default function HomeScreen() {
             <Text style={styles.greetingEmoji}>{greeting.emoji}</Text>
           </View>
 
-          {/* Streak badge */}
-          {streak > 0 && (
-            <Animated.View entering={FadeInDown.delay(100).springify()}>
-              <View style={[styles.streakBadge, {
-                backgroundColor: isDark ? colors.warningMuted : 'rgba(255, 149, 0, 0.10)',
-                borderColor: isDark ? 'rgba(255, 159, 10, 0.30)' : 'rgba(255, 149, 0, 0.20)',
+          {/* Streak badge — always visible, with grace messaging */}
+          <Animated.View entering={reducedMotion ? undefined : FadeInDown.delay(100).springify()}>
+            <View style={[styles.streakBadge, {
+              backgroundColor: streak > 0
+                ? (isDark ? colors.warningMuted : 'rgba(255, 149, 0, 0.10)')
+                : (isDark ? colors.primaryMuted : 'rgba(0, 0, 0, 0.05)'),
+              borderColor: streak > 0
+                ? (isDark ? 'rgba(255, 159, 10, 0.30)' : 'rgba(255, 149, 0, 0.20)')
+                : (isDark ? 'rgba(255, 255, 255, 0.10)' : 'rgba(0, 0, 0, 0.08)'),
+            }]}>
+              <Text style={styles.streakFire}>{streak > 0 ? '🔥' : '🌱'}</Text>
+              <Text style={[styles.streakText, {
+                color: streak > 0 ? colors.warning : colors.textSecondary,
               }]}>
-                <Text style={styles.streakFire}>🔥</Text>
-                <Text style={[styles.streakText, { color: colors.warning }]}>
-                  {streak} day streak
-                </Text>
-              </View>
+                {getStreakMessage(streak)}
+              </Text>
+            </View>
+          </Animated.View>
+
+          {/* Weekly summary */}
+          {totalWeeklyDone > 0 && (
+            <Animated.View entering={reducedMotion ? undefined : FadeInDown.delay(150).springify()}>
+              <Text style={[Typography.subheadline, { color: colors.success, marginTop: Spacing.xs }]}>
+                {totalWeeklyDone} task{totalWeeklyDone !== 1 ? 's' : ''} done this week!
+              </Text>
             </Animated.View>
           )}
         </Animated.View>
 
-        {/* ── Stats Row ───────────────────────────────────────────────── */}
-        <Animated.View entering={FadeInDown.delay(80).springify()} style={styles.statsRow}>
-          <StatPill
-            value={completedTasks}
-            label="tasks done"
-            color={colors.success}
-            colors={colors}
-            isDark={isDark}
-          />
-          <StatPill
-            value={`${completedRooms}/${totalRooms}`}
-            label="rooms"
-            color={colors.accent}
-            colors={colors}
-            isDark={isDark}
-          />
-          <StatPill
-            value={stats?.xp ?? 0}
-            label="XP"
-            color={colors.warning}
+        {/* ── Time Selector ────────────────────────────────────────────── */}
+        <Animated.View entering={reducedMotion ? undefined : FadeInDown.delay(80).springify()} style={styles.section}>
+          <TimeSelector
+            selectedTime={selectedTime}
+            onSelect={(time) => setSelectedTime(prev => prev === time ? null : time)}
             colors={colors}
             isDark={isDark}
           />
         </Animated.View>
 
-        {/* ── Quick Actions ───────────────────────────────────────────── */}
-        <Animated.View entering={FadeInDown.delay(120).springify()} style={styles.section}>
-          <Text style={[Typography.title3, { color: colors.text, marginBottom: Spacing.sm }]}>
-            Quick Actions
-          </Text>
-          <View style={styles.quickActionsGrid}>
-            <QuickActionButton
-              emoji="📸"
-              label="New Room"
-              sublabel="Snap & analyze"
-              onPress={handleAddRoom}
-              gradient={isDark ? ['#0A84FF', '#5856D6'] : ['#007AFF', '#5856D6']}
-              colors={colors}
-            />
-            <QuickActionButton
-              emoji="🎯"
-              label="Focus Mode"
-              sublabel="Deep work timer"
-              onPress={handleFocusMode}
-              gradient={['#667eea', '#764ba2']}
-              colors={colors}
-            />
-            {quickWinTask && (
-              <QuickActionButton
-                emoji="⚡"
-                label="Quick Win"
-                sublabel={`~${quickWinTask.estimatedMinutes}m task`}
-                onPress={handleQuickWin}
-                gradient={['#11998e', '#38ef7d']}
-                colors={colors}
-              />
-            )}
-            <QuickActionButton
-              emoji="📊"
-              label="Insights"
-              sublabel="Your progress"
-              onPress={() => router.push('/insights')}
-              gradient={['#f093fb', '#f5576c']}
-              colors={colors}
-            />
-          </View>
+        {/* ── Energy Check-In ──────────────────────────────────────────── */}
+        <Animated.View entering={reducedMotion ? undefined : FadeInDown.delay(100).springify()} style={styles.section}>
+          <EnergyCheckIn
+            selectedEnergy={selectedEnergy}
+            onSelect={(energy) => setSelectedEnergy(prev => prev === energy ? null : energy)}
+            colors={colors}
+            isDark={isDark}
+          />
+        </Animated.View>
+
+        {/* ── Today's Focus (moved to top) ─────────────────────────────── */}
+        {todaysFocusTasks.length > 0 && rooms.length > 0 && (
+          <Animated.View entering={reducedMotion ? undefined : FadeInDown.delay(120).springify()} style={styles.section}>
+            <Text style={[Typography.title3, { color: colors.text, marginBottom: Spacing.sm }]}>
+              Today&apos;s Focus
+            </Text>
+            {todaysFocusTasks.slice(0, 3).map((task, index) => (
+              <Pressable
+                key={task.id}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  setActiveRoom(task.roomId);
+                  router.push(`/room/${task.roomId}`);
+                }}
+                accessibilityRole="button"
+                accessibilityLabel={`Task: ${task.title}`}
+                style={{ marginBottom: Spacing.xs }}
+              >
+                <GlassCard
+                  variant="tinted"
+                  tintColor={index === 0 ? colors.success : colors.accent}
+                  tintOpacity={0.06}
+                  style={styles.focusCard}
+                >
+                  <View style={styles.focusRow}>
+                    <View style={[styles.focusIcon, {
+                      backgroundColor: index === 0 ? colors.successMuted : colors.accentMuted,
+                    }]}>
+                      <Text style={{ fontSize: 18 }}>{task.emoji}</Text>
+                    </View>
+                    <View style={styles.focusInfo}>
+                      <Text style={[Typography.headline, { color: colors.text }]} numberOfLines={1}>
+                        {task.title}
+                      </Text>
+                      <Text style={[Typography.caption1, { color: colors.textSecondary, marginTop: 2 }]}>
+                        {task.roomEmoji} {task.roomName} · ~{task.estimatedMinutes} min
+                        {task.visualImpact === 'high' ? ' · High impact' : ''}
+                      </Text>
+                    </View>
+                    <Text style={[Typography.headline, { color: index === 0 ? colors.success : colors.accent }]}>
+                      {'\u2192'}
+                    </Text>
+                  </View>
+                </GlassCard>
+              </Pressable>
+            ))}
+          </Animated.View>
+        )}
+
+        {/* ── Smart CTA — "What should I do next?" ─────────────────────── */}
+        <Animated.View entering={reducedMotion ? undefined : FadeInDown.delay(160).springify()} style={styles.section}>
+          {smartNextTask ? (
+            <Pressable
+              onPress={handleSmartCTA}
+              accessibilityRole="button"
+              accessibilityLabel={`Start next task: ${smartNextTask.title}`}
+            >
+              <LinearGradient
+                colors={isDark ? ['#0A84FF', '#5856D6'] as const : ['#007AFF', '#5856D6'] as const}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.smartCTACard}
+              >
+                <Text style={styles.smartCTAEmoji}>{smartNextTask.emoji}</Text>
+                <View style={styles.smartCTAContent}>
+                  <Text style={[Typography.caption1, { color: 'rgba(255,255,255,0.75)' }]}>
+                    What should I do next?
+                  </Text>
+                  <Text style={[Typography.headline, { color: '#FFFFFF', marginTop: 4 }]} numberOfLines={1}>
+                    {smartNextTask.title}
+                  </Text>
+                  <Text style={[Typography.caption1, { color: 'rgba(255,255,255,0.7)', marginTop: 2 }]}>
+                    {smartNextTask.roomEmoji} {smartNextTask.roomName} · ~{smartNextTask.estimatedMinutes} min
+                  </Text>
+                </View>
+                <Text style={{ fontSize: 20, color: '#FFFFFF' }}>{'\u2192'}</Text>
+              </LinearGradient>
+            </Pressable>
+          ) : rooms.length === 0 ? (
+            /* Empty state — prompt to add first room */
+            <GlassCard variant="elevated" style={styles.emptyCard} showHighlight>
+              <View style={styles.emptyContent}>
+                <Text style={styles.emptyEmoji}>🏠</Text>
+                <Text style={[Typography.title2, { color: colors.text, textAlign: 'center', marginTop: Spacing.md }]}>
+                  No rooms yet
+                </Text>
+                <Text style={[Typography.subheadline, { color: colors.textSecondary, textAlign: 'center', marginTop: Spacing.xs, lineHeight: 22 }]}>
+                  Take a photo of any messy space and our AI will create a personalized cleaning plan.
+                </Text>
+
+                <Pressable
+                  onPress={handleAddRoom}
+                  style={styles.emptyButton}
+                  accessibilityRole="button"
+                  accessibilityLabel="Add your first room"
+                >
+                  <LinearGradient
+                    colors={isDark ? ['#0A84FF', '#5856D6'] as const : ['#007AFF', '#5856D6'] as const}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.emptyButtonGradient}
+                  >
+                    <Text style={[Typography.headline, { color: '#FFFFFF' }]}>
+                      Take a Photo
+                    </Text>
+                  </LinearGradient>
+                </Pressable>
+              </View>
+            </GlassCard>
+          ) : (
+            /* All tasks done */
+            <GlassCard
+              variant="tinted"
+              tintColor={colors.success}
+              tintOpacity={0.08}
+              style={styles.focusCard}
+            >
+              <View style={styles.focusRow}>
+                <View style={[styles.focusIcon, { backgroundColor: colors.successMuted }]}>
+                  <Text style={{ fontSize: 20 }}>🎉</Text>
+                </View>
+                <View style={styles.focusInfo}>
+                  <Text style={[Typography.headline, { color: colors.text }]}>
+                    All caught up!
+                  </Text>
+                  <Text style={[Typography.caption1, { color: colors.textSecondary, marginTop: 2 }]}>
+                    No pending tasks. You&apos;re doing great.
+                  </Text>
+                </View>
+              </View>
+            </GlassCard>
+          )}
         </Animated.View>
 
         {/* ── Mascot Greeting ─────────────────────────────────────────── */}
         {mascot && (
-          <Animated.View entering={FadeInDown.delay(160).springify()} style={styles.section}>
+          <Animated.View entering={reducedMotion ? undefined : FadeInDown.delay(200).springify()} style={styles.section}>
             <GlassCard
               variant="subtle"
               style={styles.mascotCard}
@@ -401,8 +727,8 @@ export default function HomeScreen() {
         )}
 
         {/* ── Rooms ───────────────────────────────────────────────────── */}
-        {rooms.length > 0 ? (
-          <Animated.View entering={FadeInDown.delay(200).springify()} style={styles.section}>
+        {rooms.length > 0 && (
+          <Animated.View entering={reducedMotion ? undefined : FadeInDown.delay(240).springify()} style={styles.section}>
             <View style={styles.sectionHeader}>
               <Text style={[Typography.title3, { color: colors.text }]}>Your Rooms</Text>
               <Pressable
@@ -420,89 +746,64 @@ export default function HomeScreen() {
               {rooms.map((room, index) => (
                 <Animated.View
                   key={room.id}
-                  entering={FadeInDown.delay(200 + index * 60).springify()}
+                  entering={reducedMotion ? undefined : FadeInDown.delay(240 + index * 60).springify()}
                 >
                   <RoomCard
                     room={room}
                     colors={colors}
                     isDark={isDark}
                     onPress={() => handleOpenRoom(room.id)}
+                    weeklyDoneCount={weeklyDoneCounts[room.id] ?? 0}
                   />
                 </Animated.View>
               ))}
             </View>
           </Animated.View>
-        ) : (
-          /* ── Empty State ──────────────────────────────────────────── */
-          <Animated.View entering={FadeInDown.delay(200).springify()} style={styles.section}>
-            <GlassCard variant="elevated" style={styles.emptyCard} showHighlight>
-              <View style={styles.emptyContent}>
-                <Text style={styles.emptyEmoji}>🏠</Text>
-                <Text style={[Typography.title2, { color: colors.text, textAlign: 'center', marginTop: Spacing.md }]}>
-                  No rooms yet
-                </Text>
-                <Text style={[Typography.subheadline, { color: colors.textSecondary, textAlign: 'center', marginTop: Spacing.xs, lineHeight: 22 }]}>
-                  Take a photo of any messy space and our AI will create a personalized cleaning plan.
-                </Text>
-
-                <Pressable
-                  onPress={handleAddRoom}
-                  style={styles.emptyButton}
-                  accessibilityRole="button"
-                  accessibilityLabel="Add your first room"
-                >
-                  <LinearGradient
-                    colors={isDark ? ['#0A84FF', '#5856D6'] : ['#007AFF', '#5856D6']}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={styles.emptyButtonGradient}
-                  >
-                    <Text style={[Typography.headline, { color: '#FFFFFF' }]}>
-                      📸 Add Your First Room
-                    </Text>
-                  </LinearGradient>
-                </Pressable>
-              </View>
-            </GlassCard>
-          </Animated.View>
         )}
 
-        {/* ── Today's Focus ───────────────────────────────────────────── */}
-        {quickWinTask && rooms.length > 0 && (
-          <Animated.View entering={FadeInDown.delay(280).springify()} style={styles.section}>
-            <Text style={[Typography.title3, { color: colors.text, marginBottom: Spacing.sm }]}>
-              Today&apos;s Focus
-            </Text>
+        {/* ── "Done for today" Button ─────────────────────────────────── */}
+        {completedTasks > 0 && (
+          <Animated.View entering={reducedMotion ? undefined : FadeInDown.delay(300).springify()} style={styles.section}>
             <Pressable
-              onPress={handleQuickWin}
+              onPress={handleDoneForToday}
+              style={[styles.doneForTodayButton, {
+                backgroundColor: isDark ? colors.surface : colors.backgroundSecondary,
+                borderColor: isDark ? colors.cardBorder : colors.borderLight,
+              }]}
               accessibilityRole="button"
-              accessibilityLabel={`Quick win: ${quickWinTask.title}`}
+              accessibilityLabel="Done for today"
             >
-              <GlassCard
-                variant="tinted"
-                tintColor={colors.success}
-                tintOpacity={0.08}
-                style={styles.focusCard}
-              >
-                <View style={styles.focusRow}>
-                  <View style={[styles.focusIcon, { backgroundColor: colors.successMuted }]}>
-                    <Text style={{ fontSize: 20 }}>⚡</Text>
-                  </View>
-                  <View style={styles.focusInfo}>
-                    <Text style={[Typography.headline, { color: colors.text }]} numberOfLines={1}>
-                      {quickWinTask.title}
-                    </Text>
-                    <Text style={[Typography.caption1, { color: colors.textSecondary, marginTop: 2 }]}>
-                      {(quickWinTask as { roomEmoji?: string }).roomEmoji} {(quickWinTask as { roomName?: string }).roomName} · ~{quickWinTask.estimatedMinutes} min
-                    </Text>
-                  </View>
-                  <Text style={[Typography.headline, { color: colors.success }]}>→</Text>
-                </View>
-              </GlassCard>
+              <Text style={[Typography.subheadlineMedium, { color: colors.textSecondary }]}>
+                Done for today? That&apos;s OK.
+              </Text>
+              <Text style={[Typography.caption1, { color: colors.textTertiary, marginTop: 2 }]}>
+                You showed up. That counts.
+              </Text>
             </Pressable>
           </Animated.View>
         )}
       </ScrollView>
+
+      {/* ── "Done for today" Celebration ──────────────────────────────── */}
+      {showDoneForToday && (
+        <Animated.View
+          entering={reducedMotion ? undefined : FadeInDown.springify()}
+          exiting={FadeOut.duration(300)}
+          style={styles.doneForTodayCelebration}
+        >
+          <View style={[styles.doneForTodayCard, {
+            backgroundColor: isDark ? 'rgba(28, 28, 30, 0.95)' : 'rgba(255, 255, 255, 0.95)',
+          }]}>
+            <Text style={styles.doneForTodayEmoji}>🌿</Text>
+            <Text style={[Typography.headline, { color: colors.text, textAlign: 'center' }]}>
+              You did enough today.
+            </Text>
+            <Text style={[Typography.subheadline, { color: colors.textSecondary, textAlign: 'center', marginTop: 4 }]}>
+              Rest is part of the process. See you tomorrow.
+            </Text>
+          </View>
+        </Animated.View>
+      )}
     </View>
   );
 }
@@ -523,7 +824,7 @@ const styles = StyleSheet.create({
 
   // Hero
   heroSection: {
-    marginBottom: Spacing.ml,
+    marginBottom: Spacing.md,
   },
   greetingRow: {
     flexDirection: 'row',
@@ -543,46 +844,23 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'flex-start',
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 6,
+    paddingHorizontal: Spacing.sm + 2,
+    paddingVertical: 8,
     borderRadius: BorderRadius.xl,
     borderWidth: 1,
     gap: 6,
   },
   streakFire: {
-    fontSize: 14,
+    fontSize: 16,
   },
   streakText: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '600',
-  },
-
-  // Stats
-  statsRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginBottom: Spacing.lg,
-  },
-  statPill: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.xs,
-    borderRadius: BorderRadius.lg,
-    borderWidth: 0.5,
-  },
-  statPillValue: {
-    ...Typography.title2,
-  },
-  statPillLabel: {
-    ...Typography.caption2,
-    marginTop: Spacing.hairline,
-    textAlign: 'center',
   },
 
   // Section
   section: {
-    marginBottom: Spacing.lg + Spacing.xxs,
+    marginBottom: Spacing.lg,
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -591,30 +869,54 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.sm,
   },
 
-  // Quick Actions
-  quickActionsGrid: {
+  // Time Selector
+  timeSelector: {
+    marginBottom: 0,
+  },
+  timeOptions: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
+    gap: Spacing.xs,
+  },
+  timeOption: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+  },
+
+  // Energy Check-In
+  energyCheckIn: {
+    marginBottom: 0,
+  },
+  energyOptions: {
+    flexDirection: 'row',
+    gap: Spacing.xs,
+  },
+  energyOption: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+  },
+  energyEmoji: {
+    fontSize: 20,
+  },
+
+  // Smart CTA
+  smartCTACard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: Spacing.md,
+    borderRadius: BorderRadius.card,
     gap: Spacing.sm,
   },
-  quickActionCard: {
-    width: (SCREEN_WIDTH - 52) / 2,
-    paddingVertical: 18,
-    paddingHorizontal: Spacing.md,
-    borderRadius: BorderRadius.card,
-    gap: Spacing.xxs,
+  smartCTAEmoji: {
+    fontSize: 32,
   },
-  quickActionEmoji: {
-    fontSize: 28,
-    marginBottom: Spacing.xxs,
-  },
-  quickActionLabel: {
-    ...Typography.subheadlineMedium,
-    color: undefined,
-  },
-  quickActionSublabel: {
-    ...Typography.caption1,
-    color: undefined,
+  smartCTAContent: {
+    flex: 1,
   },
 
   // Mascot
@@ -667,12 +969,6 @@ const styles = StyleSheet.create({
   roomCardMeta: {
     ...Typography.caption1,
   },
-  roomCardFooter: {
-    marginTop: 10,
-  },
-  roomCardProgress: {
-    ...Typography.title3,
-  },
 
   // Empty State
   emptyCard: {
@@ -714,5 +1010,37 @@ const styles = StyleSheet.create({
   },
   focusInfo: {
     flex: 1,
+  },
+
+  // Done for today
+  doneForTodayButton: {
+    alignItems: 'center',
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+    borderRadius: BorderRadius.card,
+    borderWidth: 0.5,
+  },
+  doneForTodayCelebration: {
+    position: 'absolute',
+    bottom: 120,
+    left: Spacing.ml,
+    right: Spacing.ml,
+    alignItems: 'center',
+    zIndex: 100,
+  },
+  doneForTodayCard: {
+    alignItems: 'center',
+    paddingVertical: Spacing.lg,
+    paddingHorizontal: Spacing.xl,
+    borderRadius: BorderRadius.card,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.2,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  doneForTodayEmoji: {
+    fontSize: 40,
+    marginBottom: Spacing.sm,
   },
 });

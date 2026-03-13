@@ -1,6 +1,7 @@
 /**
  * Declutterly — Settings Screen (Apple 2026)
- * iOS 26 grouped settings with adaptive colors, toggles, and haptics
+ * Consolidated to 3 groups: Account, Preferences, Support
+ * Reset requires typing "RESET", no-op handlers removed
  */
 
 import { Colors, ColorTokens } from '@/constants/Colors';
@@ -9,6 +10,7 @@ import { Typography } from '@/theme/typography';
 import { Spacing, BorderRadius } from '@/theme/spacing';
 import { router } from 'expo-router';
 import * as Haptics from 'expo-haptics';
+import * as Linking from 'expo-linking';
 import React, { useState } from 'react';
 import {
   Alert,
@@ -23,10 +25,9 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@/context/AuthContext';
 import { useDeclutter } from '@/context/DeclutterContext';
+import { useReducedMotion } from '@/hooks/useReducedMotion';
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Settings Row
-// ─────────────────────────────────────────────────────────────────────────────
 interface RowProps {
   emoji: string;
   label: string;
@@ -60,6 +61,7 @@ function Row({
       disabled={!isInteractive}
       accessibilityRole={toggle ? 'switch' : onPress ? 'button' : 'none'}
       accessibilityLabel={label}
+      accessibilityHint={sublabel}
       accessibilityState={toggle ? { checked: toggleValue } : undefined}
       style={({ pressed }) => [
         styles.row,
@@ -81,7 +83,7 @@ function Row({
           ? colors.dangerMuted
           : (isDark ? colors.fillTertiary : colors.surfaceTertiary),
       }]}>
-        <Text style={styles.rowEmoji}>{emoji}</Text>
+        <Text style={styles.rowEmoji} accessibilityElementsHidden>{emoji}</Text>
       </View>
 
       {/* Label */}
@@ -113,15 +115,13 @@ function Row({
       ) : value ? (
         <Text style={[styles.rowValue, { color: colors.textSecondary }]}>{value}</Text>
       ) : onPress ? (
-        <Text style={[styles.rowChevron, { color: colors.textTertiary }]}>›</Text>
+        <Text style={[styles.rowChevron, { color: colors.textTertiary }]}>{'>'}</Text>
       ) : null}
     </Pressable>
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Settings Group
-// ─────────────────────────────────────────────────────────────────────────────
 interface GroupProps {
   title?: string;
   footer?: string;
@@ -155,15 +155,14 @@ function Group({ title, footer, children, colors, isDark }: GroupProps) {
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Main Screen
-// ─────────────────────────────────────────────────────────────────────────────
 export default function SettingsScreen() {
   const rawScheme = useColorScheme();
   const colorScheme = rawScheme === 'dark' ? 'dark' : 'light';
   const colors = Colors[colorScheme];
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
+  const reducedMotion = useReducedMotion();
 
   const { signOut } = useAuth();
   const { user, resetStats } = useDeclutter();
@@ -173,7 +172,6 @@ export default function SettingsScreen() {
   const [dailyReminder, setDailyReminder] = useState(true);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [hapticEnabled, setHapticEnabled] = useState(true);
-  const [analyticsEnabled, setAnalyticsEnabled] = useState(false);
 
   const handleSignOut = () => {
     Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
@@ -190,22 +188,41 @@ export default function SettingsScreen() {
     ]);
   };
 
+  // Reset requires typing "RESET"
   const handleResetProgress = () => {
-    Alert.alert(
+    Alert.prompt(
       'Reset All Progress',
-      'This will permanently delete all your rooms, tasks, and progress. This cannot be undone.',
+      'This will permanently delete all your rooms, tasks, and progress. Type "RESET" to confirm.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Reset Everything',
           style: 'destructive',
-          onPress: () => {
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-            resetStats?.();
+          onPress: (input?: string) => {
+            if (input?.trim().toUpperCase() === 'RESET') {
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+              resetStats?.();
+            } else {
+              Alert.alert('Reset Cancelled', 'You must type "RESET" to confirm.');
+            }
           },
         },
-      ]
+      ],
+      'plain-text'
     );
+  };
+
+  const handleRateApp = async () => {
+    try {
+      // Open App Store page for rating
+      await Linking.openURL('https://apps.apple.com/app/declutterly');
+    } catch {
+      // Unable to open App Store
+    }
+  };
+
+  const handleContactSupport = () => {
+    Linking.openURL('mailto:support@declutterly.app?subject=Declutterly%20Support');
   };
 
   return (
@@ -223,7 +240,7 @@ export default function SettingsScreen() {
           accessibilityRole="button"
           accessibilityLabel="Go back"
         >
-          <Text style={[styles.backIcon, { color: colors.accent }]}>‹</Text>
+          <Text style={[styles.backIcon, { color: colors.accent }]}>{'<'}</Text>
           <Text style={[Typography.body, { color: colors.accent }]}>Back</Text>
         </Pressable>
         <Text style={[Typography.navTitle, { color: colors.text }]}>Settings</Text>
@@ -238,37 +255,29 @@ export default function SettingsScreen() {
         ]}
         showsVerticalScrollIndicator={false}
       >
-        {/* ── Account ──────────────────────────────────────────────── */}
-        <Animated.View entering={FadeInDown.delay(0).springify()}>
+        {/* Account */}
+        <Animated.View entering={reducedMotion ? undefined : FadeInDown.delay(0).springify()}>
           <Group title="Account" colors={colors} isDark={isDark}>
             <Row
-              emoji="👤"
+              emoji="N"
               label={user?.name || 'Your Name'}
-              sublabel={'Tap to edit'}
-              onPress={() => {}}
+              sublabel="Tap to edit your profile"
+              onPress={() => router.push('/profile/edit' as any)}
               colors={colors}
               isDark={isDark}
               isFirst
-              isLast
             />
-          </Group>
-        </Animated.View>
-
-        {/* ── Notifications ────────────────────────────────────────── */}
-        <Animated.View entering={FadeInDown.delay(60).springify()}>
-          <Group title="Notifications" colors={colors} isDark={isDark}>
             <Row
-              emoji="🔔"
+              emoji="B"
               label="Push Notifications"
               toggle
               toggleValue={notificationsEnabled}
               onToggle={setNotificationsEnabled}
               colors={colors}
               isDark={isDark}
-              isFirst
             />
             <Row
-              emoji="⏰"
+              emoji="R"
               label="Daily Reminder"
               sublabel="Get reminded to declutter each day"
               toggle
@@ -281,11 +290,16 @@ export default function SettingsScreen() {
           </Group>
         </Animated.View>
 
-        {/* ── Preferences ──────────────────────────────────────────── */}
-        <Animated.View entering={FadeInDown.delay(120).springify()}>
-          <Group title="Preferences" colors={colors} isDark={isDark}>
+        {/* Preferences */}
+        <Animated.View entering={reducedMotion ? undefined : FadeInDown.delay(60).springify()}>
+          <Group
+            title="Preferences"
+            footer="Sound and haptic feedback enhance the decluttering experience."
+            colors={colors}
+            isDark={isDark}
+          >
             <Row
-              emoji="🔊"
+              emoji="S"
               label="Sound Effects"
               toggle
               toggleValue={soundEnabled}
@@ -295,118 +309,52 @@ export default function SettingsScreen() {
               isFirst
             />
             <Row
-              emoji="📳"
+              emoji="H"
               label="Haptic Feedback"
               toggle
               toggleValue={hapticEnabled}
               onToggle={setHapticEnabled}
               colors={colors}
               isDark={isDark}
-            />
-            <Row
-              emoji="🌙"
-              label="Appearance"
-              value="System"
-              onPress={() => {}}
-              colors={colors}
-              isDark={isDark}
               isLast
             />
           </Group>
         </Animated.View>
 
-        {/* ── AI & Data ────────────────────────────────────────────── */}
-        <Animated.View entering={FadeInDown.delay(160).springify()}>
+        {/* Support & Account Actions */}
+        <Animated.View entering={reducedMotion ? undefined : FadeInDown.delay(120).springify()}>
           <Group
-            title="AI & Data"
-            footer="Analytics help us improve the app. No personal data is shared."
+            title="Support"
+            footer="These destructive actions are permanent and cannot be undone."
             colors={colors}
             isDark={isDark}
           >
             <Row
-              emoji="🤖"
-              label="AI Analysis"
-              sublabel="Powered by Gemini"
-              onPress={() => router.push('/analysis')}
-              colors={colors}
-              isDark={isDark}
-              isFirst
-            />
-            <Row
-              emoji="📊"
-              label="Share Analytics"
-              toggle
-              toggleValue={analyticsEnabled}
-              onToggle={setAnalyticsEnabled}
-              colors={colors}
-              isDark={isDark}
-              isLast
-            />
-          </Group>
-        </Animated.View>
-
-        {/* ── Support ──────────────────────────────────────────────── */}
-        <Animated.View entering={FadeInDown.delay(200).springify()}>
-          <Group title="Support" colors={colors} isDark={isDark}>
-            <Row
-              emoji="❓"
-              label="Help & FAQ"
-              onPress={() => {}}
-              colors={colors}
-              isDark={isDark}
-              isFirst
-            />
-            <Row
-              emoji="⭐"
+              emoji="R"
               label="Rate the App"
-              onPress={() => {}}
+              onPress={handleRateApp}
               colors={colors}
               isDark={isDark}
+              isFirst
             />
             <Row
-              emoji="📧"
+              emoji="C"
               label="Contact Support"
-              onPress={() => {}}
+              onPress={handleContactSupport}
               colors={colors}
               isDark={isDark}
             />
             <Row
-              emoji="📋"
-              label="Privacy Policy"
-              onPress={() => {}}
-              colors={colors}
-              isDark={isDark}
-            />
-            <Row
-              emoji="📄"
-              label="Terms of Service"
-              onPress={() => {}}
-              colors={colors}
-              isDark={isDark}
-              isLast
-            />
-          </Group>
-        </Animated.View>
-
-        {/* ── Danger Zone ──────────────────────────────────────────── */}
-        <Animated.View entering={FadeInDown.delay(240).springify()}>
-          <Group
-            title="Danger Zone"
-            footer="These actions are permanent and cannot be undone."
-            colors={colors}
-            isDark={isDark}
-          >
-            <Row
-              emoji="🗑️"
+              emoji="T"
               label="Reset All Progress"
+              sublabel="Requires typing RESET to confirm"
               onPress={handleResetProgress}
               destructive
               colors={colors}
               isDark={isDark}
-              isFirst
             />
             <Row
-              emoji="🚪"
+              emoji="X"
               label="Sign Out"
               onPress={handleSignOut}
               destructive
@@ -419,16 +367,13 @@ export default function SettingsScreen() {
 
         {/* Version */}
         <Text style={[styles.versionText, { color: colors.textTertiary }]}>
-          Declutterly v1.0.0 · Build 1{'\n'}Made with ❤️ for a cleaner life
+          Declutterly v1.0.0 {'\n'} Made with care for a cleaner life
         </Text>
       </ScrollView>
     </View>
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Styles
-// ─────────────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   container: { flex: 1 },
 
@@ -445,6 +390,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 2,
     minWidth: 70,
+    minHeight: 44,
   },
   backIcon: {
     fontSize: 28,

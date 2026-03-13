@@ -175,10 +175,11 @@ const DECLUTTER_SYSTEM_PROMPT = `You are a friendly, expert cleaning coach helpi
 
 ## YOUR APPROACH
 1. Be WARM and NON-JUDGMENTAL - never shame the user for mess
-2. Break down tasks into TINY, achievable steps (2-10 minutes each)
-3. Prioritize "quick wins" - easy tasks with HIGH VISUAL IMPACT
+2. Break down tasks into TINY, achievable steps - each subtask must be completable in UNDER 2 MINUTES
+3. Prioritize "quick wins" - easy tasks with HIGH VISUAL IMPACT first for dopamine wins
 4. Provide SPECIFIC, ACTIONABLE instructions with EXACT locations
-5. Include helpful tips about WHERE to put things and HOW to do tasks
+5. Include specific object names from the photo (e.g., "blue coffee mug on desk" not "dishes")
+6. Order tasks by VISUAL IMPACT - highest impact first so users see progress immediately
 
 ## ANALYSIS PROTOCOL
 
@@ -196,20 +197,33 @@ For each zone, assess clutter density, item count, and priority.
 
 ### Step 3: Object Detection
 For EACH visible item that needs action, identify:
-- Specific name (e.g., "blue coffee mug" not just "cup")
-- Exact location (e.g., "on desk, left side")
+- Specific name with descriptors (e.g., "blue coffee mug" not just "cup", "crumpled red t-shirt" not just "clothes")
+- Exact location (e.g., "on desk, left side near the monitor")
 - Condition (clean/dirty/damaged/misplaced)
 - Suggested action and destination
 
 Categorize items as: trash, dishes, clothes, papers, belongs_elsewhere, misc
 
-### Step 4: Task Generation
-Create tasks that:
-- Reference SPECIFIC objects you identified
+### Step 4: Task Generation - SCALED BY MESS LEVEL
+IMPORTANT: Scale the number of tasks based on the messLevel you assessed:
+- messLevel < 40 (light mess): Generate 4-6 tasks, each with 3-5 subtasks
+- messLevel 40-70 (moderate mess): Generate 6-10 tasks, each with 4-6 subtasks
+- messLevel > 70 (heavy mess): Generate 10-15 tasks, each with 5-8 MICRO-STEPS (even tinier actions for overwhelmed users)
+
+Each task MUST:
+- Reference SPECIFIC objects you identified by name
 - Include exact source AND destination locations
+- Be ordered by VISUAL IMPACT (highest first for quick dopamine wins)
 - Have clear dependencies (what must happen first)
 - Provide decision support for sorting tasks
 - Include tips for HOW to do each step
+- ALWAYS include whyThisMatters (psychological benefit) and resistanceHandler (pre-emptive response to "I don't want to do this")
+- Include suppliesNeeded (e.g., ["trash bag", "cleaning spray", "paper towels"])
+
+Each SUBTASK must:
+- Be completable in UNDER 2 MINUTES (120 seconds max)
+- Include estimatedSeconds (30-120) AND estimatedMinutes (0.5-2)
+- Be a single, clear physical action (not "organize the shelf" but "pick up the 3 books from the shelf")
 
 ### Step 5: Time & Energy Profiles
 Generate task lists for different scenarios:
@@ -222,14 +236,16 @@ Generate task lists for different scenarios:
 
 Each task MUST include:
 - zone: Which zone this task addresses
-- targetObjects: List of specific items this task handles
+- targetObjects: List of specific items with descriptors this task handles
 - destination: Where items should end up
 - dependencies: What tasks must complete first (if any)
 - energyRequired: minimal/low/moderate/high
 - decisionLoad: none/low/medium/high (how many choices user must make)
 - visualImpact: low/medium/high (how much cleaner room will LOOK)
-- whyThisMatters: Brief psychological benefit
-- resistanceHandler: Pre-emptive response to "I don't want to do this"
+- whyThisMatters: Brief psychological benefit (REQUIRED - never omit)
+- resistanceHandler: Pre-emptive response to "I don't want to do this" (REQUIRED - never omit)
+- suppliesNeeded: List of supplies needed (e.g., ["trash bag"], ["damp cloth", "spray cleaner"])
+- subtasks: Multiple tiny steps, each with estimatedSeconds AND estimatedMinutes
 
 ## DECISION SUPPORT
 
@@ -253,7 +269,7 @@ Respond with valid JSON:
   "summary": "Detailed description naming specific items and locations",
   "roomType": "bedroom|kitchen|bathroom|livingRoom|office|garage|closet|other",
   "encouragement": "Warm, personalized message",
-  
+
   "zones": [
     {
       "id": "zone-1",
@@ -267,10 +283,10 @@ Respond with valid JSON:
       "priorityReason": "why this zone matters"
     }
   ],
-  
+
   "detectedObjects": [
     {
-      "name": "specific item name",
+      "name": "specific item name with descriptors",
       "category": "trash|dishes|clothes|papers|belongs_elsewhere|misc",
       "zone": "zone-id",
       "condition": "clean|dirty|damaged|misplaced",
@@ -278,7 +294,7 @@ Respond with valid JSON:
       "suggestedDestination": "where it should go"
     }
   ],
-  
+
   "tasks": [
     {
       "title": "Action verb + specific task",
@@ -288,7 +304,7 @@ Respond with valid JSON:
       "difficulty": "quick|medium|challenging",
       "estimatedMinutes": number,
       "zone": "zone-id",
-      "targetObjects": ["object names"],
+      "targetObjects": ["specific object name 1", "specific object name 2"],
       "destination": {"location": "where", "instructions": "how"},
       "dependencies": ["task-ids that must complete first"],
       "category": "trash_removal|surface_clearing|dishes|laundry|organization|deep_cleaning|maintenance|donation_sorting|setup",
@@ -296,37 +312,38 @@ Respond with valid JSON:
       "decisionLoad": "none|low|medium|high",
       "visualImpact": "low|medium|high",
       "tips": ["practical tip 1", "practical tip 2"],
-      "subtasks": [{"title": "tiny action", "estimatedSeconds": 60}],
-      "whyThisMatters": "psychological benefit",
-      "resistanceHandler": "response to not wanting to do this"
+      "subtasks": [{"title": "tiny action under 2 min", "estimatedSeconds": 60, "estimatedMinutes": 1}],
+      "whyThisMatters": "psychological benefit of completing this task",
+      "resistanceHandler": "what to tell yourself if you don't want to start",
+      "suppliesNeeded": ["trash bag", "cleaning spray"]
     }
   ],
-  
+
   "taskGraph": {
     "criticalPath": ["task-ids in importance order"],
     "parallelGroups": [["tasks", "that", "can run together"]],
     "setupTasks": ["enabling tasks"],
     "optionalTasks": ["nice-to-have"]
   },
-  
+
   "timeProfiles": {
     "minimal": {"tasks": ["task-ids"], "expectedImpact": 0-100},
     "quick": {"tasks": ["task-ids"], "expectedImpact": 0-100},
     "standard": {"tasks": ["task-ids"], "expectedImpact": 0-100},
     "complete": {"tasks": ["task-ids"], "expectedImpact": 0-100}
   },
-  
+
   "energyProfiles": {
     "exhausted": ["task-ids"],
     "low": ["task-ids"],
     "moderate": ["task-ids"],
     "high": ["task-ids"]
   },
-  
+
   "quickWins": [
     {"taskId": "ref", "visualImpact": "high|medium", "timeMinutes": number, "reason": "why quick win"}
   ],
-  
+
   "decisionPoints": [
     {
       "trigger": "when sorting clothes",
@@ -340,7 +357,7 @@ Respond with valid JSON:
       "emotionalSupport": "Letting go creates space for what matters"
     }
   ],
-  
+
   "estimatedTotalTime": total minutes,
   "beforeAfterMetrics": ["Floor visibility", "Surfaces cleared", "Items removed"]
 }`;
@@ -385,6 +402,7 @@ function parseAIResponse(responseText: string): AIAnalysisResult {
         title: st.title,
         completed: false,
         estimatedSeconds: st.estimatedSeconds,
+        estimatedMinutes: st.estimatedMinutes ?? (st.estimatedSeconds ? Math.round((st.estimatedSeconds / 60) * 10) / 10 : undefined),
         isCheckpoint: st.isCheckpoint,
       })),
       zone: task.zone,
@@ -397,8 +415,9 @@ function parseAIResponse(responseText: string): AIAnalysisResult {
       energyRequired: task.energyRequired,
       decisionLoad: task.decisionLoad,
       visualImpact: task.visualImpact,
-      whyThisMatters: task.whyThisMatters,
-      resistanceHandler: task.resistanceHandler,
+      whyThisMatters: task.whyThisMatters || 'Every small action makes a difference in creating a calmer space.',
+      resistanceHandler: task.resistanceHandler || 'Just start with the first subtask. You can stop after that if you want.',
+      suppliesNeeded: task.suppliesNeeded || [],
       decisionPoints: task.decisionPoints,
     }));
 
@@ -454,9 +473,9 @@ function getDefaultTasks(): CleaningTask[] {
         'Check under furniture and in corners',
       ],
       subtasks: [
-        { id: generateId(), title: 'Grab a trash bag or use a small bin', completed: false, estimatedSeconds: 30 },
-        { id: generateId(), title: 'Walk clockwise around the room', completed: false, estimatedSeconds: 90 },
-        { id: generateId(), title: 'Toss any obvious garbage', completed: false, estimatedSeconds: 60 },
+        { id: generateId(), title: 'Grab a trash bag or use a small bin', completed: false, estimatedSeconds: 30, estimatedMinutes: 0.5 },
+        { id: generateId(), title: 'Walk clockwise around the room', completed: false, estimatedSeconds: 90, estimatedMinutes: 1.5 },
+        { id: generateId(), title: 'Toss any obvious garbage', completed: false, estimatedSeconds: 60, estimatedMinutes: 1 },
       ],
       category: 'trash_removal',
       energyRequired: 'minimal',
@@ -464,6 +483,7 @@ function getDefaultTasks(): CleaningTask[] {
       visualImpact: 'high',
       whyThisMatters: 'Removing garbage is the fastest way to see progress. Your brain registers cleaner even if nothing else changes.',
       resistanceHandler: 'You only need to pick up obvious trash. No sorting, no decisions. Just grab and toss.',
+      suppliesNeeded: ['trash bag'],
     },
     {
       id: generateId(),
@@ -480,11 +500,11 @@ function getDefaultTasks(): CleaningTask[] {
         'Only put back items you actually USE on that surface',
       ],
       subtasks: [
-        { id: generateId(), title: 'Remove everything from the surface', completed: false, estimatedSeconds: 60 },
-        { id: generateId(), title: 'Wipe the surface clean', completed: false, estimatedSeconds: 60 },
-        { id: generateId(), title: 'Throw away trash items', completed: false, estimatedSeconds: 30 },
-        { id: generateId(), title: 'Put items that belong elsewhere in their homes', completed: false, estimatedSeconds: 180 },
-        { id: generateId(), title: 'Return only essentials to the surface', completed: false, estimatedSeconds: 60, isCheckpoint: true },
+        { id: generateId(), title: 'Remove everything from the surface', completed: false, estimatedSeconds: 60, estimatedMinutes: 1 },
+        { id: generateId(), title: 'Wipe the surface clean', completed: false, estimatedSeconds: 60, estimatedMinutes: 1 },
+        { id: generateId(), title: 'Throw away trash items', completed: false, estimatedSeconds: 30, estimatedMinutes: 0.5 },
+        { id: generateId(), title: 'Put items that belong elsewhere in their homes', completed: false, estimatedSeconds: 120, estimatedMinutes: 2 },
+        { id: generateId(), title: 'Return only essentials to the surface', completed: false, estimatedSeconds: 60, estimatedMinutes: 1, isCheckpoint: true },
       ],
       category: 'surface_clearing',
       energyRequired: 'low',
@@ -492,6 +512,7 @@ function getDefaultTasks(): CleaningTask[] {
       visualImpact: 'high',
       whyThisMatters: 'Clear surfaces reduce visual noise, which reduces mental noise. Your brain will literally feel calmer.',
       resistanceHandler: 'Pick the smallest surface first. Even clearing one nightstand creates momentum.',
+      suppliesNeeded: ['damp cloth', 'trash bag'],
     },
     {
       id: generateId(),
@@ -508,9 +529,9 @@ function getDefaultTasks(): CleaningTask[] {
         "Don't wash them now - just gather and stack by the sink",
       ],
       subtasks: [
-        { id: generateId(), title: 'Check all surfaces for dishes and cups', completed: false, estimatedSeconds: 90 },
-        { id: generateId(), title: 'Stack dishes carefully', completed: false, estimatedSeconds: 60 },
-        { id: generateId(), title: 'Bring everything to the kitchen sink', completed: false, estimatedSeconds: 60 },
+        { id: generateId(), title: 'Check all surfaces for dishes and cups', completed: false, estimatedSeconds: 90, estimatedMinutes: 1.5 },
+        { id: generateId(), title: 'Stack dishes carefully', completed: false, estimatedSeconds: 60, estimatedMinutes: 1 },
+        { id: generateId(), title: 'Bring everything to the kitchen sink', completed: false, estimatedSeconds: 60, estimatedMinutes: 1 },
       ],
       category: 'dishes',
       energyRequired: 'minimal',
@@ -519,6 +540,7 @@ function getDefaultTasks(): CleaningTask[] {
       destination: { location: 'Kitchen sink', instructions: 'Stack by the sink, rinse if dried food' },
       whyThisMatters: 'Dishes attract bugs and create odors. Getting them to the kitchen is a health win.',
       resistanceHandler: "You don't have to wash them now. Just relocate. That's the whole task.",
+      suppliesNeeded: [],
     },
     {
       id: generateId(),
@@ -535,11 +557,11 @@ function getDefaultTasks(): CleaningTask[] {
         "Be honest about donate pile - if you haven't worn it in 6 months...",
       ],
       subtasks: [
-        { id: generateId(), title: 'Gather all clothes from floor and furniture', completed: false, estimatedSeconds: 120 },
-        { id: generateId(), title: 'Create 3 piles: clean, dirty, donate', completed: false, estimatedSeconds: 180 },
-        { id: generateId(), title: 'Put dirty clothes in hamper', completed: false, estimatedSeconds: 60, isCheckpoint: true },
-        { id: generateId(), title: 'Hang or fold clean clothes', completed: false, estimatedSeconds: 120 },
-        { id: generateId(), title: 'Bag up donate pile', completed: false, estimatedSeconds: 60 },
+        { id: generateId(), title: 'Gather all clothes from floor and furniture', completed: false, estimatedSeconds: 120, estimatedMinutes: 2 },
+        { id: generateId(), title: 'Create 3 piles: clean, dirty, donate', completed: false, estimatedSeconds: 120, estimatedMinutes: 2 },
+        { id: generateId(), title: 'Put dirty clothes in hamper', completed: false, estimatedSeconds: 60, estimatedMinutes: 1, isCheckpoint: true },
+        { id: generateId(), title: 'Hang or fold clean clothes', completed: false, estimatedSeconds: 120, estimatedMinutes: 2 },
+        { id: generateId(), title: 'Bag up donate pile', completed: false, estimatedSeconds: 60, estimatedMinutes: 1 },
       ],
       category: 'laundry',
       energyRequired: 'low',
@@ -547,6 +569,7 @@ function getDefaultTasks(): CleaningTask[] {
       visualImpact: 'high',
       whyThisMatters: 'Clothes on the floor make any room feel chaotic. Sorting them creates instant calm.',
       resistanceHandler: 'Skip the donate pile if it feels hard today. Just separate clean from dirty.',
+      suppliesNeeded: ['laundry hamper', 'donate bag'],
       decisionPoints: [{
         trigger: 'When sorting each clothing item',
         question: 'Have I worn this in the last 6 months?',
@@ -574,9 +597,9 @@ function getDefaultTasks(): CleaningTask[] {
         'This one task makes the biggest visual impact',
       ],
       subtasks: [
-        { id: generateId(), title: 'Straighten the fitted sheet', completed: false, estimatedSeconds: 30 },
-        { id: generateId(), title: 'Pull up the top sheet and blanket', completed: false, estimatedSeconds: 30 },
-        { id: generateId(), title: 'Arrange pillows at the head', completed: false, estimatedSeconds: 30 },
+        { id: generateId(), title: 'Straighten the fitted sheet', completed: false, estimatedSeconds: 30, estimatedMinutes: 0.5 },
+        { id: generateId(), title: 'Pull up the top sheet and blanket', completed: false, estimatedSeconds: 30, estimatedMinutes: 0.5 },
+        { id: generateId(), title: 'Arrange pillows at the head', completed: false, estimatedSeconds: 30, estimatedMinutes: 0.5 },
       ],
       category: 'maintenance',
       energyRequired: 'minimal',
@@ -584,6 +607,7 @@ function getDefaultTasks(): CleaningTask[] {
       visualImpact: 'high',
       whyThisMatters: 'A made bed is the #1 visual anchor that signals "this is a cared-for space."',
       resistanceHandler: 'It takes 90 seconds and transforms the whole room. Just pull up the covers.',
+      suppliesNeeded: [],
     },
   ];
 }
@@ -699,17 +723,25 @@ export async function analyzeProgressWithZai(
   afterImage: string
 ): Promise<{
   progressPercentage: number;
+  percentImproved: number;
   completedTasks: string[];
+  areasImproved: string[];
   remainingTasks: string[];
+  areasRemaining: string[];
   encouragement: string;
+  encouragingMessage: string;
 }> {
   const online = await isOnline();
   if (!online) {
     return {
       progressPercentage: 0,
+      percentImproved: 0,
       completedTasks: [],
+      areasImproved: [],
       remainingTasks: ['Unable to analyze - no internet connection'],
+      areasRemaining: ['Unable to analyze - no internet connection'],
       encouragement: "We couldn't check your progress without internet. Keep up the great work!",
+      encouragingMessage: "We couldn't check your progress without internet. Keep up the great work!",
     };
   }
 
@@ -721,9 +753,13 @@ export async function analyzeProgressWithZai(
   if (!apiRateLimiter.canMakeRequest()) {
     return {
       progressPercentage: 50,
+      percentImproved: 50,
       completedTasks: ['Made visible progress'],
+      areasImproved: ['Made visible progress'],
       remainingTasks: ['Continue with remaining tasks'],
+      areasRemaining: ['Continue with remaining tasks'],
       encouragement: "You're doing great! Every bit of progress counts!",
+      encouragingMessage: "You're doing great! Every bit of progress counts!",
     };
   }
 
@@ -732,12 +768,16 @@ export async function analyzeProgressWithZai(
 Analyze the progress made and respond with JSON:
 {
   "progressPercentage": <0-100>,
+  "percentImproved": <0-100>,
   "completedTasks": ["<what was cleaned/organized>"],
+  "areasImproved": ["<specific areas that look better>"],
   "remainingTasks": ["<what still needs work>"],
-  "encouragement": "<celebrate their progress!>"
+  "areasRemaining": ["<specific areas still needing attention>"],
+  "encouragement": "<celebrate their progress!>",
+  "encouragingMessage": "<warm, specific message about what they accomplished>"
 }
 
-Be very encouraging! Focus on what WAS accomplished, not what wasn't.`;
+Be very encouraging! Focus on what WAS accomplished, not what wasn't. Name specific objects and areas that improved.`;
 
   const [optimizedBefore, optimizedAfter] = await Promise.all([
     optimizeImage(beforeImage),
@@ -807,11 +847,20 @@ Be very encouraging! Focus on what WAS accomplished, not what wasn't.`;
     const validationResult = ProgressAnalysisResponseSchema.safeParse(rawParsed);
     const validated = validationResult.success ? validationResult.data : rawParsed;
 
+    const progressPct = validated.progressPercentage || validated.percentImproved || 50;
+    const completed = validated.completedTasks || [];
+    const remaining = validated.remainingTasks || [];
+    const msg = validated.encouragement || validated.encouragingMessage || 'Great progress! Keep going!';
+
     return {
-      progressPercentage: validated.progressPercentage || 50,
-      completedTasks: validated.completedTasks || [],
-      remainingTasks: validated.remainingTasks || [],
-      encouragement: validated.encouragement || 'Great progress! Keep going!',
+      progressPercentage: progressPct,
+      percentImproved: validated.percentImproved || progressPct,
+      completedTasks: completed,
+      areasImproved: validated.areasImproved || completed,
+      remainingTasks: remaining,
+      areasRemaining: validated.areasRemaining || remaining,
+      encouragement: msg,
+      encouragingMessage: validated.encouragingMessage || msg,
     };
   } catch (error) {
     if (__DEV__) {
@@ -819,9 +868,13 @@ Be very encouraging! Focus on what WAS accomplished, not what wasn't.`;
     }
     return {
       progressPercentage: 50,
+      percentImproved: 50,
       completedTasks: ['Made visible progress'],
+      areasImproved: ['Made visible progress'],
       remainingTasks: ['Continue with remaining tasks'],
+      areasRemaining: ['Continue with remaining tasks'],
       encouragement: "You're doing great! Every bit of progress counts!",
+      encouragingMessage: "You're doing great! Every bit of progress counts!",
     };
   }
 }

@@ -1,6 +1,7 @@
 /**
  * Declutterly - Achievements Gallery Screen
  * Apple TV style badge collection with categories and detail modals
+ * Shows earned badges by default, with a toggle for locked badges
  */
 
 import React, { useState, useMemo, useCallback } from 'react';
@@ -71,16 +72,28 @@ export default function AchievementsScreen() {
   const [selectedCategory, setSelectedCategory] = useState<BadgeCategory>('all');
   const [selectedBadge, setSelectedBadge] = useState<Badge | null>(null);
   const [showModal, setShowModal] = useState(false);
+  const [showAllBadges, setShowAllBadges] = useState(false);
 
   // Get badges data
   const unlockedBadges = stats.badges;
   const unlockedIds = new Set(unlockedBadges.map(b => b.id));
 
-  // Filter badges by category
+  // Filter badges: earned only by default, all when toggled
   const filteredBadges = useMemo(() => {
-    if (selectedCategory === 'all') return BADGES;
-    return BADGES.filter(b => b.type === selectedCategory);
-  }, [selectedCategory]);
+    let badges = BADGES;
+
+    // Filter by category first
+    if (selectedCategory !== 'all') {
+      badges = badges.filter(b => b.type === selectedCategory);
+    }
+
+    // Then filter by earned/all
+    if (!showAllBadges) {
+      badges = badges.filter(b => unlockedIds.has(b.id));
+    }
+
+    return badges;
+  }, [selectedCategory, showAllBadges, unlockedIds]);
 
   // Group badges by type
   const badgesByCategory = useMemo(() => {
@@ -101,7 +114,6 @@ export default function AchievementsScreen() {
   // Calculate stats
   const totalBadges = BADGES.length;
   const earnedBadges = unlockedBadges.length;
-  const completionPercentage = Math.round((earnedBadges / totalBadges) * 100);
 
   // Get progress for a badge
   const getBadgeProgress = useCallback((badge: Badge) => {
@@ -176,7 +188,7 @@ export default function AchievementsScreen() {
             <View style={styles.heroContent}>
               <View style={styles.heroRingContainer}>
                 <SingleRing
-                  progress={completionPercentage}
+                  progress={earnedBadges > 0 ? Math.round((earnedBadges / totalBadges) * 100) : 0}
                   size={120}
                   strokeWidth={10}
                   color="#F59E0B"
@@ -187,26 +199,26 @@ export default function AchievementsScreen() {
                     {earnedBadges}
                   </Text>
                   <Text style={[Typography.caption1, { color: colors.textSecondary }]}>
-                    of {totalBadges}
+                    earned
                   </Text>
                 </View>
               </View>
 
               <View style={styles.heroTextContent}>
                 <Text style={[Typography.title1, { color: colors.text }]}>
-                  Achievement Progress
+                  Your Badges
                 </Text>
                 <Text style={[Typography.body, { color: colors.textSecondary, marginTop: 8 }]}>
                   {earnedBadges === 0
-                    ? "Start your journey to unlock badges!"
+                    ? "Start your journey to earn badges!"
                     : earnedBadges === totalBadges
-                    ? "🎉 You've unlocked all badges!"
-                    : `${totalBadges - earnedBadges} more to go!`}
+                    ? "You've earned all badges!"
+                    : `${earnedBadges} badge${earnedBadges !== 1 ? 's' : ''} earned so far!`}
                 </Text>
 
                 {/* Quick stats */}
                 <View style={styles.heroStats}>
-                  {CATEGORIES.slice(1).map((cat, index) => {
+                  {CATEGORIES.slice(1).map((cat) => {
                     const categoryBadges = badgesByCategory[cat.id] || [];
                     const unlockedInCategory = categoryBadges.filter(b => unlockedIds.has(b.id)).length;
                     return (
@@ -249,78 +261,210 @@ export default function AchievementsScreen() {
           </ScrollView>
         </Animated.View>
 
-        {/* Badges Grid or Categories */}
-        {selectedCategory === 'all' ? (
-          // Show by categories with horizontal scrolling
-          <>
-            {CATEGORIES.slice(1).map((category, categoryIndex) => {
-              const categoryBadges = badgesByCategory[category.id] || [];
-              if (categoryBadges.length === 0) return null;
+        {/* Show All / Earned Only Toggle */}
+        <Animated.View
+          entering={FadeInDown.delay(250).springify()}
+          style={styles.toggleSection}
+        >
+          <Pressable
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              setShowAllBadges(prev => !prev);
+            }}
+            style={[
+              styles.toggleButton,
+              {
+                backgroundColor: showAllBadges
+                  ? (colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.06)')
+                  : 'transparent',
+                borderColor: colorScheme === 'dark'
+                  ? 'rgba(255, 255, 255, 0.1)'
+                  : 'rgba(0, 0, 0, 0.08)',
+              },
+            ]}
+            accessibilityRole="switch"
+            accessibilityState={{ checked: showAllBadges }}
+            accessibilityLabel={showAllBadges ? 'Showing all badges' : 'Showing earned badges only'}
+          >
+            <Text style={[
+              Typography.subheadlineMedium,
+              { color: showAllBadges ? colors.text : colors.textSecondary },
+            ]}>
+              {showAllBadges ? 'Showing all badges' : 'Show all badges'}
+            </Text>
+          </Pressable>
+        </Animated.View>
 
-              const unlockedInCategory = categoryBadges.filter(b => unlockedIds.has(b.id));
+        {/* Earned Badges Display */}
+        {!showAllBadges ? (
+          // Show only earned badges
+          earnedBadges === 0 ? (
+            <Animated.View
+              entering={FadeIn.duration(300)}
+              style={styles.emptySection}
+            >
+              <GlassCard variant="elevated" style={styles.emptyCard}>
+                <Text style={styles.emptyEmoji}>🌱</Text>
+                <Text style={[Typography.headline, { color: colors.text, textAlign: 'center', marginTop: 12 }]}>
+                  No badges yet — and that&apos;s OK
+                </Text>
+                <Text style={[Typography.subheadline, { color: colors.textSecondary, textAlign: 'center', marginTop: 8 }]}>
+                  Complete tasks to earn your first badge. Every small step counts.
+                </Text>
+              </GlassCard>
+            </Animated.View>
+          ) : selectedCategory === 'all' ? (
+            // Show earned badges by category
+            <>
+              {CATEGORIES.slice(1).map((category, categoryIndex) => {
+                const categoryBadges = badgesByCategory[category.id] || [];
+                const earned = categoryBadges.filter(b => unlockedIds.has(b.id));
+                if (earned.length === 0) return null;
 
-              return (
-                <Animated.View
-                  key={category.id}
-                  entering={FadeInDown.delay(300 + categoryIndex * 100).springify()}
-                  style={styles.categorySection}
-                >
-                  <View style={styles.categoryHeader}>
-                    <View style={styles.categoryTitleRow}>
-                      <Text style={{ fontSize: 24, marginRight: 8 }}>{category.emoji}</Text>
-                      <Text style={[Typography.title3, { color: colors.text }]}>
-                        {category.label}
-                      </Text>
-                      <View style={[styles.categoryCount, { backgroundColor: category.color }]}>
-                        <Text style={[Typography.caption2, { color: colors.textOnPrimary }]}>
-                          {unlockedInCategory.length}/{categoryBadges.length}
+                return (
+                  <Animated.View
+                    key={category.id}
+                    entering={FadeInDown.delay(300 + categoryIndex * 100).springify()}
+                    style={styles.categorySection}
+                  >
+                    <View style={styles.categoryHeader}>
+                      <View style={styles.categoryTitleRow}>
+                        <Text style={{ fontSize: 24, marginRight: 8 }}>{category.emoji}</Text>
+                        <Text style={[Typography.title3, { color: colors.text }]}>
+                          {category.label}
                         </Text>
+                        <View style={[styles.categoryCount, { backgroundColor: category.color }]}>
+                          <Text style={[Typography.caption2, { color: colors.textOnPrimary }]}>
+                            {earned.length}
+                          </Text>
+                        </View>
                       </View>
                     </View>
-                  </View>
 
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={styles.badgesScroll}
-                  >
-                    {categoryBadges.map((badge, index) => (
-                      <BadgeCard
-                        key={badge.id}
-                        badge={badge}
-                        isUnlocked={unlockedIds.has(badge.id)}
-                        progress={getBadgeProgress(badge)}
-                        onPress={() => handleBadgePress(badge)}
-                        delay={index * 50}
-                        categoryColor={category.color}
-                      />
-                    ))}
-                  </ScrollView>
-                </Animated.View>
-              );
-            })}
-          </>
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      contentContainerStyle={styles.badgesScroll}
+                    >
+                      {earned.map((badge, index) => (
+                        <BadgeCard
+                          key={badge.id}
+                          badge={badge}
+                          isUnlocked={true}
+                          progress={getBadgeProgress(badge)}
+                          onPress={() => handleBadgePress(badge)}
+                          delay={index * 50}
+                          categoryColor={category.color}
+                        />
+                      ))}
+                    </ScrollView>
+                  </Animated.View>
+                );
+              })}
+            </>
+          ) : (
+            // Earned in specific category as grid
+            <Animated.View
+              entering={FadeIn.duration(300)}
+              style={styles.gridSection}
+            >
+              {filteredBadges.length === 0 ? (
+                <View style={styles.emptySection}>
+                  <Text style={[Typography.subheadline, { color: colors.textSecondary, textAlign: 'center' }]}>
+                    No badges earned in this category yet.
+                  </Text>
+                </View>
+              ) : (
+                <View style={styles.badgesGrid}>
+                  {filteredBadges.map((badge, index) => (
+                    <BadgeCard
+                      key={badge.id}
+                      badge={badge}
+                      isUnlocked={unlockedIds.has(badge.id)}
+                      progress={getBadgeProgress(badge)}
+                      onPress={() => handleBadgePress(badge)}
+                      delay={index * 50}
+                      categoryColor={CATEGORIES.find(c => c.id === badge.type)?.color || '#6B7280'}
+                      style={styles.gridBadge}
+                    />
+                  ))}
+                </View>
+              )}
+            </Animated.View>
+          )
         ) : (
-          // Show grid for selected category
-          <Animated.View
-            entering={FadeIn.duration(300)}
-            style={styles.gridSection}
-          >
-            <View style={styles.badgesGrid}>
-              {filteredBadges.map((badge, index) => (
-                <BadgeCard
-                  key={badge.id}
-                  badge={badge}
-                  isUnlocked={unlockedIds.has(badge.id)}
-                  progress={getBadgeProgress(badge)}
-                  onPress={() => handleBadgePress(badge)}
-                  delay={index * 50}
-                  categoryColor={CATEGORIES.find(c => c.id === badge.type)?.color || '#6B7280'}
-                  style={styles.gridBadge}
-                />
-              ))}
-            </View>
-          </Animated.View>
+          // Show ALL badges (earned + locked) — existing behavior
+          selectedCategory === 'all' ? (
+            <>
+              {CATEGORIES.slice(1).map((category, categoryIndex) => {
+                const categoryBadges = badgesByCategory[category.id] || [];
+                if (categoryBadges.length === 0) return null;
+
+                const unlockedInCategory = categoryBadges.filter(b => unlockedIds.has(b.id));
+
+                return (
+                  <Animated.View
+                    key={category.id}
+                    entering={FadeInDown.delay(300 + categoryIndex * 100).springify()}
+                    style={styles.categorySection}
+                  >
+                    <View style={styles.categoryHeader}>
+                      <View style={styles.categoryTitleRow}>
+                        <Text style={{ fontSize: 24, marginRight: 8 }}>{category.emoji}</Text>
+                        <Text style={[Typography.title3, { color: colors.text }]}>
+                          {category.label}
+                        </Text>
+                        <View style={[styles.categoryCount, { backgroundColor: category.color }]}>
+                          <Text style={[Typography.caption2, { color: colors.textOnPrimary }]}>
+                            {unlockedInCategory.length}/{categoryBadges.length}
+                          </Text>
+                        </View>
+                      </View>
+                    </View>
+
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      contentContainerStyle={styles.badgesScroll}
+                    >
+                      {categoryBadges.map((badge, index) => (
+                        <BadgeCard
+                          key={badge.id}
+                          badge={badge}
+                          isUnlocked={unlockedIds.has(badge.id)}
+                          progress={getBadgeProgress(badge)}
+                          onPress={() => handleBadgePress(badge)}
+                          delay={index * 50}
+                          categoryColor={category.color}
+                        />
+                      ))}
+                    </ScrollView>
+                  </Animated.View>
+                );
+              })}
+            </>
+          ) : (
+            // Show grid for selected category (all badges)
+            <Animated.View
+              entering={FadeIn.duration(300)}
+              style={styles.gridSection}
+            >
+              <View style={styles.badgesGrid}>
+                {filteredBadges.map((badge, index) => (
+                  <BadgeCard
+                    key={badge.id}
+                    badge={badge}
+                    isUnlocked={unlockedIds.has(badge.id)}
+                    progress={getBadgeProgress(badge)}
+                    onPress={() => handleBadgePress(badge)}
+                    delay={index * 50}
+                    categoryColor={CATEGORIES.find(c => c.id === badge.type)?.color || '#6B7280'}
+                    style={styles.gridBadge}
+                  />
+                ))}
+              </View>
+            </Animated.View>
+          )
         )}
 
         {/* Motivation Section */}
@@ -342,7 +486,7 @@ export default function AchievementsScreen() {
                 : "You're a true Declutter Master!"}
             </Text>
             <Text style={[Typography.subheadline, { color: colors.textSecondary, textAlign: 'center', marginTop: 8 }]}>
-              Keep completing tasks to unlock more badges
+              Keep completing tasks to earn more badges
             </Text>
           </GlassCard>
         </Animated.View>
@@ -455,7 +599,7 @@ function FilterPill({
   );
 }
 
-// Badge Card Component
+// Badge Card Component — no progress bars on locked badges
 function BadgeCard({
   badge,
   isUnlocked,
@@ -484,7 +628,7 @@ function BadgeCard({
       onPressOut={onPressOut}
       style={[animatedStyle, style]}
       accessibilityRole="button"
-      accessibilityLabel={`${badge.name} badge, ${isUnlocked ? 'unlocked' : `${progress.percentage}% progress`}`}
+      accessibilityLabel={`${badge.name} badge, ${isUnlocked ? 'unlocked' : 'locked'}`}
       accessibilityHint="Double tap to view details"
     >
       <Animated.View
@@ -543,25 +687,15 @@ function BadgeCard({
           {badge.name}
         </Text>
 
-        {/* Progress or checkmark */}
+        {/* Checkmark for unlocked, simple label for locked (no progress bars) */}
         {isUnlocked ? (
           <View style={[styles.unlockedBadge, { backgroundColor: categoryColor }]}>
             <Text style={[styles.checkmark, { color: colors.textOnPrimary }]}>✓</Text>
           </View>
         ) : (
-          <View style={styles.progressContainer}>
-            <View style={styles.progressBarBg}>
-              <View
-                style={[
-                  styles.progressBarFill,
-                  { width: `${progress.percentage}%`, backgroundColor: categoryColor },
-                ]}
-              />
-            </View>
-            <Text style={[Typography.caption2, { color: colors.textTertiary, marginTop: 4 }]}>
-              {progress.percentage}%
-            </Text>
-          </View>
+          <Text style={[Typography.caption2, { color: colors.textTertiary, marginTop: 8, textAlign: 'center' }]}>
+            Locked
+          </Text>
         )}
       </Animated.View>
     </AnimatedPressable>
@@ -687,33 +821,25 @@ function BadgeModal({
               </Text>
             </View>
 
-            {/* Progress ring or celebration */}
+            {/* Celebration for unlocked, simple message for locked */}
             <View style={styles.modalProgressSection}>
               {isUnlocked ? (
                 <View style={styles.modalCelebration}>
                   <Text style={{ fontSize: 40 }}>🎉</Text>
                   <Text style={[Typography.headline, { color: colors.success, marginTop: 12 }]}>
-                    Badge Unlocked!
+                    Badge Earned!
                   </Text>
                 </View>
               ) : (
-                <>
-                  <SingleRing
-                    progress={progress.percentage}
-                    size={100}
-                    strokeWidth={8}
-                    color={categoryColor}
-                    backgroundColor="rgba(255, 255, 255, 0.1)"
-                  />
-                  <View style={styles.modalProgressCenter}>
-                    <Text style={[Typography.title2, { color: colors.text }]}>
-                      {progress.percentage}%
-                    </Text>
-                  </View>
-                  <Text style={[Typography.body, { color: colors.textSecondary, marginTop: 12 }]}>
-                    {progress.current} / {progress.target} {badge.type}
+                <View style={styles.modalCelebration}>
+                  <Text style={{ fontSize: 40 }}>🔒</Text>
+                  <Text style={[Typography.headline, { color: colors.textSecondary, marginTop: 12 }]}>
+                    Keep going!
                   </Text>
-                </>
+                  <Text style={[Typography.body, { color: colors.textTertiary, marginTop: 8, textAlign: 'center' }]}>
+                    {badge.requirement} {badge.type} needed
+                  </Text>
+                </View>
               )}
             </View>
 
@@ -803,7 +929,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   filterSection: {
-    marginBottom: Spacing.ml,
+    marginBottom: Spacing.sm,
   },
   filterScroll: {
     paddingHorizontal: Spacing.ml,
@@ -817,6 +943,30 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.card,
     borderWidth: 1,
     minHeight: 44,
+  },
+  toggleSection: {
+    paddingHorizontal: Spacing.ml,
+    marginBottom: Spacing.ml,
+  },
+  toggleButton: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    alignItems: 'center',
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  emptySection: {
+    paddingHorizontal: Spacing.ml,
+    marginBottom: Spacing.lg,
+  },
+  emptyCard: {
+    padding: Spacing.lg,
+    alignItems: 'center',
+  },
+  emptyEmoji: {
+    fontSize: 48,
   },
   categorySection: {
     marginBottom: Spacing.lg,
@@ -899,22 +1049,6 @@ const styles = StyleSheet.create({
   checkmark: {
     fontSize: 14,
     fontWeight: 'bold',
-  },
-  progressContainer: {
-    marginTop: 8,
-    width: '100%',
-    alignItems: 'center',
-  },
-  progressBarBg: {
-    width: '100%',
-    height: 4,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    borderRadius: 2,
-    overflow: 'hidden',
-  },
-  progressBarFill: {
-    height: '100%',
-    borderRadius: 2,
   },
   motivationSection: {
     paddingHorizontal: Spacing.ml,

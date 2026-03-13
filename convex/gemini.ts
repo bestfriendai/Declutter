@@ -9,10 +9,11 @@ const DECLUTTER_SYSTEM_PROMPT = `You are a friendly, expert cleaning coach helpi
 
 ## YOUR APPROACH
 1. Be WARM and NON-JUDGMENTAL - never shame the user for mess
-2. Break down tasks into TINY, achievable steps (2-10 minutes each)
-3. Prioritize "quick wins" - easy tasks with HIGH VISUAL IMPACT
+2. Break down tasks into TINY, achievable steps - each subtask must be completable in UNDER 2 MINUTES
+3. Prioritize "quick wins" - easy tasks with HIGH VISUAL IMPACT first for dopamine wins
 4. Provide SPECIFIC, ACTIONABLE instructions with EXACT locations
-5. Include helpful tips about WHERE to put things and HOW to do tasks
+5. Include specific object names from the photo (e.g., "blue coffee mug on desk" not "dishes")
+6. Order tasks by VISUAL IMPACT - highest impact first so users see progress immediately
 
 ## ANALYSIS PROTOCOL
 
@@ -30,38 +31,52 @@ For each zone, assess clutter density, item count, and priority.
 
 ### Step 3: Object Detection
 For EACH visible item that needs action, identify:
-- Specific name (e.g., "blue coffee mug" not just "cup")
-- Exact location (e.g., "on desk, left side")
+- Specific name with descriptors (e.g., "blue coffee mug" not just "cup", "crumpled red t-shirt" not just "clothes")
+- Exact location (e.g., "on desk, left side near the monitor")
 - Condition (clean/dirty/damaged/misplaced)
 - Suggested action and destination
 
 Categorize items as: trash, dishes, clothes, papers, belongs_elsewhere, misc
 
-### Step 4: Task Generation
-Create 4-6 actionable tasks (not more) that:
-- Reference SPECIFIC objects you identified
+### Step 4: Task Generation - SCALED BY MESS LEVEL
+IMPORTANT: Scale the number of tasks based on the messLevel you assessed:
+- messLevel < 40 (light mess): Generate 4-6 tasks, each with 3-5 subtasks
+- messLevel 40-70 (moderate mess): Generate 6-10 tasks, each with 4-6 subtasks
+- messLevel > 70 (heavy mess): Generate 10-15 tasks, each with 5-8 MICRO-STEPS (even tinier actions for overwhelmed users)
+
+Each task MUST:
+- Reference SPECIFIC objects you identified by name
 - Include exact source AND destination locations
-- Have clear dependencies (what must happen first)
-- Keep descriptions concise (2-3 sentences max)
+- Be ordered by VISUAL IMPACT (highest first for quick dopamine wins)
 - Include 1-2 practical tips per task
+- ALWAYS include whyThisMatters (psychological benefit) and resistanceHandler (pre-emptive response to "I don't want to do this")
+- Include suppliesNeeded (e.g., ["trash bag", "cleaning spray", "paper towels"])
+
+Each SUBTASK must:
+- Be completable in UNDER 2 MINUTES (120 seconds max)
+- Include estimatedSeconds (30-120) AND estimatedMinutes (0.5-2)
+- Be a single, clear physical action
 
 ### Step 5: Time & Energy Profiles
 Generate task lists for different scenarios (use task references, not full details):
-- MINIMAL (5 min): 2 quick tasks
-- QUICK (15 min): 3-4 tasks
-- STANDARD (30 min): 4-5 tasks
+- MINIMAL (5 min): 2-3 quick tasks for exhausted users
+- QUICK (15 min): 4-5 tasks, minimal decisions
+- STANDARD (30 min): 6-8 tasks with some organization
 - COMPLETE (60+ min): All tasks
 
 ## TASK REQUIREMENTS
 
-Each task MUST include (keep responses concise):
+Each task MUST include:
 - zone: Which zone this task addresses
-- targetObjects: List of specific items (max 3-4)
+- targetObjects: List of specific items with descriptors (max 3-4)
 - destination: Where items should end up
 - energyRequired: minimal/low/moderate/high
 - visualImpact: low/medium/high
 - tips: 1-2 brief practical tips
-- subtasks: 2-3 tiny steps with estimatedSeconds
+- subtasks: Multiple tiny steps, each with estimatedSeconds AND estimatedMinutes
+- whyThisMatters: Brief psychological benefit (REQUIRED - never omit)
+- resistanceHandler: Pre-emptive response to "I don't want to do this" (REQUIRED - never omit)
+- suppliesNeeded: List of supplies needed (e.g., ["trash bag"], ["damp cloth", "spray cleaner"])
 
 ## OUTPUT FORMAT
 
@@ -95,7 +110,7 @@ Respond with valid JSON:
 
   "detectedObjects": [
     {
-      "name": "specific item name",
+      "name": "specific item name with descriptors",
       "category": "trash|dishes|clothes|papers|belongs_elsewhere|misc",
       "zone": "zone-id",
       "condition": "clean|dirty|damaged|misplaced",
@@ -113,13 +128,16 @@ Respond with valid JSON:
       "difficulty": "quick|medium|challenging",
       "estimatedMinutes": number,
       "zone": "zone-id",
-      "targetObjects": ["max 3-4 items"],
-      "destination": {"location": "where"},
+      "targetObjects": ["specific object name 1", "specific object name 2"],
+      "destination": {"location": "where", "instructions": "how"},
       "category": "trash_removal|surface_clearing|dishes|laundry|organization|maintenance",
       "energyRequired": "minimal|low|moderate|high",
       "visualImpact": "low|medium|high",
       "tips": ["1-2 brief tips"],
-      "subtasks": [{"title": "tiny action", "estimatedSeconds": 60}]
+      "subtasks": [{"title": "tiny action under 2 min", "estimatedSeconds": 60, "estimatedMinutes": 1}],
+      "whyThisMatters": "psychological benefit of completing this task",
+      "resistanceHandler": "what to tell yourself if you don't want to start",
+      "suppliesNeeded": ["trash bag", "cleaning spray"]
     }
   ],
 
@@ -132,12 +150,16 @@ const PROGRESS_PROMPT = `Compare these two images of the same room. The first im
 Analyze the progress made and respond with JSON:
 {
   "progressPercentage": <0-100>,
+  "percentImproved": <0-100>,
   "completedTasks": ["<what was cleaned/organized>"],
+  "areasImproved": ["<specific areas that look better>"],
   "remainingTasks": ["<what still needs work>"],
-  "encouragement": "<celebrate their progress!>"
+  "areasRemaining": ["<specific areas still needing attention>"],
+  "encouragement": "<celebrate their progress!>",
+  "encouragingMessage": "<warm, specific message about what they accomplished>"
 }
 
-Be very encouraging! Focus on what WAS accomplished, not what wasn't.`;
+Be very encouraging! Focus on what WAS accomplished, not what wasn't. Name specific objects and areas that improved.`;
 
 // Check if Gemini API key is configured (query for client to check)
 export const isConfigured = query({
@@ -232,9 +254,13 @@ export const analyzeProgress = action({
     if (!apiKey) {
       return {
         progressPercentage: 50,
+        percentImproved: 50,
         completedTasks: ["Made visible progress"],
+        areasImproved: ["Made visible progress"],
         remainingTasks: ["Continue with remaining tasks"],
+        areasRemaining: ["Continue with remaining tasks"],
         encouragement: "You're doing great! Every bit of progress counts!",
+        encouragingMessage: "You're doing great! Every bit of progress counts!",
       };
     }
 
@@ -278,18 +304,31 @@ export const analyzeProgress = action({
       const jsonStr = extractJson(text);
       const parsed = JSON.parse(jsonStr);
 
+      const progressPct = parsed.progressPercentage ?? parsed.percentImproved ?? 50;
+      const completed = parsed.completedTasks ?? [];
+      const remaining = parsed.remainingTasks ?? [];
+      const msg = parsed.encouragement ?? parsed.encouragingMessage ?? "Great progress!";
+
       return {
-        progressPercentage: parsed.progressPercentage ?? 50,
-        completedTasks: parsed.completedTasks ?? [],
-        remainingTasks: parsed.remainingTasks ?? [],
-        encouragement: parsed.encouragement ?? "Great progress!",
+        progressPercentage: progressPct,
+        percentImproved: parsed.percentImproved ?? progressPct,
+        completedTasks: completed,
+        areasImproved: parsed.areasImproved ?? completed,
+        remainingTasks: remaining,
+        areasRemaining: parsed.areasRemaining ?? remaining,
+        encouragement: msg,
+        encouragingMessage: parsed.encouragingMessage ?? msg,
       };
     } catch {
       return {
         progressPercentage: 50,
+        percentImproved: 50,
         completedTasks: ["Made visible progress"],
+        areasImproved: ["Made visible progress"],
         remainingTasks: ["Continue with remaining tasks"],
+        areasRemaining: ["Continue with remaining tasks"],
         encouragement: "You're doing great! Every bit of progress counts!",
+        encouragingMessage: "You're doing great! Every bit of progress counts!",
       };
     }
   },
@@ -400,12 +439,14 @@ function parseAnalysisResponse(responseText: string) {
         energyRequired: task.energyRequired,
         decisionLoad: task.decisionLoad,
         visualImpact: task.visualImpact,
-        whyThisMatters: task.whyThisMatters,
-        resistanceHandler: task.resistanceHandler,
+        whyThisMatters: task.whyThisMatters ?? "Every small action makes a difference in creating a calmer space.",
+        resistanceHandler: task.resistanceHandler ?? "Just start with the first subtask. You can stop after that if you want.",
+        suppliesNeeded: task.suppliesNeeded ?? [],
         tips: task.tips ?? [],
         subtasks: (task.subtasks ?? []).map((st: any) => ({
           title: st.title,
           estimatedSeconds: st.estimatedSeconds,
+          estimatedMinutes: st.estimatedMinutes ?? (st.estimatedSeconds ? Math.round((st.estimatedSeconds / 60) * 10) / 10 : undefined),
           isCheckpoint: st.isCheckpoint,
         })),
         dependencies: task.dependencies,
