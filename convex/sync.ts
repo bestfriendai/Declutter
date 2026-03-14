@@ -15,12 +15,6 @@ function toTimestamp(value: unknown, fallback = Date.now()): number {
   return fallback;
 }
 
-function toOptionalTimestamp(value: unknown): number | undefined {
-  if (value === undefined || value === null) {
-    return undefined;
-  }
-  return toTimestamp(value);
-}
 
 async function clearUserState(ctx: any, userId: any) {
   const rooms = await ctx.db
@@ -118,6 +112,7 @@ export const replaceUserState = mutation({
     stats: v.any(),
     settings: v.any(),
     mascot: v.optional(v.any()),
+    badges: v.optional(v.array(v.any())),
     collection: v.array(v.any()),
     collectionStats: v.any(),
   },
@@ -174,7 +169,7 @@ export const replaceUserState = mutation({
         : {}),
     });
 
-    for (const badge of stats.badges ?? []) {
+    for (const badge of args.badges ?? stats.badges ?? []) {
       await ctx.db.insert("badges", {
         userId,
         badgeId: badge.id,
@@ -321,6 +316,7 @@ export const replaceUserState = mutation({
           ...(task.resistanceHandler
             ? { resistanceHandler: task.resistanceHandler }
             : {}),
+          ...(task.suppliesNeeded ? { suppliesNeeded: task.suppliesNeeded } : {}),
           ...(task.dependencies ? { dependencies: task.dependencies } : {}),
           ...(task.enables ? { enables: task.enables } : {}),
           ...(task.parallelWith ? { parallelWith: task.parallelWith } : {}),
@@ -335,6 +331,9 @@ export const replaceUserState = mutation({
             completed: subtask.completed ?? false,
             ...(subtask.estimatedSeconds !== undefined
               ? { estimatedSeconds: subtask.estimatedSeconds }
+              : {}),
+            ...(subtask.estimatedMinutes !== undefined
+              ? { estimatedMinutes: subtask.estimatedMinutes }
               : {}),
             ...(subtask.isCheckpoint !== undefined
               ? { isCheckpoint: subtask.isCheckpoint }
@@ -411,6 +410,7 @@ export const getUserState = query({
           visualImpact: task.visualImpact,
           whyThisMatters: task.whyThisMatters,
           resistanceHandler: task.resistanceHandler,
+          suppliesNeeded: task.suppliesNeeded,
           dependencies: task.dependencies,
           enables: task.enables,
           parallelWith: task.parallelWith,
@@ -422,6 +422,7 @@ export const getUserState = query({
               title: subtask.title,
               completed: subtask.completed,
               estimatedSeconds: subtask.estimatedSeconds,
+              estimatedMinutes: subtask.estimatedMinutes,
               isCheckpoint: subtask.isCheckpoint,
             })),
         });

@@ -5,6 +5,7 @@
 
 import { Colors } from '@/constants/Colors';
 import { useDeclutter } from '@/context/DeclutterContext';
+import { useColorScheme } from '@/hooks/useColorScheme';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
 import { MASCOT_PERSONALITIES, MascotActivity, MascotMood } from '@/types/declutter';
 import * as Haptics from 'expo-haptics';
@@ -14,7 +15,6 @@ import {
     Text as RNText,
     StyleSheet,
     View,
-    useColorScheme,
 } from 'react-native';
 import Animated, {
     Easing,

@@ -26,6 +26,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { GlassButton } from '@/components/ui/GlassButton';
 import { GlassCard } from '@/components/ui/GlassCard';
+import { AmbientBackdrop } from '@/components/ui/AmbientBackdrop';
+import { ExpressiveStateView } from '@/components/ui/ExpressiveStateView';
 import { useAuth } from '@/context/AuthContext';
 import { joinChallenge } from '@/services/social';
 import { useTheme } from '@/theme/ThemeProvider';
@@ -39,7 +41,7 @@ const ROUTES = {
 export default function JoinScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const { isAuthenticated } = useAuth();
   const params = useLocalSearchParams<{ code?: string }>();
 
@@ -104,6 +106,7 @@ export default function JoinScreen() {
   if (!isAuthenticated) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <AmbientBackdrop isDark={isDark} variant="profile" />
         <LinearGradient
           colors={colors.backgroundGradient}
           style={StyleSheet.absoluteFill}
@@ -124,18 +127,16 @@ export default function JoinScreen() {
           <View style={styles.placeholder} />
         </View>
         <View style={styles.authContainer}>
-          <Ionicons name="lock-closed" size={64} color={colors.textTertiary} />
-          <Text style={[styles.authTitle, { color: colors.text }]}>
-            Sign in to join
-          </Text>
-          <Text style={[styles.authText, { color: colors.textSecondary }]}>
-            Create an account or sign in to join challenges.
-          </Text>
-          <GlassButton
-            title="Sign In"
-            onPress={() => router.push(ROUTES.AUTH.LOGIN)}
-            variant="primary"
-            style={styles.authButton}
+          <ExpressiveStateView
+            isDark={isDark}
+            kicker="CHALLENGE CODE"
+            icon="lock-closed-outline"
+            title="Sign in to join"
+            description="Create an account or sign in to join challenges from a friend or your declutter circle."
+            primaryLabel="Sign In"
+            onPrimary={() => router.push(ROUTES.AUTH.LOGIN)}
+            accentColors={['#D8D0FF', '#8B82FF', '#5B6DFF'] as const}
+            style={styles.authCard}
           />
         </View>
       </View>
@@ -340,5 +341,8 @@ const styles = StyleSheet.create({
   },
   authButton: {
     minWidth: 150,
+  },
+  authCard: {
+    width: '100%',
   },
 });

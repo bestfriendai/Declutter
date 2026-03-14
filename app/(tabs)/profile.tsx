@@ -1,24 +1,20 @@
-/**
- * Declutterly — Profile Screen (Apple 2026)
- * iOS 26 hero card, XP bar, grouped settings list
- */
-
-import { Colors, ColorTokens } from '@/constants/Colors';
-import { GlassCard } from '@/components/ui/GlassCard';
+import { AmbientBackdrop } from '@/components/ui/AmbientBackdrop';
+import { useAuth } from '@/context/AuthContext';
 import { useDeclutter } from '@/context/DeclutterContext';
+import { api } from '@/convex/_generated/api';
 import { useColorScheme } from '@/hooks/useColorScheme';
-import { Typography } from '@/theme/typography';
-import { Spacing, BorderRadius } from '@/theme/spacing';
-import { Badge, MASCOT_PERSONALITIES } from '@/types/declutter';
+import { useReducedMotion } from '@/hooks/useReducedMotion';
+import { Badge } from '@/types/declutter';
+import { Ionicons } from '@expo/vector-icons';
+import { useQuery } from 'convex/react';
+import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
-import * as Haptics from 'expo-haptics';
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
-  Alert,
+  Platform,
   Pressable,
   ScrollView,
-  Share,
   StyleSheet,
   Text,
   View,
@@ -26,487 +22,1067 @@ import {
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-// XP thresholds per level
 const XP_PER_LEVEL = 500;
+const BODY_FONT = Platform.OS === 'ios' ? 'DM Sans' : 'sans-serif';
+const DISPLAY_FONT = Platform.OS === 'ios' ? 'Bricolage Grotesque' : 'sans-serif';
+const DAY_LABELS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 
-function getLevelInfo(xp: number): { level: number; xpInLevel: number; xpToNext: number; progress: number } {
+function getLevelInfo(xp: number) {
   const level = Math.floor(xp / XP_PER_LEVEL) + 1;
   const xpInLevel = xp % XP_PER_LEVEL;
   const xpToNext = XP_PER_LEVEL - xpInLevel;
-  const progress = xpInLevel / XP_PER_LEVEL;
-  return { level, xpInLevel, xpToNext, progress };
+  return {
+    level,
+    xpToNext,
+  };
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Settings Row
-// ─────────────────────────────────────────────────────────────────────────────
-interface SettingsRowProps {
-  emoji: string;
-  label: string;
-  value?: string;
-  onPress?: () => void;
-  destructive?: boolean;
-  colors: ColorTokens;
+function getMoodLine(streak: number, roomsDone: number) {
+  if (streak >= 7) return 'Your calm rhythm is getting real.';
+  if (streak >= 3) return 'Consistency is starting to stick.';
+  if (roomsDone > 0) return 'You already have proof that small resets work.';
+  return 'Organize your space, organize your mind.';
+}
+
+function useCleanRate(weeklyActivity: Array<{ date: string; tasksCompleted: number }> | undefined) {
+  return useMemo(() => {
+    if (!weeklyActivity || weeklyActivity.length === 0) {
+      return {
+        cleanRate: 0,
+        activeDays: [false, false, false, false, false, false, false],
+        note: 'One small reset today is enough to start the streak.',
+      };
+    }
+
+    const now = new Date();
+    const dayOfWeek = now.getDay();
+    const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    const activeDays: boolean[] = [];
+
+    for (let index = 0; index < 7; index += 1) {
+      const day = new Date(now);
+      day.setDate(day.getDate() + mondayOffset + index);
+      const iso = day.toISOString().split('T')[0];
+      const entry = weeklyActivity.find((item) => item.date === iso);
+      activeDays.push((entry?.tasksCompleted ?? 0) > 0);
+    }
+
+    const daysWithActivity = activeDays.filter(Boolean).length;
+    const cleanRate = Math.round((daysWithActivity / 7) * 100);
+
+    return {
+      cleanRate,
+      activeDays,
+      note:
+        daysWithActivity > 0
+          ? `You showed up on ${daysWithActivity} of the last 7 days.`
+          : 'One small reset today is enough to start the streak.',
+    };
+  }, [weeklyActivity]);
+}
+
+function ProfileSummaryCard({
+  isDark,
+  name,
+  subtitle,
+  level,
+  xp,
+  xpToNext,
+  streak,
+  roomsDone,
+}: {
   isDark: boolean;
-  showChevron?: boolean;
-  isLast?: boolean;
-}
+  name: string;
+  subtitle: string;
+  level: number;
+  xp: number;
+  xpToNext: number;
+  streak: number;
+  roomsDone: number;
+}) {
+  const avatarInitial = name.charAt(0).toUpperCase();
+  const xpInLevel = XP_PER_LEVEL - xpToNext;
+  const progressPercent = Math.max(Math.round((xpInLevel / XP_PER_LEVEL) * 100), 8);
+  const streakLabel = streak > 0 ? `${streak} day streak` : 'Fresh start';
+  const roomLabel = `${roomsDone} room${roomsDone === 1 ? '' : 's'} finished`;
 
-function SettingsRow({ emoji, label, value, onPress, destructive, colors, isDark, showChevron = true, isLast = false }: SettingsRowProps) {
   return (
-    <Pressable
-      onPress={() => { if (onPress) { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); onPress(); } }}
-      disabled={!onPress}
-      accessibilityRole={onPress ? 'button' : 'none'}
-      accessibilityLabel={label}
-      style={({ pressed }) => [
-        styles.settingsRow,
-        {
-          backgroundColor: isDark ? colors.surface : colors.backgroundSecondary,
-          opacity: pressed && onPress ? 0.7 : 1,
-        },
-        !isLast && { borderBottomWidth: 0.5, borderBottomColor: isDark ? colors.divider : colors.borderLight },
+    <LinearGradient
+      colors={
+        isDark
+          ? ['rgba(24,24,29,0.96)', 'rgba(18,18,23,0.98)']
+          : ['rgba(255,255,255,0.98)', 'rgba(248,244,238,0.96)']
+      }
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 1 }}
+      style={[
+        styles.summaryCard,
+        { borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)' },
       ]}
     >
-      <View style={[styles.settingsRowIcon, {
-        backgroundColor: destructive ? colors.dangerMuted : (isDark ? colors.fillTertiary : colors.surfaceTertiary),
-      }]}>
-        <Text style={styles.settingsRowEmoji}>{emoji}</Text>
+      <View
+        style={[
+          styles.summaryGlow,
+          { backgroundColor: isDark ? 'rgba(255,196,138,0.14)' : 'rgba(255,208,162,0.24)' },
+        ]}
+      />
+
+      <View style={styles.summaryHeader}>
+        <View
+          style={[
+            styles.avatarRing,
+            { borderColor: isDark ? 'rgba(255,220,182,0.28)' : 'rgba(153,112,68,0.2)' },
+          ]}
+        >
+          <LinearGradient
+            colors={isDark ? ['#5D4B3D', '#8D6D53'] : ['#D0B08E', '#B78D67']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.avatarFill}
+          >
+            <Text style={styles.avatarInitial}>{avatarInitial}</Text>
+          </LinearGradient>
+        </View>
+
+        <View style={styles.summaryIdentity}>
+          <Text style={[styles.summaryEyebrow, { color: isDark ? '#DAB58C' : '#8A5926' }]}>
+            LEVEL {level}
+          </Text>
+          <Text style={[styles.summaryName, { color: isDark ? '#FFFFFF' : '#17171A' }]}>
+            {name}
+          </Text>
+          <Text
+            style={[
+              styles.summarySubtitle,
+              { color: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(23,23,26,0.5)' },
+            ]}
+          >
+            {subtitle}
+          </Text>
+        </View>
+
+        <View
+          style={[
+            styles.levelChip,
+            {
+              backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.84)',
+              borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+            },
+          ]}
+        >
+          <Text style={[styles.levelChipValue, { color: isDark ? '#FFFFFF' : '#17171A' }]}>
+            Lv. {level}
+          </Text>
+          <Text
+            style={[
+              styles.levelChipLabel,
+              { color: isDark ? 'rgba(255,255,255,0.42)' : 'rgba(23,23,26,0.42)' },
+            ]}
+          >
+            {xp} XP
+          </Text>
+        </View>
       </View>
-      <Text style={[styles.settingsRowLabel, {
-        color: destructive ? colors.danger : colors.text,
-        flex: 1,
-      }]}>
-        {label}
-      </Text>
-      {value && (
-        <Text style={[styles.settingsRowValue, { color: colors.textSecondary }]}>{value}</Text>
-      )}
-      {showChevron && onPress && (
-        <Text style={[styles.settingsChevron, { color: colors.textTertiary }]}>›</Text>
-      )}
-    </Pressable>
+
+      <View style={styles.summaryChipRow}>
+        <View
+          style={[
+            styles.summaryChip,
+            {
+              backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(255,248,241,0.9)',
+              borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)',
+            },
+          ]}
+        >
+          <Ionicons name="flame-outline" size={14} color={isDark ? '#FFD29A' : '#A96525'} />
+          <Text style={[styles.summaryChipText, { color: isDark ? '#FFF3E0' : '#5A3815' }]}>
+            {streakLabel}
+          </Text>
+        </View>
+
+        <View
+          style={[
+            styles.summaryChip,
+            {
+              backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(255,248,241,0.9)',
+              borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)',
+            },
+          ]}
+        >
+          <Ionicons name="home-outline" size={14} color={isDark ? '#C8D7FF' : '#4460A4'} />
+          <Text style={[styles.summaryChipText, { color: isDark ? '#EEF2FF' : '#30477E' }]}>
+            {roomLabel}
+          </Text>
+        </View>
+      </View>
+
+      <View
+        style={[
+          styles.summaryProgressTrack,
+          { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(23,23,26,0.08)' },
+        ]}
+      >
+        <LinearGradient
+          colors={isDark ? ['#FFD39A', '#FFAA63'] : ['#1B1B20', '#5E5B66']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={[styles.summaryProgressFill, { width: `${progressPercent}%` }]}
+        />
+      </View>
+
+      <View style={styles.summaryFooter}>
+        <Text
+          style={[
+            styles.summaryProgressText,
+            { color: isDark ? 'rgba(255,255,255,0.58)' : 'rgba(23,23,26,0.5)' },
+          ]}
+        >
+          {xpToNext} XP to your next level
+        </Text>
+      </View>
+    </LinearGradient>
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Settings Group
-// ─────────────────────────────────────────────────────────────────────────────
-interface SettingsGroupProps {
-  title?: string;
-  footer?: string;
-  children: React.ReactNode;
-  colors: ColorTokens;
+function WeeklyRhythmCard({
+  isDark,
+  cleanRate,
+  activeDays,
+  note,
+}: {
   isDark: boolean;
-}
+  cleanRate: number;
+  activeDays: boolean[];
+  note: string;
+}) {
+  const activeCount = activeDays.filter(Boolean).length;
 
-function SettingsGroup({ title, footer, children, colors, isDark }: SettingsGroupProps) {
   return (
-    <View style={styles.settingsGroup}>
-      {title && (
-        <Text style={[styles.settingsGroupTitle, { color: colors.textSecondary }]}>
-          {title.toUpperCase()}
+    <View
+      style={[
+        styles.rhythmCard,
+        {
+          backgroundColor: isDark ? 'rgba(20,20,24,0.96)' : 'rgba(255,255,255,0.96)',
+          borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+        },
+      ]}
+    >
+      <View style={styles.rhythmHeader}>
+        <Text
+          style={[
+            styles.rhythmEyebrow,
+            { color: isDark ? 'rgba(255,255,255,0.44)' : 'rgba(23,23,26,0.44)' },
+          ]}
+        >
+          WEEKLY RHYTHM
         </Text>
-      )}
-      <View style={[styles.settingsGroupContent, {
-        borderRadius: 12,
-        overflow: 'hidden',
-        borderWidth: 0.5,
-        borderColor: isDark ? colors.divider : colors.borderLight,
-      }]}>
-        {children}
+
+        <View
+          style={[
+            styles.rhythmChip,
+            {
+              backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(248,244,238,0.95)',
+              borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)',
+            },
+          ]}
+        >
+          <Text style={[styles.rhythmChipValue, { color: isDark ? '#FFFFFF' : '#17171A' }]}>
+            {activeCount}/7
+          </Text>
+          <Text
+            style={[
+              styles.rhythmChipLabel,
+              { color: isDark ? 'rgba(255,255,255,0.42)' : 'rgba(23,23,26,0.4)' },
+            ]}
+          >
+            ACTIVE DAYS
+          </Text>
+        </View>
       </View>
-      {footer && (
-        <Text style={[styles.settingsGroupFooter, { color: colors.textSecondary }]}>
-          {footer}
-        </Text>
-      )}
+
+      <Text style={[styles.rhythmValue, { color: isDark ? '#FFFFFF' : '#17171A' }]}>
+        {cleanRate}%
+      </Text>
+      <Text
+        style={[
+          styles.rhythmNote,
+          { color: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(23,23,26,0.5)' },
+        ]}
+      >
+        {note}
+      </Text>
+
+      <View style={styles.dayRow}>
+        {activeDays.map((active, index) => (
+          <View key={`${DAY_LABELS[index]}-${index}`} style={styles.dayColumn}>
+            {active ? (
+              <LinearGradient
+                colors={
+                  isDark ? ['#FFF3E3', '#D8D8D8'] : ['#1B1B20', '#7E7E86']
+                }
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.dayDot}
+              />
+            ) : (
+              <View
+                style={[
+                  styles.dayDot,
+                  {
+                    backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(23,23,26,0.08)',
+                    borderColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(23,23,26,0.06)',
+                  },
+                ]}
+              />
+            )}
+            <Text
+              style={[
+                styles.dayLabel,
+                { color: isDark ? 'rgba(255,255,255,0.3)' : 'rgba(23,23,26,0.32)' },
+              ]}
+            >
+              {DAY_LABELS[index]}
+            </Text>
+          </View>
+        ))}
+      </View>
     </View>
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Main Screen
-// ─────────────────────────────────────────────────────────────────────────────
-export default function ProfileScreen() {
-  const rawScheme = useColorScheme();
-  const colorScheme = rawScheme === 'dark' ? 'dark' : 'light';
-  const colors = Colors[colorScheme];
-  const isDark = colorScheme === 'dark';
-  const insets = useSafeAreaInsets();
-
-  const { user, mascot, stats, rooms, resetStats } = useDeclutter();
-
-  const streak = stats?.currentStreak ?? 0;
-  const badges = stats?.badges ?? [];
-
-  const totalXP = stats?.xp ?? 0;
-  const { level, xpInLevel, xpToNext, progress } = getLevelInfo(totalXP);
-  const completedTasks = rooms.reduce((a, r) => a + r.tasks.filter(t => t.completed).length, 0);
-  const earnedBadges = (badges ?? []).filter((b: Badge) => !!b.unlockedAt).length;
-
-  const handleShare = async () => {
-    try {
-      await Share.share({
-        message: `🧹 I'm Level ${level} on Declutterly! I've completed ${completedTasks} tasks and earned ${earnedBadges} badges. Join me in decluttering! 🏆`,
-        title: 'My Declutterly Progress',
-      });
-    } catch {
-      // User cancelled
-    }
-  };
-
-  const handleReset = () => {
-    Alert.alert(
-      'Reset Progress',
-      'This will delete all your rooms, tasks, and progress. This cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
+function StatCard({
+  isDark,
+  value,
+  label,
+  icon,
+}: {
+  isDark: boolean;
+  value: string;
+  label: string;
+  icon?: keyof typeof Ionicons.glyphMap;
+}) {
+  return (
+    <View
+      style={[
+        styles.statCard,
         {
-          text: 'Reset Everything',
-          style: 'destructive',
-          onPress: () => {
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-            resetStats?.();
-          },
+          backgroundColor: isDark ? 'rgba(20,20,24,0.96)' : 'rgba(255,255,255,0.96)',
+          borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
         },
-      ]
-    );
-  };
+      ]}
+    >
+      <View style={styles.statValueRow}>
+        {icon ? (
+          <Ionicons
+            name={icon}
+            size={16}
+            color={isDark ? '#FFD29A' : '#A96525'}
+            style={{ marginRight: 4 }}
+          />
+        ) : null}
+        <Text style={[styles.statValue, { color: isDark ? '#FFFFFF' : '#17171A' }]}>
+          {value}
+        </Text>
+      </View>
+      <Text
+        style={[
+          styles.statLabel,
+          { color: isDark ? 'rgba(255,255,255,0.4)' : 'rgba(23,23,26,0.44)' },
+        ]}
+      >
+        {label}
+      </Text>
+    </View>
+  );
+}
+
+function RecentBadges({
+  isDark,
+  badges,
+}: {
+  isDark: boolean;
+  badges: Badge[];
+}) {
+  const recentBadges = useMemo(() => {
+    const sorted = [...badges]
+      .filter((badge) => !!badge.unlockedAt)
+      .sort((left, right) => {
+        const leftTime = left.unlockedAt ? new Date(left.unlockedAt).getTime() : 0;
+        const rightTime = right.unlockedAt ? new Date(right.unlockedAt).getTime() : 0;
+        return rightTime - leftTime;
+      });
+
+    if (sorted.length >= 3) {
+      return sorted.slice(0, 3);
+    }
+
+    return [
+      ...sorted,
+      { id: 'fresh-start', emoji: '✨', name: 'Fresh Start', description: 'First room', type: 'rooms', requirement: 1 },
+      { id: 'quiet-fire', emoji: '🔥', name: 'On Fire', description: '7-day streak', type: 'streak', requirement: 7 },
+      { id: 'top-ten', emoji: '🏆', name: 'Top 10%', description: 'Leaderboard', type: 'rooms', requirement: 10 },
+    ].slice(0, 3) as Badge[];
+  }, [badges]);
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <View style={styles.badgesSection}>
+      <View style={styles.badgesHeader}>
+        <Text style={[styles.sectionTitle, { color: isDark ? '#FFFFFF' : '#17171A' }]}>
+          Recent Badges
+        </Text>
+        <Pressable
+          onPress={() => {
+            void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            router.push('/achievements');
+          }}
+          accessibilityRole="button"
+          accessibilityLabel="View all badges"
+        >
+          <Text
+            style={[
+              styles.viewAll,
+              { color: isDark ? 'rgba(255,255,255,0.58)' : 'rgba(23,23,26,0.58)' },
+            ]}
+          >
+            View All
+          </Text>
+        </Pressable>
+      </View>
+
+      <View style={styles.badgesRow}>
+        {recentBadges.map((badge) => (
+          <Pressable
+            key={badge.id}
+            onPress={() => {
+              void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              router.push('/achievements');
+            }}
+            accessibilityRole="button"
+            accessibilityLabel={`${badge.name} badge`}
+            style={({ pressed }) => [
+              styles.badgeCard,
+              {
+                backgroundColor: isDark ? 'rgba(20,20,24,0.96)' : 'rgba(255,255,255,0.96)',
+                borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+                opacity: pressed ? 0.82 : 1,
+              },
+            ]}
+          >
+            <Text style={styles.badgeEmoji}>{badge.emoji}</Text>
+            <Text style={[styles.badgeName, { color: isDark ? '#FFFFFF' : '#17171A' }]}>
+              {badge.name}
+            </Text>
+            <Text
+              style={[
+                styles.badgeSubtitle,
+                { color: isDark ? 'rgba(255,255,255,0.42)' : 'rgba(23,23,26,0.44)' },
+              ]}
+            >
+              {badge.description || 'Quiet progress'}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+function ConnectedSurfaces({ isDark }: { isDark: boolean }) {
+  const items = [
+    {
+      title: 'Community',
+      subtitle: 'Friends and challenges',
+      icon: 'people-outline' as const,
+      route: '/social' as const,
+      colors: isDark
+        ? (['rgba(156,170,255,0.18)', 'rgba(156,170,255,0.08)'] as const)
+        : (['rgba(221,227,255,0.92)', 'rgba(170,184,255,0.36)'] as const),
+    },
+    {
+      title: 'Accountability',
+      subtitle: 'Check-ins and nudges',
+      icon: 'checkmark-done-circle-outline' as const,
+      route: '/accountability' as const,
+      colors: isDark
+        ? (['rgba(137,226,204,0.18)', 'rgba(137,226,204,0.08)'] as const)
+        : (['rgba(214,245,238,0.92)', 'rgba(134,223,205,0.36)'] as const),
+    },
+  ];
+
+  return (
+      <View style={styles.connectedRow}>
+      {items.map((item) => (
+        <Pressable
+          key={item.route}
+          onPress={() => {
+            void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            router.push(item.route);
+          }}
+          accessibilityRole="button"
+          accessibilityLabel={`Open ${item.title}`}
+          style={({ pressed }) => [
+            styles.connectedCard,
+            {
+              backgroundColor: isDark ? 'rgba(20,20,24,0.96)' : 'rgba(255,255,255,0.96)',
+              borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+              opacity: pressed ? 0.82 : 1,
+            },
+          ]}
+        >
+          <LinearGradient
+            colors={item.colors}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.connectedIcon}
+          >
+            <Ionicons name={item.icon} size={18} color={isDark ? '#FFFFFF' : '#3E2C18'} />
+          </LinearGradient>
+          <Text style={[styles.connectedTitle, { color: isDark ? '#FFFFFF' : '#17171A' }]}>
+            {item.title}
+          </Text>
+          <Text
+            style={[
+              styles.connectedSubtitle,
+              { color: isDark ? 'rgba(255,255,255,0.42)' : 'rgba(23,23,26,0.44)' },
+            ]}
+          >
+            {item.subtitle}
+          </Text>
+        </Pressable>
+      ))}
+    </View>
+  );
+}
+
+function ProCard({ isDark, xpToNext }: { isDark: boolean; xpToNext: number }) {
+  return (
+    <Pressable
+      onPress={() => {
+        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        router.push('/paywall');
+      }}
+      accessibilityRole="button"
+      accessibilityLabel="Upgrade to Declutter Pro"
+      style={({ pressed }) => [{ opacity: pressed ? 0.88 : 1 }]}
+    >
+      <LinearGradient
+        colors={
+          isDark
+            ? ['rgba(255,207,160,0.24)', 'rgba(210,162,106,0.18)']
+            : ['rgba(255,231,200,0.94)', 'rgba(240,195,142,0.62)']
+        }
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={[
+          styles.proCard,
+          { borderColor: isDark ? 'rgba(255,223,189,0.18)' : 'rgba(182,136,88,0.16)' },
+        ]}
+      >
+        <View style={styles.proCardIcon}>
+          <Ionicons name="sparkles-outline" size={18} color={isDark ? '#FFF8F0' : '#5F3A12'} />
+        </View>
+
+        <View style={styles.proCardCopy}>
+          <Text style={[styles.proCardEyebrow, { color: isDark ? '#FFF1DE' : '#8D5A24' }]}>
+            DECLUTTER PRO
+          </Text>
+          <Text style={[styles.proCardTitle, { color: isDark ? '#FFF8F0' : '#3A240C' }]}>
+            Unlock deeper guidance and softer nudges.
+          </Text>
+          <Text
+            style={[
+              styles.proCardSubtitle,
+              { color: isDark ? 'rgba(255,255,255,0.58)' : 'rgba(58,36,12,0.62)' },
+            ]}
+          >
+            You&apos;re {xpToNext} XP away from your next level.
+          </Text>
+        </View>
+
+        <Ionicons name="chevron-forward" size={18} color={isDark ? '#FFF8F0' : '#5F3A12'} />
+      </LinearGradient>
+    </Pressable>
+  );
+}
+
+export default function ProfileScreen() {
+  const rawScheme = useColorScheme();
+  const isDark = rawScheme === 'dark';
+  const reducedMotion = useReducedMotion();
+  const insets = useSafeAreaInsets();
+  const { user, stats, rooms: rawRooms } = useDeclutter();
+  const { user: authUser, isAuthenticated } = useAuth();
+  const weeklyActivity = useQuery(api.activityLog.getWeeklyActivity, isAuthenticated ? {} : 'skip');
+
+  const rooms = rawRooms ?? [];
+  const streak = stats?.currentStreak ?? 0;
+  const totalXP = stats?.xp ?? 0;
+  const roomsDone =
+    stats?.totalRoomsCleaned ??
+    rooms.filter((room) => (room.tasks ?? []).length > 0 && (room.tasks ?? []).every((task) => task.completed))
+      .length;
+  const badges = stats?.badges ?? [];
+  const displayName = authUser?.displayName?.trim() || user?.name || 'Declutterer';
+  const subtitle = getMoodLine(streak, roomsDone);
+  const { level, xpToNext } = getLevelInfo(totalXP);
+  const { cleanRate, activeDays, note } = useCleanRate(weeklyActivity ?? undefined);
+
+  const enter = (delay: number) =>
+    reducedMotion ? undefined : FadeInDown.duration(380).delay(delay);
+
+  return (
+    <View style={[styles.container, { backgroundColor: isDark ? '#0A0A0A' : '#F8F8F8' }]}>
+      <AmbientBackdrop isDark={isDark} variant="profile" />
+
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={[
           styles.scrollContent,
-          { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 100 },
+          { paddingTop: insets.top + 14, paddingBottom: insets.bottom + 100 },
         ]}
         showsVerticalScrollIndicator={false}
-        contentInsetAdjustmentBehavior="automatic"
       >
-        {/* ── Header ──────────────────────────────────────────────────── */}
-        <Animated.View entering={FadeInDown.delay(0).springify()} style={styles.header}>
-          <Text style={[Typography.largeTitle, { color: colors.text }]}>Profile</Text>
+        <Animated.View entering={enter(0)} style={styles.header}>
+          <Text style={[styles.headerTitle, { color: isDark ? '#FFFFFF' : '#17171A' }]}>
+            Profile
+          </Text>
           <Pressable
-            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push('/settings'); }}
+            onPress={() => {
+              void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              router.push('/settings');
+            }}
             accessibilityRole="button"
             accessibilityLabel="Open settings"
+            style={({ pressed }) => [
+              styles.settingsButton,
+              {
+                backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.84)',
+                borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+                opacity: pressed ? 0.78 : 1,
+              },
+            ]}
           >
-            <Text style={{ fontSize: 22 }}>⚙️</Text>
+            <Ionicons name="settings-outline" size={18} color={isDark ? '#FFFFFF' : '#17171A'} />
           </Pressable>
         </Animated.View>
 
-        {/* ── Hero Card ───────────────────────────────────────────────── */}
-        <Animated.View entering={FadeInDown.delay(60).springify()} style={styles.section}>
-          <LinearGradient
-            colors={isDark ? ['#1C1C1E', '#2C2C2E'] : ['#FFFFFF', '#F2F2F7']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={[styles.heroCard, {
-              borderColor: isDark ? colors.cardBorder : colors.borderLight,
-              borderWidth: 0.5,
-            }]}
-          >
-            {/* Avatar */}
-            <View style={styles.avatarRow}>
-              <View style={[styles.avatar, {
-                backgroundColor: isDark ? colors.fillPrimary : colors.surfaceTertiary,
-                borderColor: isDark ? colors.cardBorder : colors.borderLight,
-              }]}>
-                <Text style={styles.avatarEmoji}>{mascot ? MASCOT_PERSONALITIES[mascot.personality]?.emoji ?? '🧹' : '🧹'}</Text>
-              </View>
-              <View style={styles.avatarInfo}>
-                <Text style={[Typography.title2, { color: colors.text }]}>
-                  {user?.name || 'Declutterer'}
-                </Text>
-                <View style={[styles.levelBadge, { backgroundColor: colors.accentMuted }]}>
-                  <Text style={[Typography.caption1Medium, { color: colors.accent }]}>
-                    Level {level} · {mascot?.name ?? 'Explorer'}
-                  </Text>
-                </View>
-              </View>
-              <Pressable
-                onPress={handleShare}
-                style={[styles.shareButton, { backgroundColor: isDark ? colors.fillTertiary : colors.surfaceTertiary }]}
-                accessibilityRole="button"
-                accessibilityLabel="Share progress"
-              >
-                <Text style={{ fontSize: 18 }}>↗️</Text>
-              </Pressable>
-            </View>
-
-            {/* XP Bar */}
-            <View style={styles.xpSection}>
-              <View style={styles.xpLabelRow}>
-                <Text style={[Typography.caption1Medium, { color: colors.textSecondary }]}>
-                  {xpInLevel.toLocaleString()} XP
-                </Text>
-                <Text style={[Typography.caption1Medium, { color: colors.textSecondary }]}>
-                  {xpToNext.toLocaleString()} XP to Level {level + 1}
-                </Text>
-              </View>
-              <View style={[styles.xpTrack, { backgroundColor: isDark ? colors.fillTertiary : colors.surfaceTertiary }]}>
-                <LinearGradient
-                  colors={['#007AFF', '#5856D6']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                  style={[styles.xpFill, { width: `${progress * 100}%` }]}
-                />
-              </View>
-            </View>
-
-            {/* Quick Stats */}
-            <View style={styles.heroStats}>
-              {[
-                { value: completedTasks, label: 'Tasks', emoji: '✅' },
-                { value: streak, label: 'Streak', emoji: '🔥' },
-                { value: earnedBadges, label: 'Badges', emoji: '🏆' },
-                { value: totalXP.toLocaleString(), label: 'XP', emoji: '⭐' },
-              ].map((stat) => (
-                <View key={stat.label} style={styles.heroStat}>
-                  <Text style={styles.heroStatEmoji}>{stat.emoji}</Text>
-                  <Text style={[styles.heroStatValue, { color: colors.text }]}>{stat.value}</Text>
-                  <Text style={[styles.heroStatLabel, { color: colors.textSecondary }]}>{stat.label}</Text>
-                </View>
-              ))}
-            </View>
-          </LinearGradient>
-        </Animated.View>
-
-        {/* ── Mascot Section ───────────────────────────────────────────── */}
-        {mascot && (
-          <Animated.View entering={FadeInDown.delay(100).springify()} style={styles.section}>
-            <SettingsGroup title="Your Buddy" colors={colors} isDark={isDark}>
-              <SettingsRow
-                emoji={MASCOT_PERSONALITIES[mascot.personality]?.emoji ?? '🧹'}
-                label={mascot.name}
-                value={mascot.personality}
-                onPress={() => router.push('/mascot')}
-                colors={colors}
-                isDark={isDark}
-                isLast
-              />
-            </SettingsGroup>
-          </Animated.View>
-        )}
-
-        {/* ── Account ──────────────────────────────────────────────────── */}
-        <Animated.View entering={FadeInDown.delay(140).springify()} style={styles.section}>
-          <SettingsGroup title="Account" colors={colors} isDark={isDark}>
-            <SettingsRow
-              emoji="👤"
-              label="Edit Profile"
-              onPress={() => router.push('/settings')}
-              colors={colors}
-              isDark={isDark}
-            />
-            <SettingsRow
-              emoji="🔔"
-              label="Notifications"
-              onPress={() => router.push('/settings')}
-              colors={colors}
-              isDark={isDark}
-            />
-            <SettingsRow
-              emoji="🔒"
-              label="Privacy"
-              onPress={() => router.push('/settings')}
-              colors={colors}
-              isDark={isDark}
-              isLast
-            />
-          </SettingsGroup>
-        </Animated.View>
-
-        {/* ── App ──────────────────────────────────────────────────────── */}
-        <Animated.View entering={FadeInDown.delay(180).springify()} style={styles.section}>
-          <SettingsGroup title="App" colors={colors} isDark={isDark}>
-            <SettingsRow
-              emoji="🏆"
-              label="Achievements"
-              onPress={() => router.push('/achievements')}
-              colors={colors}
-              isDark={isDark}
-            />
-            <SettingsRow
-              emoji="📊"
-              label="Insights"
-              onPress={() => router.push('/insights')}
-              colors={colors}
-              isDark={isDark}
-            />
-            <SettingsRow
-              emoji="⚙️"
-              label="Settings"
-              onPress={() => router.push('/settings')}
-              colors={colors}
-              isDark={isDark}
-              isLast
-            />
-          </SettingsGroup>
-        </Animated.View>
-
-        {/* ── Danger Zone ──────────────────────────────────────────────── */}
-        <Animated.View entering={FadeInDown.delay(220).springify()} style={styles.section}>
-          <SettingsGroup
-            title="Danger Zone"
-            footer="This will permanently delete all your rooms, tasks, and progress."
-            colors={colors}
+        <Animated.View entering={enter(60)}>
+          <ProfileSummaryCard
             isDark={isDark}
-          >
-            <SettingsRow
-              emoji="🗑️"
-              label="Reset All Progress"
-              onPress={handleReset}
-              destructive
-              colors={colors}
-              isDark={isDark}
-              isLast
-            />
-          </SettingsGroup>
+            name={displayName}
+            subtitle={subtitle}
+            level={level}
+            xp={totalXP}
+            xpToNext={xpToNext}
+            streak={streak}
+            roomsDone={roomsDone}
+          />
         </Animated.View>
 
-        {/* ── App Version ──────────────────────────────────────────────── */}
-        <Text style={[styles.versionText, { color: colors.textTertiary }]}>
-          Declutterly v1.0 · Made with ❤️
-        </Text>
+        <Animated.View entering={enter(120)}>
+          <WeeklyRhythmCard
+            isDark={isDark}
+            cleanRate={cleanRate}
+            activeDays={activeDays}
+            note={note}
+          />
+        </Animated.View>
+
+        <Animated.View entering={enter(180)} style={styles.statsRow}>
+          <StatCard isDark={isDark} value={String(streak)} label="Day Streak" icon="flame-outline" />
+          <StatCard isDark={isDark} value={String(roomsDone)} label="Rooms Done" />
+          <StatCard isDark={isDark} value={totalXP.toLocaleString()} label="Total XP" />
+        </Animated.View>
+
+        <Animated.View entering={enter(240)}>
+          <RecentBadges isDark={isDark} badges={badges} />
+        </Animated.View>
+
+        <Animated.View entering={enter(300)}>
+          <ProCard isDark={isDark} xpToNext={xpToNext} />
+        </Animated.View>
+
+        <Animated.View entering={enter(360)}>
+          <ConnectedSurfaces isDark={isDark} />
+        </Animated.View>
       </ScrollView>
     </View>
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Styles
-// ─────────────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  scrollView: { flex: 1 },
-  scrollContent: { paddingHorizontal: Spacing.ml },
-
+  container: {
+    flex: 1,
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingHorizontal: 20,
+    gap: 16,
+  },
   header: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: Spacing.ml,
   },
-
-  section: { marginBottom: Spacing.lg },
-
-  // Hero Card
-  heroCard: {
-    borderRadius: BorderRadius.card,
-    padding: Spacing.ml,
-    gap: Spacing.ml,
+  headerTitle: {
+    fontFamily: DISPLAY_FONT,
+    fontSize: 32,
+    lineHeight: 36,
+    fontWeight: '700',
+    letterSpacing: -0.7,
   },
-  avatarRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.sm + Spacing.hairline,
-  },
-  avatar: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-  },
-  avatarEmoji: { fontSize: 32 },
-  avatarInfo: { flex: 1, gap: 6 },
-  levelBadge: {
-    alignSelf: 'flex-start',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 10,
-  },
-  shareButton: {
+  settingsButton: {
     width: 44,
     height: 44,
     borderRadius: 22,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
-
-  // XP Bar
-  xpSection: { gap: Spacing.xs },
-  xpLabelRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  xpTrack: {
-    height: 6,
-    borderRadius: 3,
+  summaryCard: {
     overflow: 'hidden',
+    borderRadius: 28,
+    borderWidth: 1,
+    paddingHorizontal: 18,
+    paddingVertical: 18,
+    gap: 14,
   },
-  xpFill: {
-    height: '100%',
-    borderRadius: 3,
-    minWidth: 8,
+  summaryGlow: {
+    position: 'absolute',
+    top: -18,
+    right: -10,
+    width: 120,
+    height: 120,
+    borderRadius: 60,
   },
-
-  // Hero Stats
-  heroStats: {
+  summaryHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  heroStat: {
     alignItems: 'center',
+    gap: 14,
+  },
+  avatarRing: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    borderWidth: 1,
+    padding: 3,
+  },
+  avatarFill: {
+    flex: 1,
+    borderRadius: 27,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarInitial: {
+    color: '#FFF8EF',
+    fontFamily: DISPLAY_FONT,
+    fontSize: 24,
+    fontWeight: '700',
+  },
+  summaryIdentity: {
+    flex: 1,
+    gap: 4,
+  },
+  summaryEyebrow: {
+    fontFamily: BODY_FONT,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.9,
+  },
+  summaryName: {
+    fontFamily: DISPLAY_FONT,
+    fontSize: 28,
+    lineHeight: 30,
+    fontWeight: '700',
+    letterSpacing: -0.7,
+  },
+  summarySubtitle: {
+    fontFamily: BODY_FONT,
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '500',
+  },
+  levelChip: {
+    minWidth: 76,
+    borderRadius: 18,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
     gap: 2,
   },
-  heroStatEmoji: { fontSize: 20 },
-  heroStatValue: {
-    ...Typography.title3,
+  summaryChipRow: {
+    flexDirection: 'row',
+    gap: 10,
+    flexWrap: 'wrap',
   },
-  heroStatLabel: {
-    ...Typography.caption2,
-  },
-
-  // Settings
-  settingsGroup: { gap: 6 },
-  settingsGroupTitle: {
-    ...Typography.overline,
-    marginBottom: 6,
-    marginLeft: Spacing.xxs,
-  },
-  settingsGroupContent: {},
-  settingsGroupFooter: {
-    ...Typography.caption1,
-    lineHeight: 18,
-    marginTop: 6,
-    marginLeft: Spacing.xxs,
-  },
-  settingsRow: {
+  summaryChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.sm + Spacing.hairline,
-    gap: Spacing.sm,
-    minHeight: 44,
+    gap: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
   },
-  settingsRowIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
+  summaryChipText: {
+    fontFamily: BODY_FONT,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  summaryProgressTrack: {
+    height: 8,
+    borderRadius: 999,
+    overflow: 'hidden',
+  },
+  summaryProgressFill: {
+    height: '100%',
+    borderRadius: 999,
+  },
+  summaryFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  summaryProgressText: {
+    flex: 1,
+    fontFamily: BODY_FONT,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  levelChipValue: {
+    fontFamily: BODY_FONT,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  levelChipLabel: {
+    fontFamily: BODY_FONT,
+    fontSize: 11,
+    fontWeight: '500',
+  },
+  rhythmCard: {
+    borderRadius: 24,
+    borderWidth: 1,
+    paddingHorizontal: 18,
+    paddingVertical: 16,
+  },
+  rhythmHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginBottom: 10,
+  },
+  rhythmEyebrow: {
+    fontFamily: BODY_FONT,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+  },
+  rhythmChip: {
+    borderRadius: 16,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 1,
+  },
+  rhythmChipValue: {
+    fontFamily: BODY_FONT,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  rhythmChipLabel: {
+    fontFamily: BODY_FONT,
+    fontSize: 10,
+    fontWeight: '600',
+    letterSpacing: 0.6,
+  },
+  rhythmValue: {
+    fontFamily: DISPLAY_FONT,
+    fontSize: 52,
+    lineHeight: 54,
+    fontWeight: '700',
+    letterSpacing: -1.2,
+  },
+  rhythmNote: {
+    fontFamily: BODY_FONT,
+    fontSize: 14,
+    lineHeight: 20,
+    marginTop: 2,
+  },
+  dayRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 16,
+  },
+  dayColumn: {
+    alignItems: 'center',
+    gap: 8,
+    flex: 1,
+  },
+  dayDot: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    borderWidth: 1,
+  },
+  dayLabel: {
+    fontFamily: BODY_FONT,
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  statsRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  statCard: {
+    flex: 1,
+    borderRadius: 20,
+    borderWidth: 1,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+  },
+  statValueRow: {
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  settingsRowEmoji: { fontSize: 16 },
-  settingsRowLabel: {
-    ...Typography.body,
+  statValue: {
+    fontFamily: DISPLAY_FONT,
+    fontSize: 28,
+    lineHeight: 30,
+    fontWeight: '700',
+    letterSpacing: -0.8,
   },
-  settingsRowValue: {
-    ...Typography.subheadline,
-  },
-  settingsChevron: {
-    fontSize: 20,
-    fontWeight: '300',
-  },
-
-  versionText: {
-    textAlign: 'center',
+  statLabel: {
+    fontFamily: BODY_FONT,
     fontSize: 12,
-    marginTop: 8,
-    marginBottom: 16,
+    fontWeight: '500',
+  },
+  badgesSection: {
+    gap: 12,
+  },
+  badgesHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  sectionTitle: {
+    fontFamily: BODY_FONT,
+    fontSize: 17,
+    fontWeight: '700',
+  },
+  viewAll: {
+    fontFamily: BODY_FONT,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  badgesRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  badgeCard: {
+    flex: 1,
+    borderRadius: 20,
+    borderWidth: 1,
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    minHeight: 102,
+  },
+  badgeEmoji: {
+    fontSize: 22,
+  },
+  badgeName: {
+    fontFamily: BODY_FONT,
+    fontSize: 13,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  badgeSubtitle: {
+    fontFamily: BODY_FONT,
+    fontSize: 11,
+    fontWeight: '500',
+    textAlign: 'center',
+  },
+  connectedRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  connectedCard: {
+    flex: 1,
+    borderRadius: 20,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    gap: 8,
+  },
+  connectedIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  connectedTitle: {
+    fontFamily: BODY_FONT,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  connectedSubtitle: {
+    fontFamily: BODY_FONT,
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '500',
+  },
+  proCard: {
+    minHeight: 98,
+    borderRadius: 24,
+    borderWidth: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+  },
+  proCardIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  proCardCopy: {
+    flex: 1,
+    gap: 4,
+  },
+  proCardEyebrow: {
+    fontFamily: BODY_FONT,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+  },
+  proCardTitle: {
+    fontFamily: DISPLAY_FONT,
+    fontSize: 22,
+    lineHeight: 24,
+    fontWeight: '700',
+    letterSpacing: -0.5,
+  },
+  proCardSubtitle: {
+    fontFamily: BODY_FONT,
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '500',
   },
 });

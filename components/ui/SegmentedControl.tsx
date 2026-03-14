@@ -4,12 +4,12 @@
  */
 
 import React, { useCallback, useEffect } from 'react';
+import { useColorScheme } from '@/hooks/useColorScheme';
 import {
   View,
   Text,
   Pressable,
   StyleSheet,
-  useColorScheme,
   LayoutChangeEvent,
   AccessibilityRole,
 } from 'react-native';

@@ -5,6 +5,8 @@
 
 import { GlassCard } from '@/components/ui/GlassCard';
 import { InsightsScreenSkeleton } from '@/components/ui/Skeleton';
+import { AmbientBackdrop } from '@/components/ui/AmbientBackdrop';
+import { ExpressiveStateView } from '@/components/ui/ExpressiveStateView';
 import { useDeclutter } from '@/context/DeclutterContext';
 import { useTheme } from '@/theme/ThemeProvider';
 import { Typography } from '@/theme/typography';
@@ -194,18 +196,12 @@ function ProgressRing({
 export default function InsightsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const { stats, rooms, collectionStats } = useDeclutter();
 
   const [timePeriod, setTimePeriod] = useState<TimePeriod>('week');
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
-
-  // Simulate initial loading
-  React.useEffect(() => {
-    const timer = setTimeout(() => setIsLoading(false), 800);
-    return () => clearTimeout(timer);
-  }, []);
 
   // Pull to refresh handler
   const onRefresh = useCallback(async () => {
@@ -289,6 +285,7 @@ export default function InsightsScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <AmbientBackdrop isDark={isDark} variant="progress" />
       <LinearGradient
         colors={colors.backgroundGradient}
         style={StyleSheet.absoluteFill}
@@ -336,56 +333,20 @@ export default function InsightsScreen() {
             entering={FadeInDown.delay(100).springify()}
             style={styles.emptyStateContainer}
           >
-            <GlassCard style={styles.emptyStateCard}>
-              <View style={styles.emptyStateIcon}>
-                <Text style={styles.emptyStateEmoji}>📊</Text>
-              </View>
-              <Text style={[styles.emptyStateTitle, { color: colors.text }]}>
-                No Insights Yet
-              </Text>
-              <Text style={[styles.emptyStateSubtitle, { color: colors.textSecondary }]}>
-                Complete tasks and build your streak to unlock detailed analytics
-              </Text>
-              <TouchableOpacity
-                style={[styles.emptyStateButton, { backgroundColor: colors.primary }]}
-                onPress={() => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                  router.push('/(tabs)');
-                }}
-              >
-                <Text style={[styles.emptyStateButtonText, { color: colors.textOnPrimary }]}>Start Decluttering</Text>
-              </TouchableOpacity>
-            </GlassCard>
-
-            {/* Tips for getting started */}
-            <GlassCard style={styles.tipsCard}>
-              <View style={styles.tipsHeader}>
-                <Ionicons name="bulb" size={24} color="#F59E0B" />
-                <Text style={[styles.sectionTitle, { color: colors.text, marginLeft: 8 }]}>
-                  Get Started
-                </Text>
-              </View>
-              <View style={styles.tipsList}>
-                <View style={styles.tipItem}>
-                  <Ionicons name="camera-outline" size={16} color={colors.primary} />
-                  <Text style={[styles.tipText, { color: colors.textSecondary }]}>
-                    Scan a room to get AI-powered cleaning suggestions
-                  </Text>
-                </View>
-                <View style={styles.tipItem}>
-                  <Ionicons name="checkmark-circle-outline" size={16} color={colors.success} />
-                  <Text style={[styles.tipText, { color: colors.textSecondary }]}>
-                    Complete tasks to track your progress here
-                  </Text>
-                </View>
-                <View style={styles.tipItem}>
-                  <Ionicons name="flame-outline" size={16} color={colors.warning} />
-                  <Text style={[styles.tipText, { color: colors.textSecondary }]}>
-                    Build a streak by decluttering daily
-                  </Text>
-                </View>
-              </View>
-            </GlassCard>
+            <ExpressiveStateView
+              isDark={isDark}
+              kicker="INSIGHTS"
+              emoji="📊"
+              title="No insights yet"
+              description="Complete tasks and build a streak to unlock analytics about your pace, patterns, and momentum."
+              primaryLabel="Start decluttering"
+              onPrimary={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                router.push('/(tabs)');
+              }}
+              accentColors={['#D8D0FF', '#8B82FF', '#5B6DFF'] as const}
+              style={styles.expressiveEmptyState}
+            />
           </Animated.View>
         ) : (
           /* Main Insights Content */
@@ -968,6 +929,9 @@ const styles = StyleSheet.create({
   },
   emptyStateContainer: {
     gap: 16,
+  },
+  expressiveEmptyState: {
+    width: '100%',
   },
   emptyStateCard: {
     padding: 32,

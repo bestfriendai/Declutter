@@ -5,6 +5,7 @@
 
 import { Colors } from '@/constants/Colors';
 import { useDeclutter } from '@/context/DeclutterContext';
+import { useColorScheme } from '@/hooks/useColorScheme';
 import { Typography } from '@/theme/typography';
 import { Spacing, BorderRadius } from '@/theme/spacing';
 import {
@@ -23,7 +24,6 @@ import {
     Text as RNText,
     ScrollView,
     StyleSheet,
-    useColorScheme,
     useWindowDimensions,
     View,
 } from 'react-native';

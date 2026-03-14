@@ -1,6 +1,6 @@
+import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
-import { getAuthUserId } from "@convex-dev/auth/server";
 
 export const get = query({
   args: {},
@@ -92,6 +92,24 @@ export const update = mutation({
     name: v.optional(v.string()),
     avatar: v.optional(v.string()),
     onboardingComplete: v.optional(v.boolean()),
+    // Onboarding preferences
+    livingSituation: v.optional(v.union(
+      v.literal("studio"),
+      v.literal("apartment"),
+      v.literal("house"),
+      v.literal("dorm"),
+      v.literal("shared")
+    )),
+    cleaningStruggles: v.optional(v.array(v.string())),
+    energyLevel: v.optional(v.union(
+      v.literal("exhausted"),
+      v.literal("low"),
+      v.literal("moderate"),
+      v.literal("high"),
+      v.literal("hyperfocused")
+    )),
+    timeAvailability: v.optional(v.number()),
+    motivationStyle: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
@@ -105,6 +123,16 @@ export const update = mutation({
     if (args.avatar !== undefined) updates.avatar = args.avatar;
     if (args.onboardingComplete !== undefined)
       updates.onboardingComplete = args.onboardingComplete;
+    if (args.livingSituation !== undefined)
+      updates.livingSituation = args.livingSituation;
+    if (args.cleaningStruggles !== undefined)
+      updates.cleaningStruggles = args.cleaningStruggles;
+    if (args.energyLevel !== undefined)
+      updates.energyLevel = args.energyLevel;
+    if (args.timeAvailability !== undefined)
+      updates.timeAvailability = args.timeAvailability;
+    if (args.motivationStyle !== undefined)
+      updates.motivationStyle = args.motivationStyle;
 
     await ctx.db.patch(userId, updates);
     return userId;
@@ -217,6 +245,27 @@ export const deleteAccount = mutation({
       .collect();
     for (const challenge of challenges) {
       await ctx.db.delete(challenge._id);
+    }
+
+    // Clean up challenges where user is a participant (but not creator)
+    const allChallenges = await ctx.db.query("challenges").collect();
+    for (const challenge of allChallenges) {
+      const participants = challenge.participants ?? [];
+      const isParticipant = participants.some(
+        (p) => p.userId === userId
+      );
+      if (!isParticipant) continue;
+
+      const remaining = participants.filter(
+        (p) => p.userId !== userId
+      );
+      if (remaining.length === 0) {
+        // Last participant — delete the challenge
+        await ctx.db.delete(challenge._id);
+      } else {
+        // Remove user from participants array
+        await ctx.db.patch(challenge._id, { participants: remaining });
+      }
     }
 
     // Delete user profile

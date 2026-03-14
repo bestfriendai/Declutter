@@ -1,20 +1,20 @@
-import { AIAnalysisResult, CleaningTask, EnergyLevel, PhotoQuality, PhotoQualityFeedback, ProgressAnalysisResult } from '@/types/declutter';
-import { api } from '@/convex/_generated/api';
 import { convex } from '@/config/convex';
+import { api } from '@/convex/_generated/api';
+import { AIAnalysisResult, CleaningTask, EnergyLevel, PhotoQuality, PhotoQualityFeedback, ProgressAnalysisResult } from '@/types/declutter';
 import {
-  setGeminiApiKey,
-  getGeminiApiKey,
+    getGeminiApiKey,
+    setGeminiApiKey,
 } from './gemini';
 import {
-  analyzeRoomImageWithZai,
-  analyzeProgressWithZai,
-  getMotivationWithZai,
-  isZaiApiKeyConfigured,
-  setZaiApiKey,
-  getZaiApiKey,
-  setZaiFreeTier,
-  setZaiCodingPlan,
-  detectObjectsInRoom,
+    analyzeProgressWithZai,
+    analyzeRoomImageWithZai,
+    detectObjectsInRoom,
+    getMotivationWithZai,
+    getZaiApiKey,
+    isZaiApiKeyConfigured,
+    setZaiApiKey,
+    setZaiCodingPlan,
+    setZaiFreeTier,
 } from './zai';
 
 export type AIProvider = 'gemini' | 'zai';
@@ -104,15 +104,34 @@ export async function analyzeProgress(
   });
 }
 
-export async function getMotivation(context: string): Promise<string> {
+export interface MotivationResponse {
+  message: string;
+  emoji: string;
+  tone: string;
+  suggestedAction?: string;
+  celebratesReturn?: boolean;
+}
+
+export async function getMotivation(context: string): Promise<MotivationResponse> {
   if (currentProvider === 'zai') {
     setZaiFreeTier(ENV_ZAI_FREE);
     setZaiCodingPlan(ENV_ZAI_CODING_PLAN);
-    return getMotivationWithZai(context);
+    const message = await getMotivationWithZai(context);
+    return { message, emoji: "🐰", tone: "supportive" };
   }
-  return convex.action(api.gemini.getMotivation, {
+  const result = await convex.action(api.gemini.getMotivation, {
     context,
   });
+  return result as MotivationResponse;
+}
+
+/**
+ * Simple motivation message getter (returns just the string)
+ * For backward compatibility with existing code
+ */
+export async function getMotivationMessage(context: string): Promise<string> {
+  const response = await getMotivation(context);
+  return response.message;
 }
 
 export { detectObjectsInRoom };

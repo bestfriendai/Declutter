@@ -4,12 +4,12 @@
  */
 
 import React, { useState, useCallback } from 'react';
+import { useColorScheme } from '@/hooks/useColorScheme';
 import {
   View,
   Text,
   TextInput,
   StyleSheet,
-  useColorScheme,
   Pressable,
   Linking,
   ActivityIndicator,

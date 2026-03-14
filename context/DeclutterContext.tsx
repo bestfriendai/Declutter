@@ -6,6 +6,7 @@
 import { api } from '@/convex/_generated/api';
 import { convex } from '@/config/convex';
 import { SyncData, useAuth } from '@/context/AuthContext';
+import { setForcedColorScheme } from '@/hooks/useColorScheme';
 import { setGeminiApiKey } from '@/services/gemini';
 import { setHapticsEnabled } from '@/services/haptics';
 import {
@@ -27,9 +28,11 @@ import {
     DeclutterState,
     DEFAULT_FOCUS_SETTINGS,
     FocusSession,
+    LivingSituation,
     Mascot,
     MascotMood,
     MascotPersonality,
+    OnboardingEnergyLevel,
     PhotoCapture,
     Room,
     SpawnEvent,
@@ -37,7 +40,7 @@ import {
     UserStats,
 } from '@/types/declutter';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import React, { createContext, ReactNode, useCallback, useEffect, useRef, useState } from 'react';
+import React, { createContext, ReactNode, useCallback, useContext, useEffect, useRef, useState } from 'react';
 
 // Storage keys
 const STORAGE_KEYS = {
@@ -110,6 +113,12 @@ function hydrateUserProfile(profile: any): UserProfile | null {
     avatar: profile.avatar,
     createdAt: asDate(profile.createdAt),
     onboardingComplete: !!profile.onboardingComplete,
+    livingSituation: profile.livingSituation as LivingSituation | undefined,
+    cleaningStruggles: profile.cleaningStruggles ?? undefined,
+    energyLevel: profile.energyLevel as OnboardingEnergyLevel | undefined,
+    timeAvailability: profile.timeAvailability ?? undefined,
+    motivationStyle: profile.motivationStyle ?? undefined,
+    guidePersonality: profile.guidePersonality as MascotPersonality | undefined,
   };
 }
 
@@ -221,6 +230,10 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
       saveData();
     }
   }, [user, rooms, stats, settings, mascot, collection, collectionStats, isLoaded]);
+
+  useEffect(() => {
+    setForcedColorScheme(settings.theme === 'auto' ? null : settings.theme);
+  }, [settings.theme]);
 
   // Cloud sync with debouncing
   const { syncToCloud, loadFromCloud, isAuthenticated, isAnonymous } = useAuth();
@@ -419,11 +432,13 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
 
       if (statsStr) {
         const statsData = JSON.parse(statsStr);
-        statsData.badges = statsData.badges.map((b: Badge) => ({
+        // Merge with defaults so old data without newer fields doesn't crash
+        const mergedStats = { ...defaultStats, ...statsData };
+        mergedStats.badges = (mergedStats.badges ?? []).map((b: Badge) => ({
           ...b,
           unlockedAt: b.unlockedAt ? new Date(b.unlockedAt) : undefined,
         }));
-        setStats(statsData);
+        setStats(mergedStats);
       }
 
       if (settingsStr) {
@@ -1249,6 +1264,7 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
 
   // Memoize context value to prevent unnecessary re-renders
   const value: DeclutterState = React.useMemo(() => ({
+    isLoaded,
     user,
     stats,
     rooms,
@@ -1302,6 +1318,7 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
     clearCelebration,
     clearSyncError,
   }), [
+    isLoaded,
     user,
     stats,
     rooms,
@@ -1330,7 +1347,7 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
 
 // Hook to use the context
 export function useDeclutter() {
-  const context = React.use(DeclutterContext);
+  const context = useContext(DeclutterContext);
   if (!context) {
     throw new Error('useDeclutter must be used within a DeclutterProvider');
   }

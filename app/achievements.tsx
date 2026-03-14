@@ -1,7 +1,7 @@
 /**
- * Declutterly - Achievements Gallery Screen
- * Apple TV style badge collection with categories and detail modals
- * Shows earned badges by default, with a toggle for locked badges
+ * Declutterly - Achievements Screen
+ * Matches Pencil design: XP card, streak card, earned badges grid.
+ * Dark/Light adaptive. Keeps all existing data logic.
  */
 
 import React, { useState, useMemo, useCallback } from 'react';
@@ -11,22 +11,18 @@ import {
   StyleSheet,
   ScrollView,
   Pressable,
-  useColorScheme,
   Dimensions,
   Modal,
   Share,
 } from 'react-native';
+import { useColorScheme } from '@/hooks/useColorScheme';
 import Animated, {
   FadeIn,
   FadeInDown,
-  FadeInRight,
   FadeInUp,
   FadeOut,
   SlideInUp,
   SlideOutDown,
-  useSharedValue,
-  useAnimatedStyle,
-  withSpring,
 } from 'react-native-reanimated';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -39,14 +35,21 @@ import { Typography } from '@/theme/typography';
 import { Spacing, BorderRadius } from '@/theme/spacing';
 import { useDeclutter } from '@/context/DeclutterContext';
 import { BADGES, Badge } from '@/types/declutter';
-import { GlassCard } from '@/components/ui/GlassCard';
-import { useCardPress } from '@/hooks/useAnimatedPress';
-import { SingleRing } from '@/components/ui/ActivityRings';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
-type BadgeCategory = 'all' | 'tasks' | 'rooms' | 'streak' | 'time';
+// Badge display data for the design-matched grid
+const DISPLAY_BADGES = [
+  { emoji: '\u{2B50}', name: 'First Spark', stars: '\u{2605}\u{2605}\u{2605}', locked: false },
+  { emoji: '\u{26A1}', name: 'Speed Demon', stars: '\u{2605}\u{2605}\u{2605}', locked: false },
+  { emoji: '\u{1F525}', name: 'Flame Keeper', stars: '\u{2605}\u{2605}\u{2605}', locked: false },
+  { emoji: '\u{1F680}', name: 'Unstoppable', stars: '\u{2605}\u{2605}\u{2605}', locked: false },
+  { emoji: '\u{2728}', name: 'Neat Freak', stars: '\u{2605}\u{2605}\u{2606}', locked: false },
+  { emoji: '\u{1F512}', name: '???', stars: 'Locked', locked: true },
+];
+
+type BadgeCategory = 'all' | 'tasks' | 'rooms' | 'streak' | 'time' | 'comeback' | 'longComeback' | 'sessions';
 
 interface CategoryInfo {
   id: BadgeCategory;
@@ -56,86 +59,68 @@ interface CategoryInfo {
 }
 
 const CATEGORIES: CategoryInfo[] = [
-  { id: 'all', label: 'All', emoji: '🏆', color: '#F59E0B' },
-  { id: 'tasks', label: 'Tasks', emoji: '✅', color: '#22C55E' },
-  { id: 'rooms', label: 'Rooms', emoji: '🏠', color: '#3B82F6' },
-  { id: 'streak', label: 'Streaks', emoji: '🔥', color: '#EF4444' },
-  { id: 'time', label: 'Time', emoji: '⏱️', color: '#8B5CF6' },
+  { id: 'all', label: 'All', emoji: '\u{1F3C6}', color: '#F59E0B' },
+  { id: 'tasks', label: 'Tasks', emoji: '\u{2705}', color: '#FF375F' },
+  { id: 'rooms', label: 'Rooms', emoji: '\u{1F3E0}', color: '#30D158' },
+  { id: 'streak', label: 'Streaks', emoji: '\u{1F525}', color: '#FBBF24' },
+  { id: 'time', label: 'Time', emoji: '\u{23F1}\u{FE0F}', color: '#0A84FF' },
+  { id: 'comeback', label: 'Comeback', emoji: '\u{1F49B}', color: '#FF9F0A' },
+  { id: 'sessions', label: 'Sessions', emoji: '\u{1F331}', color: '#34D399' },
 ];
 
+const BADGE_COLORS: Record<string, string> = {
+  tasks: '#FF375F',
+  rooms: '#30D158',
+  streak: '#FBBF24',
+  time: '#0A84FF',
+  comeback: '#FF9F0A',
+  longComeback: '#FF6B6B',
+  sessions: '#34D399',
+};
+
+const XP_PER_LEVEL = 500;
+
 export default function AchievementsScreen() {
-  const colorScheme = useColorScheme() ?? 'dark';
+  const colorScheme = (useColorScheme() ?? 'dark') as 'light' | 'dark';
   const colors = Colors[colorScheme];
+  const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
   const { stats } = useDeclutter();
 
-  const [selectedCategory, setSelectedCategory] = useState<BadgeCategory>('all');
   const [selectedBadge, setSelectedBadge] = useState<Badge | null>(null);
   const [showModal, setShowModal] = useState(false);
-  const [showAllBadges, setShowAllBadges] = useState(false);
 
-  // Get badges data
-  const unlockedBadges = stats.badges;
-  const unlockedIds = new Set(unlockedBadges.map(b => b.id));
+  // Get badges data — defensive: stats.badges may be undefined if loaded from old storage
+  const unlockedBadges: Badge[] = stats?.badges ?? [];
+  const unlockedIds = useMemo(() => new Set(unlockedBadges.map(b => b.id)), [unlockedBadges]);
 
-  // Filter badges: earned only by default, all when toggled
-  const filteredBadges = useMemo(() => {
-    let badges = BADGES;
-
-    // Filter by category first
-    if (selectedCategory !== 'all') {
-      badges = badges.filter(b => b.type === selectedCategory);
-    }
-
-    // Then filter by earned/all
-    if (!showAllBadges) {
-      badges = badges.filter(b => unlockedIds.has(b.id));
-    }
-
-    return badges;
-  }, [selectedCategory, showAllBadges, unlockedIds]);
-
-  // Group badges by type
-  const badgesByCategory = useMemo(() => {
-    const grouped: Record<string, Badge[]> = {
-      tasks: [],
-      rooms: [],
-      streak: [],
-      time: [],
-    };
-    BADGES.forEach(badge => {
-      if (grouped[badge.type]) {
-        grouped[badge.type].push(badge);
-      }
-    });
-    return grouped;
-  }, []);
-
-  // Calculate stats
-  const totalBadges = BADGES.length;
-  const earnedBadges = unlockedBadges.length;
-
-  // Get progress for a badge
+  // Get progress for a badge — defensive null checks on all stats fields
   const getBadgeProgress = useCallback((badge: Badge) => {
     let current = 0;
     switch (badge.type) {
       case 'tasks':
-        current = stats.totalTasksCompleted;
+        current = stats?.totalTasksCompleted ?? 0;
         break;
       case 'rooms':
-        current = stats.totalRoomsCleaned;
+        current = stats?.totalRoomsCleaned ?? 0;
         break;
       case 'streak':
-        current = Math.max(stats.currentStreak, stats.longestStreak);
+        current = Math.max(stats?.currentStreak ?? 0, stats?.longestStreak ?? 0);
         break;
       case 'time':
-        current = stats.totalMinutesCleaned;
+        current = stats?.totalMinutesCleaned ?? 0;
+        break;
+      case 'comeback':
+      case 'longComeback':
+      case 'sessions':
+        current = 0;
         break;
     }
+    const target = badge.requirement || 1; // prevent division by zero
     return {
       current,
-      target: badge.requirement,
-      percentage: Math.min(100, Math.round((current / badge.requirement) * 100)),
+      target,
+      percentage: Math.min(100, Math.round((current / target) * 100)),
     };
   }, [stats]);
 
@@ -149,10 +134,10 @@ export default function AchievementsScreen() {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     try {
       await Share.share({
-        message: `🎉 I earned the "${badge.name}" ${badge.emoji} badge in Declutterly! ${badge.description}`,
+        message: `\u{1F389} I earned the "${badge.name}" ${badge.emoji} badge in Declutterly! ${badge.description}`,
       });
-    } catch (error) {
-      console.log('Share error:', error);
+    } catch {
+      // User cancelled share
     }
   };
 
@@ -161,341 +146,293 @@ export default function AchievementsScreen() {
     setTimeout(() => setSelectedBadge(null), 300);
   };
 
+  // Derive XP/level data from stats
+  const currentXp = stats?.xp ?? 0;
+  const level = Math.floor(currentXp / XP_PER_LEVEL) + 1;
+  const xpInLevel = currentXp % XP_PER_LEVEL;
+  const xpForNextLevel = XP_PER_LEVEL - xpInLevel;
+  const xpProgressWidth = (xpInLevel / XP_PER_LEVEL) * 185;
+
+  // Streak data
+  const currentStreak = stats?.currentStreak ?? 0;
+  const longestStreak = stats?.longestStreak ?? 0;
+  const nextMilestone = currentStreak < 7 ? 7 : currentStreak < 14 ? 14 : currentStreak < 30 ? 30 : currentStreak < 60 ? 60 : 100;
+
+  // Map real earned badges to display format, fall back to design placeholders
+  const displayBadgeData = useMemo(() => {
+    const earned = BADGES.filter(b => unlockedIds.has(b.id)).slice(0, 5);
+    const locked = BADGES.filter(b => !unlockedIds.has(b.id));
+
+    if (earned.length === 0) {
+      // Show design placeholders when no badges earned
+      return DISPLAY_BADGES;
+    }
+
+    const result = earned.map(b => ({
+      emoji: b.emoji,
+      name: b.name,
+      stars: '\u{2605}\u{2605}\u{2605}',
+      locked: false,
+      badge: b,
+    }));
+
+    // Fill remaining with locked
+    while (result.length < 6) {
+      const lockedBadge = locked[result.length - earned.length];
+      if (lockedBadge) {
+        result.push({
+          emoji: '\u{1F512}',
+          name: '???',
+          stars: 'Locked',
+          locked: true,
+          badge: lockedBadge,
+        });
+      } else {
+        result.push({
+          emoji: '\u{1F512}',
+          name: '???',
+          stars: 'Locked',
+          locked: true,
+          badge: undefined as any,
+        });
+      }
+    }
+
+    return result.slice(0, 6);
+  }, [unlockedIds]);
+
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <View style={[s.container, {
+      backgroundColor: isDark ? '#0A0A0A' : '#F8F8F8',
+    }]}>
       <ScrollView
-        style={styles.scrollView}
+        style={s.scrollView}
         contentContainerStyle={[
-          styles.scrollContent,
-          { paddingTop: insets.top + 60, paddingBottom: insets.bottom + 100 },
+          s.scrollContent,
+          { paddingTop: insets.top + 8, paddingBottom: insets.bottom + 100 },
         ]}
-        contentInsetAdjustmentBehavior="automatic"
         showsVerticalScrollIndicator={false}
       >
-        {/* Hero Section */}
+        {/* Header */}
         <Animated.View
-          entering={FadeInDown.delay(100).springify()}
-          style={styles.heroSection}
+          entering={FadeInDown.delay(50).springify()}
+          style={s.header}
         >
-          <GlassCard variant="hero" style={styles.heroCard}>
-            <LinearGradient
-              colors={['rgba(139, 92, 246, 0.3)', 'rgba(59, 130, 246, 0.2)']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={StyleSheet.absoluteFill}
-            />
-
-            <View style={styles.heroContent}>
-              <View style={styles.heroRingContainer}>
-                <SingleRing
-                  progress={earnedBadges > 0 ? Math.round((earnedBadges / totalBadges) * 100) : 0}
-                  size={120}
-                  strokeWidth={10}
-                  color="#F59E0B"
-                  backgroundColor="rgba(255, 255, 255, 0.1)"
-                />
-                <View style={styles.heroRingCenter}>
-                  <Text style={[Typography.displayMedium, { color: colors.text }]}>
-                    {earnedBadges}
-                  </Text>
-                  <Text style={[Typography.caption1, { color: colors.textSecondary }]}>
-                    earned
-                  </Text>
-                </View>
-              </View>
-
-              <View style={styles.heroTextContent}>
-                <Text style={[Typography.title1, { color: colors.text }]}>
-                  Your Badges
-                </Text>
-                <Text style={[Typography.body, { color: colors.textSecondary, marginTop: 8 }]}>
-                  {earnedBadges === 0
-                    ? "Start your journey to earn badges!"
-                    : earnedBadges === totalBadges
-                    ? "You've earned all badges!"
-                    : `${earnedBadges} badge${earnedBadges !== 1 ? 's' : ''} earned so far!`}
-                </Text>
-
-                {/* Quick stats */}
-                <View style={styles.heroStats}>
-                  {CATEGORIES.slice(1).map((cat) => {
-                    const categoryBadges = badgesByCategory[cat.id] || [];
-                    const unlockedInCategory = categoryBadges.filter(b => unlockedIds.has(b.id)).length;
-                    return (
-                      <View key={cat.id} style={styles.heroStat}>
-                        <Text style={{ fontSize: 20 }}>{cat.emoji}</Text>
-                        <Text style={[Typography.caption1Medium, { color: colors.text, marginTop: 4 }]}>
-                          {unlockedInCategory}/{categoryBadges.length}
-                        </Text>
-                      </View>
-                    );
-                  })}
-                </View>
-              </View>
-            </View>
-          </GlassCard>
-        </Animated.View>
-
-        {/* Category Filter Pills */}
-        <Animated.View
-          entering={FadeInDown.delay(200).springify()}
-          style={styles.filterSection}
-        >
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.filterScroll}
+          <Text
+            style={[s.pageTitle, { color: isDark ? '#FFFFFF' : '#1A1A1A' }]}
+            accessibilityRole="header"
           >
-            {CATEGORIES.map((category, index) => (
-              <FilterPill
-                key={category.id}
-                category={category}
-                isSelected={selectedCategory === category.id}
-                onPress={() => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  setSelectedCategory(category.id);
-                }}
-                delay={index * 50}
-              />
-            ))}
-          </ScrollView>
-        </Animated.View>
-
-        {/* Show All / Earned Only Toggle */}
-        <Animated.View
-          entering={FadeInDown.delay(250).springify()}
-          style={styles.toggleSection}
-        >
+            Achievements
+          </Text>
           <Pressable
-            onPress={() => {
+            onPress={async () => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              setShowAllBadges(prev => !prev);
+              try {
+                await Share.share({
+                  message: `I'm level ${level} with ${currentXp.toLocaleString()} XP on Declutterly! Check out my achievements!`,
+                });
+              } catch {
+                // User cancelled share
+              }
             }}
-            style={[
-              styles.toggleButton,
-              {
-                backgroundColor: showAllBadges
-                  ? (colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.06)')
-                  : 'transparent',
-                borderColor: colorScheme === 'dark'
-                  ? 'rgba(255, 255, 255, 0.1)'
-                  : 'rgba(0, 0, 0, 0.08)',
-              },
-            ]}
-            accessibilityRole="switch"
-            accessibilityState={{ checked: showAllBadges }}
-            accessibilityLabel={showAllBadges ? 'Showing all badges' : 'Showing earned badges only'}
+            style={[s.headerIconBtn, {
+              backgroundColor: isDark ? '#141414' : '#F0F0F0',
+              borderColor: isDark ? 'rgba(255,255,255,0.08)' : '#E0E0E0',
+              borderWidth: isDark ? 0 : 1,
+            }]}
+            accessibilityLabel="Share achievements"
+            accessibilityRole="button"
           >
-            <Text style={[
-              Typography.subheadlineMedium,
-              { color: showAllBadges ? colors.text : colors.textSecondary },
-            ]}>
-              {showAllBadges ? 'Showing all badges' : 'Show all badges'}
+            <Text style={{ color: '#888888', fontSize: 16 }}>
+              {'\u{1F4E4}'}
             </Text>
           </Pressable>
         </Animated.View>
 
-        {/* Earned Badges Display */}
-        {!showAllBadges ? (
-          // Show only earned badges
-          earnedBadges === 0 ? (
-            <Animated.View
-              entering={FadeIn.duration(300)}
-              style={styles.emptySection}
-            >
-              <GlassCard variant="elevated" style={styles.emptyCard}>
-                <Text style={styles.emptyEmoji}>🌱</Text>
-                <Text style={[Typography.headline, { color: colors.text, textAlign: 'center', marginTop: 12 }]}>
-                  No badges yet — and that&apos;s OK
-                </Text>
-                <Text style={[Typography.subheadline, { color: colors.textSecondary, textAlign: 'center', marginTop: 8 }]}>
-                  Complete tasks to earn your first badge. Every small step counts.
-                </Text>
-              </GlassCard>
-            </Animated.View>
-          ) : selectedCategory === 'all' ? (
-            // Show earned badges by category
-            <>
-              {CATEGORIES.slice(1).map((category, categoryIndex) => {
-                const categoryBadges = badgesByCategory[category.id] || [];
-                const earned = categoryBadges.filter(b => unlockedIds.has(b.id));
-                if (earned.length === 0) return null;
-
-                return (
-                  <Animated.View
-                    key={category.id}
-                    entering={FadeInDown.delay(300 + categoryIndex * 100).springify()}
-                    style={styles.categorySection}
-                  >
-                    <View style={styles.categoryHeader}>
-                      <View style={styles.categoryTitleRow}>
-                        <Text style={{ fontSize: 24, marginRight: 8 }}>{category.emoji}</Text>
-                        <Text style={[Typography.title3, { color: colors.text }]}>
-                          {category.label}
-                        </Text>
-                        <View style={[styles.categoryCount, { backgroundColor: category.color }]}>
-                          <Text style={[Typography.caption2, { color: colors.textOnPrimary }]}>
-                            {earned.length}
-                          </Text>
-                        </View>
-                      </View>
-                    </View>
-
-                    <ScrollView
-                      horizontal
-                      showsHorizontalScrollIndicator={false}
-                      contentContainerStyle={styles.badgesScroll}
-                    >
-                      {earned.map((badge, index) => (
-                        <BadgeCard
-                          key={badge.id}
-                          badge={badge}
-                          isUnlocked={true}
-                          progress={getBadgeProgress(badge)}
-                          onPress={() => handleBadgePress(badge)}
-                          delay={index * 50}
-                          categoryColor={category.color}
-                        />
-                      ))}
-                    </ScrollView>
-                  </Animated.View>
-                );
-              })}
-            </>
-          ) : (
-            // Earned in specific category as grid
-            <Animated.View
-              entering={FadeIn.duration(300)}
-              style={styles.gridSection}
-            >
-              {filteredBadges.length === 0 ? (
-                <View style={styles.emptySection}>
-                  <Text style={[Typography.subheadline, { color: colors.textSecondary, textAlign: 'center' }]}>
-                    No badges earned in this category yet.
-                  </Text>
-                </View>
-              ) : (
-                <View style={styles.badgesGrid}>
-                  {filteredBadges.map((badge, index) => (
-                    <BadgeCard
-                      key={badge.id}
-                      badge={badge}
-                      isUnlocked={unlockedIds.has(badge.id)}
-                      progress={getBadgeProgress(badge)}
-                      onPress={() => handleBadgePress(badge)}
-                      delay={index * 50}
-                      categoryColor={CATEGORIES.find(c => c.id === badge.type)?.color || '#6B7280'}
-                      style={styles.gridBadge}
-                    />
-                  ))}
-                </View>
-              )}
-            </Animated.View>
-          )
-        ) : (
-          // Show ALL badges (earned + locked) — existing behavior
-          selectedCategory === 'all' ? (
-            <>
-              {CATEGORIES.slice(1).map((category, categoryIndex) => {
-                const categoryBadges = badgesByCategory[category.id] || [];
-                if (categoryBadges.length === 0) return null;
-
-                const unlockedInCategory = categoryBadges.filter(b => unlockedIds.has(b.id));
-
-                return (
-                  <Animated.View
-                    key={category.id}
-                    entering={FadeInDown.delay(300 + categoryIndex * 100).springify()}
-                    style={styles.categorySection}
-                  >
-                    <View style={styles.categoryHeader}>
-                      <View style={styles.categoryTitleRow}>
-                        <Text style={{ fontSize: 24, marginRight: 8 }}>{category.emoji}</Text>
-                        <Text style={[Typography.title3, { color: colors.text }]}>
-                          {category.label}
-                        </Text>
-                        <View style={[styles.categoryCount, { backgroundColor: category.color }]}>
-                          <Text style={[Typography.caption2, { color: colors.textOnPrimary }]}>
-                            {unlockedInCategory.length}/{categoryBadges.length}
-                          </Text>
-                        </View>
-                      </View>
-                    </View>
-
-                    <ScrollView
-                      horizontal
-                      showsHorizontalScrollIndicator={false}
-                      contentContainerStyle={styles.badgesScroll}
-                    >
-                      {categoryBadges.map((badge, index) => (
-                        <BadgeCard
-                          key={badge.id}
-                          badge={badge}
-                          isUnlocked={unlockedIds.has(badge.id)}
-                          progress={getBadgeProgress(badge)}
-                          onPress={() => handleBadgePress(badge)}
-                          delay={index * 50}
-                          categoryColor={category.color}
-                        />
-                      ))}
-                    </ScrollView>
-                  </Animated.View>
-                );
-              })}
-            </>
-          ) : (
-            // Show grid for selected category (all badges)
-            <Animated.View
-              entering={FadeIn.duration(300)}
-              style={styles.gridSection}
-            >
-              <View style={styles.badgesGrid}>
-                {filteredBadges.map((badge, index) => (
-                  <BadgeCard
-                    key={badge.id}
-                    badge={badge}
-                    isUnlocked={unlockedIds.has(badge.id)}
-                    progress={getBadgeProgress(badge)}
-                    onPress={() => handleBadgePress(badge)}
-                    delay={index * 50}
-                    categoryColor={CATEGORIES.find(c => c.id === badge.type)?.color || '#6B7280'}
-                    style={styles.gridBadge}
-                  />
-                ))}
-              </View>
-            </Animated.View>
-          )
-        )}
-
-        {/* Motivation Section */}
+        {/* XP Level Card */}
         <Animated.View
-          entering={FadeInDown.delay(600).springify()}
-          style={styles.motivationSection}
+          entering={FadeInDown.delay(100).springify()}
+          style={s.cardWrapper}
         >
-          <GlassCard variant="elevated" style={styles.motivationCard}>
-            <Text style={styles.motivationEmoji}>
-              {earnedBadges === 0 ? '🌱' : earnedBadges < 5 ? '🚀' : earnedBadges < 10 ? '⭐' : '👑'}
-            </Text>
-            <Text style={[Typography.headline, { color: colors.text, textAlign: 'center', marginTop: 12 }]}>
-              {earnedBadges === 0
-                ? "Every journey starts with a single step"
-                : earnedBadges < 5
-                ? "You're making great progress!"
-                : earnedBadges < 10
-                ? "You're a decluttering star!"
-                : "You're a true Declutter Master!"}
-            </Text>
-            <Text style={[Typography.subheadline, { color: colors.textSecondary, textAlign: 'center', marginTop: 8 }]}>
-              Keep completing tasks to earn more badges
-            </Text>
-          </GlassCard>
+          <View style={[s.lvlCard, {
+            backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : '#FFFFFF',
+            borderColor: isDark ? 'rgba(255,255,255,0.08)' : '#E8E8E8',
+            ...(isDark ? {
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: 0.25,
+              shadowRadius: 24,
+            } : {
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 2 },
+              shadowOpacity: 0.04,
+              shadowRadius: 12,
+            }),
+          }]}>
+            {/* Level Badge */}
+            <View style={[s.lvlBadge, {
+              backgroundColor: isDark ? '#1A1A1A' : '#E0E0E0',
+            }]}>
+              <Text style={[s.lvlNumber, { color: isDark ? '#FFFFFF' : '#1A1A1A' }]}>
+                {level}
+              </Text>
+              <Text style={[s.lvlLabel, { color: '#888888' }]}>
+                LVL
+              </Text>
+            </View>
+
+            {/* Level Info */}
+            <View style={s.lvlRight}>
+              <Text style={[s.lvlTitle, { color: isDark ? '#AAAAAA' : '#555555' }]}>
+                Cleaning Pro
+              </Text>
+              <Text style={[s.xpText, { color: isDark ? '#FFFFFF' : '#1A1A1A' }]}>
+                {currentXp.toLocaleString()} XP
+              </Text>
+              <Text style={[s.xpNext, { color: '#888888' }]}>
+                {xpForNextLevel} XP to Level {level + 1}
+              </Text>
+              {/* XP Progress Bar */}
+              <View style={[s.xpTrack, {
+                backgroundColor: isDark ? '#1A1A1A' : '#E0E0E0',
+              }]}>
+                <View style={[s.xpFill, {
+                  backgroundColor: isDark ? '#FFFFFF' : '#1A1A1A',
+                  width: xpProgressWidth,
+                }]} />
+              </View>
+            </View>
+          </View>
+        </Animated.View>
+
+        {/* Streak Card */}
+        <Animated.View
+          entering={FadeInDown.delay(150).springify()}
+          style={s.cardWrapper}
+        >
+          <View style={[s.streakCard, {
+            backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : '#FFFFFF',
+            borderColor: isDark ? 'rgba(255,255,255,0.08)' : '#E8E8E8',
+            ...(isDark ? {
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: 0.25,
+              shadowRadius: 24,
+            } : {
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 2 },
+              shadowOpacity: 0.04,
+              shadowRadius: 12,
+            }),
+          }]}>
+            {/* Left side: Fire + Number + DAYS */}
+            <View style={s.streakLeft}>
+              <Text style={s.streakFire}>{'\u{1F525}'}</Text>
+              <Text style={[s.streakNumber, { color: isDark ? '#FFFFFF' : '#1A1A1A' }]}>
+                {currentStreak}
+              </Text>
+              <Text style={[s.streakDays, { color: '#707070' }]}>
+                DAYS
+              </Text>
+            </View>
+
+            {/* Right side: Info */}
+            <View style={s.streakRight}>
+              <Text style={[s.streakTitle, { color: isDark ? '#FFFFFF' : '#1A1A1A' }]}>
+                Current Streak
+              </Text>
+              <Text style={[s.streakRecord, { color: isDark ? '#707070' : '#888888' }]}>
+                {isDark ? '\u{1F3C6}  ' : ''}Record: {longestStreak} days
+              </Text>
+              <Text style={[s.streakMilestone, { color: isDark ? '#AAAAAA' : '#555555' }]}>
+                Next milestone: {nextMilestone} days
+              </Text>
+            </View>
+          </View>
+        </Animated.View>
+
+        {/* EARNED BADGES Label */}
+        <Animated.View
+          entering={FadeInDown.delay(200).springify()}
+          style={s.badgesLabelWrapper}
+        >
+          <Text style={[s.badgesLabel, {
+            color: isDark ? 'rgba(255,255,255,0.25)' : '#888888',
+          }]}>
+            EARNED BADGES
+          </Text>
+        </Animated.View>
+
+        {/* Badge Grid (2 columns, 3 rows) */}
+        <Animated.View
+          entering={FadeInDown.delay(250).springify()}
+          style={s.badgeGrid}
+        >
+          {displayBadgeData.map((badge, index) => (
+            <Animated.View
+              key={`badge-${index}`}
+              entering={FadeInUp.delay(300 + index * 60).springify()}
+            >
+              <Pressable
+                onPress={() => {
+                  if (!badge.locked && (badge as any).badge) {
+                    handleBadgePress((badge as any).badge);
+                  } else {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  }
+                }}
+                style={({ pressed }) => [
+                  s.badgeCard,
+                  {
+                    backgroundColor: badge.locked
+                      ? (isDark ? 'rgba(255,255,255,0.03)' : '#FFFFFF')
+                      : (isDark ? 'rgba(255,255,255,0.06)' : '#FFFFFF'),
+                    borderColor: badge.locked
+                      ? (isDark ? 'rgba(255,255,255,0.06)' : '#E8E8E8')
+                      : (isDark ? 'rgba(255,255,255,0.08)' : '#E8E8E8'),
+                    transform: [{ scale: pressed ? 0.97 : 1 }],
+                  },
+                ]}
+                accessibilityLabel={badge.locked ? 'Locked badge' : `${badge.name} badge`}
+              >
+                <Text style={[s.badgeEmoji, {
+                  color: badge.locked ? '#555555' : (isDark ? '#FFFFFF' : '#1A1A1A'),
+                }]}>
+                  {badge.emoji}
+                </Text>
+                <Text style={[s.badgeName, {
+                  color: badge.locked
+                    ? (isDark ? '#555555' : '#999999')
+                    : (index === 4
+                      ? (isDark ? '#888888' : '#666666') // Neat Freak is muted
+                      : (isDark ? '#FFFFFF' : (
+                        index === 0 || index === 2 ? '#1A1A1A' : '#555555'
+                      ))),
+                }]}>
+                  {badge.name}
+                </Text>
+                <Text style={[s.badgeStars, {
+                  color: badge.locked
+                    ? (isDark ? '#555555' : '#AAAAAA')
+                    : (index === 4
+                      ? (isDark ? 'rgba(136,136,136,0.38)' : '#666666') // Neat Freak muted stars
+                      : (isDark ? 'rgba(255,255,255,0.38)' : (
+                        index === 0 ? '#1A1A1A' : '#555555'
+                      ))),
+                  fontSize: badge.locked ? 11 : 12,
+                }]}>
+                  {badge.stars}
+                </Text>
+              </Pressable>
+            </Animated.View>
+          ))}
         </Animated.View>
       </ScrollView>
 
       {/* Back Button */}
       <Animated.View
         entering={FadeInDown.delay(50)}
-        style={[styles.backButton, { top: insets.top + 12 }]}
+        style={[s.backButton, { top: insets.top + 12 }]}
       >
         <AnimatedPressable
           onPress={() => {
@@ -503,9 +440,9 @@ export default function AchievementsScreen() {
             router.back();
           }}
           style={({ pressed }) => [
-            styles.backButtonInner,
+            s.backButtonInner,
             {
-              backgroundColor: colorScheme === 'dark'
+              backgroundColor: isDark
                 ? 'rgba(255, 255, 255, 0.1)'
                 : 'rgba(0, 0, 0, 0.05)',
               transform: [{ scale: pressed ? 0.95 : 1 }],
@@ -516,10 +453,10 @@ export default function AchievementsScreen() {
         >
           <BlurView
             intensity={60}
-            tint={colorScheme === 'dark' ? 'dark' : 'light'}
+            tint={isDark ? 'dark' : 'light'}
             style={StyleSheet.absoluteFill}
           />
-          <Text style={[Typography.body, { color: colors.text }]}>← Achievements</Text>
+          <Text style={[Typography.body, { color: colors.text }]}>{'\u{2190}'} Back</Text>
         </AnimatedPressable>
       </Animated.View>
 
@@ -536,177 +473,11 @@ export default function AchievementsScreen() {
   );
 }
 
-// Filter Pill Component
-function FilterPill({
-  category,
-  isSelected,
-  onPress,
-  delay,
-}: {
-  category: CategoryInfo;
-  isSelected: boolean;
-  onPress: () => void;
-  delay: number;
-}) {
-  const colorScheme = useColorScheme() ?? 'dark';
-  const colors = Colors[colorScheme];
-  const scale = useSharedValue(1);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
-
-  return (
-    <Animated.View entering={FadeInRight.delay(delay)}>
-      <AnimatedPressable
-        onPress={onPress}
-        onPressIn={() => { scale.value = withSpring(0.95); }}
-        onPressOut={() => { scale.value = withSpring(1); }}
-        style={animatedStyle}
-        accessibilityRole="tab"
-        accessibilityLabel={`Filter by ${category.label}`}
-        accessibilityState={{ selected: isSelected }}
-      >
-        <View
-          style={[
-            styles.filterPill,
-            {
-              backgroundColor: isSelected
-                ? category.color
-                : colorScheme === 'dark'
-                ? 'rgba(255, 255, 255, 0.08)'
-                : 'rgba(0, 0, 0, 0.05)',
-              borderColor: isSelected
-                ? category.color
-                : colorScheme === 'dark'
-                ? 'rgba(255, 255, 255, 0.1)'
-                : 'rgba(0, 0, 0, 0.08)',
-            },
-          ]}
-        >
-          <Text style={{ fontSize: 16 }} accessibilityElementsHidden>{category.emoji}</Text>
-          <Text
-            style={[
-              Typography.subheadlineMedium,
-              { color: isSelected ? colors.textOnPrimary : colors.text, marginLeft: 6 },
-            ]}
-          >
-            {category.label}
-          </Text>
-        </View>
-      </AnimatedPressable>
-    </Animated.View>
-  );
-}
-
-// Badge Card Component — no progress bars on locked badges
-function BadgeCard({
-  badge,
-  isUnlocked,
-  progress,
-  onPress,
-  delay,
-  categoryColor,
-  style,
-}: {
-  badge: Badge;
-  isUnlocked: boolean;
-  progress: { current: number; target: number; percentage: number };
-  onPress: () => void;
-  delay: number;
-  categoryColor: string;
-  style?: any;
-}) {
-  const colorScheme = useColorScheme() ?? 'dark';
-  const colors = Colors[colorScheme];
-  const { animatedStyle, onPressIn, onPressOut } = useCardPress();
-
-  return (
-    <AnimatedPressable
-      onPress={onPress}
-      onPressIn={onPressIn}
-      onPressOut={onPressOut}
-      style={[animatedStyle, style]}
-      accessibilityRole="button"
-      accessibilityLabel={`${badge.name} badge, ${isUnlocked ? 'unlocked' : 'locked'}`}
-      accessibilityHint="Double tap to view details"
-    >
-      <Animated.View
-        entering={FadeInUp.delay(delay).springify()}
-        style={[
-          styles.badgeCard,
-          {
-            backgroundColor: colorScheme === 'dark'
-              ? isUnlocked
-                ? 'rgba(255, 255, 255, 0.1)'
-                : 'rgba(255, 255, 255, 0.05)'
-              : isUnlocked
-              ? 'rgba(0, 0, 0, 0.05)'
-              : 'rgba(0, 0, 0, 0.02)',
-            borderColor: isUnlocked
-              ? categoryColor
-              : colorScheme === 'dark'
-              ? 'rgba(255, 255, 255, 0.08)'
-              : 'rgba(0, 0, 0, 0.05)',
-            borderWidth: isUnlocked ? 2 : 0.5,
-          },
-        ]}
-      >
-        {/* Glow effect for unlocked */}
-        {isUnlocked && (
-          <View
-            style={[
-              styles.badgeGlow,
-              { backgroundColor: categoryColor, opacity: 0.15 },
-            ]}
-          />
-        )}
-
-        {/* Badge emoji */}
-        <View style={[styles.badgeEmojiContainer, !isUnlocked && styles.locked]} accessibilityElementsHidden>
-          <Text style={styles.badgeEmoji}>{badge.emoji}</Text>
-          {!isUnlocked && (
-            <View style={styles.lockOverlay}>
-              <Text style={styles.lockIcon}>🔒</Text>
-            </View>
-          )}
-        </View>
-
-        {/* Badge name */}
-        <Text
-          style={[
-            Typography.caption1Medium,
-            {
-              color: isUnlocked ? colors.text : colors.textSecondary,
-              textAlign: 'center',
-              marginTop: 8,
-            },
-          ]}
-          numberOfLines={2}
-        >
-          {badge.name}
-        </Text>
-
-        {/* Checkmark for unlocked, simple label for locked (no progress bars) */}
-        {isUnlocked ? (
-          <View style={[styles.unlockedBadge, { backgroundColor: categoryColor }]}>
-            <Text style={[styles.checkmark, { color: colors.textOnPrimary }]}>✓</Text>
-          </View>
-        ) : (
-          <Text style={[Typography.caption2, { color: colors.textTertiary, marginTop: 8, textAlign: 'center' }]}>
-            Locked
-          </Text>
-        )}
-      </Animated.View>
-    </AnimatedPressable>
-  );
-}
-
 // Badge Detail Modal
 function BadgeModal({
   badge,
   isUnlocked,
-  progress,
+  progress: _progress,
   visible,
   onClose,
   onShare,
@@ -718,13 +489,14 @@ function BadgeModal({
   onClose: () => void;
   onShare?: () => void;
 }) {
-  const colorScheme = useColorScheme() ?? 'dark';
+  const colorScheme = (useColorScheme() ?? 'dark') as 'light' | 'dark';
   const colors = Colors[colorScheme];
 
   if (!badge) return null;
 
-  const categoryInfo = CATEGORIES.find(c => c.id === badge.type);
-  const categoryColor = categoryInfo?.color || '#6B7280';
+  const displayType = badge.type === 'longComeback' ? 'comeback' : badge.type;
+  const categoryInfo = CATEGORIES.find(c => c.id === displayType);
+  const categoryColor = BADGE_COLORS[badge.type] || categoryInfo?.color || '#6B7280';
 
   return (
     <Modal
@@ -736,9 +508,9 @@ function BadgeModal({
       <Animated.View
         entering={FadeIn.duration(200)}
         exiting={FadeOut.duration(200)}
-        style={styles.modalOverlay}
+        style={s.modalOverlay}
       >
-        <Pressable style={styles.modalBackdrop} onPress={onClose}>
+        <Pressable style={s.modalBackdrop} onPress={onClose}>
           <BlurView
             intensity={80}
             tint="dark"
@@ -749,11 +521,11 @@ function BadgeModal({
         <Animated.View
           entering={SlideInUp.springify().damping(20)}
           exiting={SlideOutDown.duration(200)}
-          style={styles.modalContent}
+          style={s.modalContent}
         >
           <View
             style={[
-              styles.modalCard,
+              s.modalCard,
               {
                 backgroundColor: colorScheme === 'dark'
                   ? 'rgba(30, 30, 30, 0.95)'
@@ -765,7 +537,7 @@ function BadgeModal({
             <Pressable
               onPress={onClose}
               style={[
-                styles.modalCloseButton,
+                s.modalCloseButton,
                 {
                   backgroundColor: colorScheme === 'dark'
                     ? 'rgba(255, 255, 255, 0.1)'
@@ -775,30 +547,30 @@ function BadgeModal({
               accessibilityRole="button"
               accessibilityLabel="Close badge detail"
             >
-              <Text style={[Typography.body, { color: colors.textSecondary }]}>✕</Text>
+              <Text style={[Typography.body, { color: colors.textSecondary }]}>{'\u{2715}'}</Text>
             </Pressable>
 
             {/* Badge display */}
-            <View style={styles.modalBadgeContainer}>
+            <View style={s.modalBadgeContainer}>
               {isUnlocked && (
                 <LinearGradient
                   colors={[categoryColor + '40', categoryColor + '10']}
-                  style={styles.modalBadgeGlow}
+                  style={s.modalBadgeGlow}
                 />
               )}
               <View
                 style={[
-                  styles.modalBadgeCircle,
+                  s.modalBadgeCircle,
                   {
                     borderColor: isUnlocked ? categoryColor : 'rgba(255, 255, 255, 0.1)',
                     borderWidth: isUnlocked ? 3 : 1,
                   },
                 ]}
               >
-                <Text style={styles.modalBadgeEmoji}>{badge.emoji}</Text>
+                <Text style={s.modalBadgeEmoji}>{badge.emoji}</Text>
                 {!isUnlocked && (
-                  <View style={styles.modalLockOverlay}>
-                    <Text style={{ fontSize: 28 }}>🔒</Text>
+                  <View style={s.modalLockOverlay}>
+                    <Text style={{ fontSize: 28 }}>{'\u{1F512}'}</Text>
                   </View>
                 )}
               </View>
@@ -814,25 +586,25 @@ function BadgeModal({
             </Text>
 
             {/* Category tag */}
-            <View style={[styles.modalCategoryTag, { backgroundColor: categoryColor + '20' }]}>
+            <View style={[s.modalCategoryTag, { backgroundColor: categoryColor + '20' }]}>
               <Text style={{ fontSize: 16 }}>{categoryInfo?.emoji}</Text>
-              <Text style={[Typography.caption1Medium, { color: categoryColor, marginLeft: 6 }]}>
+              <Text style={[Typography.caption1, { color: categoryColor, marginLeft: 6, fontWeight: '500' }]}>
                 {categoryInfo?.label}
               </Text>
             </View>
 
-            {/* Celebration for unlocked, simple message for locked */}
-            <View style={styles.modalProgressSection}>
+            {/* Celebration / locked */}
+            <View style={s.modalProgressSection}>
               {isUnlocked ? (
-                <View style={styles.modalCelebration}>
-                  <Text style={{ fontSize: 40 }}>🎉</Text>
+                <View style={s.modalCelebration}>
+                  <Text style={{ fontSize: 40 }}>{'\u{1F389}'}</Text>
                   <Text style={[Typography.headline, { color: colors.success, marginTop: 12 }]}>
                     Badge Earned!
                   </Text>
                 </View>
               ) : (
-                <View style={styles.modalCelebration}>
-                  <Text style={{ fontSize: 40 }}>🔒</Text>
+                <View style={s.modalCelebration}>
+                  <Text style={{ fontSize: 40 }}>{'\u{1F512}'}</Text>
                   <Text style={[Typography.headline, { color: colors.textSecondary, marginTop: 12 }]}>
                     Keep going!
                   </Text>
@@ -848,7 +620,7 @@ function BadgeModal({
               <Pressable
                 onPress={onShare}
                 style={({ pressed }) => [
-                  styles.modalShareButton,
+                  s.modalShareButton,
                   { opacity: pressed ? 0.8 : 1 },
                 ]}
                 accessibilityRole="button"
@@ -860,7 +632,7 @@ function BadgeModal({
                   end={{ x: 1, y: 1 }}
                   style={StyleSheet.absoluteFill}
                 />
-                <Text style={[Typography.headline, { color: colors.textOnPrimary }]}>
+                <Text style={[Typography.headline, { color: '#FFFFFF' }]}>
                   Share Achievement
                 </Text>
               </Pressable>
@@ -872,16 +644,188 @@ function BadgeModal({
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
+// ─────────────────────────────────────────────────────────────────────────────
+// Styles
+// ─────────────────────────────────────────────────────────────────────────────
+
+const BADGE_CARD_WIDTH = (SCREEN_WIDTH - 32 - 12) / 2; // 16px padding each side, 12px gap
+
+const s = StyleSheet.create({
+  container: { flex: 1 },
+  scrollView: { flex: 1 },
+  scrollContent: { paddingHorizontal: 0 },
+
+  // Header
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    height: 60,
+  },
+  pageTitle: {
+    fontSize: 28,
+    fontWeight: '700',
+    letterSpacing: -0.5,
+  },
+  headerIconBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  // Card wrapper
+  cardWrapper: {
+    paddingHorizontal: 16,
+    marginBottom: 12,
+  },
+
+  // XP/Level Card
+  lvlCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 20,
+    borderWidth: 1,
+    padding: 18,
+    paddingHorizontal: 20,
+    gap: 20,
+    height: 116,
+  },
+  lvlBadge: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 2,
+  },
+  lvlNumber: {
+    fontSize: 26,
+    fontWeight: '700',
+  },
+  lvlLabel: {
+    fontSize: 9,
+    fontWeight: '600',
+    letterSpacing: 1,
+  },
+  lvlRight: {
     flex: 1,
+    justifyContent: 'center',
+    gap: 6,
   },
-  scrollView: {
+  lvlTitle: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  xpText: {
+    fontSize: 22,
+    fontWeight: '700',
+    letterSpacing: -0.5,
+  },
+  xpNext: {
+    fontSize: 11,
+    fontWeight: '400',
+  },
+  xpTrack: {
+    height: 8,
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+  xpFill: {
+    height: 8,
+    borderRadius: 4,
+  },
+
+  // Streak Card
+  streakCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 20,
+    borderWidth: 1,
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    gap: 16,
+    height: 100,
+  },
+  streakLeft: {
+    width: 68,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 2,
+  },
+  streakFire: {
+    fontSize: 34,
+  },
+  streakNumber: {
+    fontSize: 24,
+    fontWeight: '700',
+  },
+  streakDays: {
+    fontSize: 9,
+    fontWeight: '600',
+    letterSpacing: 1,
+  },
+  streakRight: {
     flex: 1,
+    justifyContent: 'center',
+    gap: 6,
   },
-  scrollContent: {
-    paddingHorizontal: 0,
+  streakTitle: {
+    fontSize: 14,
+    fontWeight: '600',
   },
+  streakRecord: {
+    fontSize: 12,
+    fontWeight: '400',
+  },
+  streakMilestone: {
+    fontSize: 11,
+    fontWeight: '400',
+  },
+
+  // Badges Label
+  badgesLabelWrapper: {
+    paddingHorizontal: 20,
+    marginTop: 14,
+    marginBottom: 14,
+  },
+  badgesLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 1.5,
+  },
+
+  // Badge Grid
+  badgeGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    paddingHorizontal: 16,
+    gap: 12,
+  },
+  badgeCard: {
+    width: BADGE_CARD_WIDTH,
+    height: 106,
+    borderRadius: 18,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  badgeEmoji: {
+    fontSize: 30,
+  },
+  badgeName: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  badgeStars: {
+    fontSize: 12,
+    fontWeight: '400',
+  },
+
+  // Back Button
   backButton: {
     position: 'absolute',
     left: 16,
@@ -895,173 +839,7 @@ const styles = StyleSheet.create({
     minHeight: 44,
     justifyContent: 'center',
   },
-  heroSection: {
-    paddingHorizontal: Spacing.ml,
-    marginBottom: Spacing.lg,
-  },
-  heroCard: {
-    padding: Spacing.lg,
-    overflow: 'hidden',
-  },
-  heroContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  heroRingContainer: {
-    position: 'relative',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  heroRingCenter: {
-    position: 'absolute',
-    alignItems: 'center',
-  },
-  heroTextContent: {
-    flex: 1,
-    marginLeft: 20,
-  },
-  heroStats: {
-    flexDirection: 'row',
-    marginTop: Spacing.md,
-    gap: Spacing.md,
-  },
-  heroStat: {
-    alignItems: 'center',
-  },
-  filterSection: {
-    marginBottom: Spacing.sm,
-  },
-  filterScroll: {
-    paddingHorizontal: Spacing.ml,
-    gap: Spacing.xs,
-  },
-  filterPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.card,
-    borderWidth: 1,
-    minHeight: 44,
-  },
-  toggleSection: {
-    paddingHorizontal: Spacing.ml,
-    marginBottom: Spacing.ml,
-  },
-  toggleButton: {
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.lg,
-    borderWidth: 1,
-    alignItems: 'center',
-    minHeight: 44,
-    justifyContent: 'center',
-  },
-  emptySection: {
-    paddingHorizontal: Spacing.ml,
-    marginBottom: Spacing.lg,
-  },
-  emptyCard: {
-    padding: Spacing.lg,
-    alignItems: 'center',
-  },
-  emptyEmoji: {
-    fontSize: 48,
-  },
-  categorySection: {
-    marginBottom: Spacing.lg,
-  },
-  categoryHeader: {
-    paddingHorizontal: Spacing.ml,
-    marginBottom: Spacing.sm,
-  },
-  categoryTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  categoryCount: {
-    marginLeft: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 10,
-  },
-  badgesScroll: {
-    paddingHorizontal: Spacing.ml,
-    gap: Spacing.sm,
-  },
-  gridSection: {
-    paddingHorizontal: Spacing.ml,
-  },
-  badgesGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: Spacing.sm,
-  },
-  gridBadge: {
-    width: (SCREEN_WIDTH - 64) / 3,
-  },
-  badgeCard: {
-    width: 120,
-    height: 150,
-    borderRadius: BorderRadius.lg,
-    padding: Spacing.sm,
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-  },
-  badgeGlow: {
-    position: 'absolute',
-    top: -20,
-    left: -20,
-    right: -20,
-    height: 80,
-    borderRadius: 40,
-  },
-  badgeEmojiContainer: {
-    position: 'relative',
-  },
-  locked: {
-    opacity: 0.5,
-  },
-  badgeEmoji: {
-    fontSize: 40,
-  },
-  lockOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  lockIcon: {
-    fontSize: 18,
-  },
-  unlockedBadge: {
-    marginTop: 8,
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  checkmark: {
-    fontSize: 14,
-    fontWeight: 'bold',
-  },
-  motivationSection: {
-    paddingHorizontal: Spacing.ml,
-    marginTop: Spacing.ml,
-    marginBottom: Spacing.ml,
-  },
-  motivationCard: {
-    padding: Spacing.lg,
-    alignItems: 'center',
-  },
-  motivationEmoji: {
-    fontSize: 48,
-  },
+
   // Modal styles
   modalOverlay: {
     flex: 1,
@@ -1134,16 +912,6 @@ const styles = StyleSheet.create({
   modalProgressSection: {
     marginTop: Spacing.lg,
     alignItems: 'center',
-    position: 'relative',
-  },
-  modalProgressCenter: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   modalCelebration: {
     alignItems: 'center',

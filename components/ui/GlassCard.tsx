@@ -3,14 +3,14 @@
  * iOS 26 Liquid Glass with BlurView fallback, tinted variants, and elevation
  */
 
-import { Colors, Shadows } from '@/constants/Colors';
+import { Shadows } from '@/constants/Colors';
+import { useColorScheme } from '@/hooks/useColorScheme';
 import { BlurView } from 'expo-blur';
 import React, { useCallback } from 'react';
 import {
   Pressable,
   StyleProp,
   StyleSheet,
-  useColorScheme,
   View,
   ViewStyle,
 } from 'react-native';
@@ -100,7 +100,7 @@ const VARIANT_CONFIG: Record<GlassVariant, VariantConfig> = {
     lightBg:       'rgba(255, 255, 255, 0.72)',
     darkBg:        'rgba(28, 28, 30, 0.72)',
     lightBorder:   'rgba(0, 0, 0, 0.06)',
-    darkBorder:    'rgba(255, 255, 255, 0.10)',
+    darkBorder:    'rgba(255, 255, 255, 0.14)',
     defaultRadius: 'large',
     shadow:        Shadows.small,
   },
@@ -109,7 +109,7 @@ const VARIANT_CONFIG: Record<GlassVariant, VariantConfig> = {
     lightBg:       'rgba(255, 255, 255, 0.85)',
     darkBg:        'rgba(28, 28, 30, 0.85)',
     lightBorder:   'rgba(0, 0, 0, 0.05)',
-    darkBorder:    'rgba(255, 255, 255, 0.12)',
+    darkBorder:    'rgba(255, 255, 255, 0.16)',
     defaultRadius: 'xl',
     shadow:        Shadows.medium,
   },
@@ -127,7 +127,7 @@ const VARIANT_CONFIG: Record<GlassVariant, VariantConfig> = {
     lightBg:       'rgba(255, 255, 255, 0.90)',
     darkBg:        'rgba(44, 44, 46, 0.90)',
     lightBorder:   'rgba(0, 0, 0, 0.06)',
-    darkBorder:    'rgba(255, 255, 255, 0.14)',
+    darkBorder:    'rgba(255, 255, 255, 0.18)',
     defaultRadius: 'xl',
     shadow:        Shadows.large,
   },
@@ -163,7 +163,7 @@ const VARIANT_CONFIG: Record<GlassVariant, VariantConfig> = {
     lightBg:       '#FFFFFF',
     darkBg:        '#1C1C1E',
     lightBorder:   'rgba(0, 0, 0, 0.08)',
-    darkBorder:    'rgba(255, 255, 255, 0.08)',
+    darkBorder:    'rgba(255, 255, 255, 0.12)',
     defaultRadius: 'large',
     shadow:        Shadows.small,
   },
@@ -295,10 +295,21 @@ export function GlassCard({
             styles.highlight,
             {
               backgroundColor: isDark
-                ? 'rgba(255, 255, 255, 0.06)'
+                ? 'rgba(255, 255, 255, 0.08)'
                 : 'rgba(255, 255, 255, 0.60)',
             },
           ]}
+        />
+      )}
+
+      {/* Dark mode inner glow — subtle top edge for depth */}
+      {isDark && variant !== 'flat' && variant !== 'outlined' && (
+        <View
+          style={[
+            styles.innerGlow,
+            { borderRadius },
+          ]}
+          pointerEvents="none"
         />
       )}
 
@@ -391,6 +402,13 @@ const styles = StyleSheet.create({
     right: 0,
     height: 1,
     zIndex: 1,
+  },
+  innerGlow: {
+    ...StyleSheet.absoluteFillObject,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.05)',
+    zIndex: 1,
+    pointerEvents: 'none',
   },
 });
 

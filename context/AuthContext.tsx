@@ -6,6 +6,7 @@
 import { api } from '@/convex/_generated/api';
 import { convex } from '@/config/convex';
 import { registerForPushNotifications } from '@/services/notifications';
+import { Notifications, notificationsAvailable } from '@/services/notificationsRuntime';
 import { useAuthActions } from '@convex-dev/auth/react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
@@ -139,7 +140,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     void (async () => {
       await AsyncStorage.setItem(AUTH_STATE_KEY, JSON.stringify(user));
-      await registerForPushNotifications();
+
+      try {
+        if (!notificationsAvailable) {
+          return;
+        }
+
+        const { status } = await Notifications.getPermissionsAsync();
+        if (status !== 'granted') {
+          return;
+        }
+
+        const token = await registerForPushNotifications();
+        if (token) {
+          await convex.mutation(api.notifications.savePushToken, { token });
+        }
+      } catch (pushError) {
+        console.error('Failed to sync push token after auth:', pushError);
+      }
     })();
   }, [isAuthenticated, user]);
 
@@ -201,6 +219,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setError(null);
 
     try {
+      // Remove push token from backend before signing out
+      try {
+        await convex.mutation(api.notifications.removePushToken, {});
+      } catch {
+        // Best-effort: don't block sign out if token removal fails
+      }
       await authSignOut();
       await AsyncStorage.removeItem(AUTH_STATE_KEY);
     } finally {

@@ -1,16 +1,18 @@
-import React from 'react';
-import { Text, StyleSheet, Pressable } from 'react-native';
-import * as Haptics from 'expo-haptics';
 import { ColorTokens } from '@/constants/Colors';
 import { useColorScheme } from '@/hooks/useColorScheme';
+import { BorderRadius, Spacing } from '@/theme/spacing';
 import { Typography } from '@/theme/typography';
-import { Spacing, BorderRadius } from '@/theme/spacing';
+import * as Haptics from 'expo-haptics';
+import React from 'react';
+import { Pressable, StyleSheet, Text } from 'react-native';
 
 interface ActionButtonProps {
   emoji: string;
   label: string;
   onPress: () => void;
   colors: ColorTokens;
+  /** Variant style for the button */
+  variant?: 'default' | 'accent' | 'success' | 'warning';
 }
 
 export default function ActionButton({
@@ -18,8 +20,38 @@ export default function ActionButton({
   label,
   onPress,
   colors,
+  variant = 'default',
 }: ActionButtonProps) {
   const colorScheme = useColorScheme() ?? 'dark';
+  const isDark = colorScheme === 'dark';
+
+  const getBackgroundColor = () => {
+    switch (variant) {
+      case 'accent':
+        return colors.accentMuted;
+      case 'success':
+        return colors.successMuted;
+      case 'warning':
+        return colors.warningMuted;
+      default:
+        return isDark
+          ? 'rgba(255, 255, 255, 0.08)'
+          : 'rgba(0, 0, 0, 0.05)';
+    }
+  };
+
+  const getTextColor = () => {
+    switch (variant) {
+      case 'accent':
+        return colors.accent;
+      case 'success':
+        return colors.success;
+      case 'warning':
+        return colors.warning;
+      default:
+        return colors.text;
+    }
+  };
 
   return (
     <Pressable
@@ -32,14 +64,12 @@ export default function ActionButton({
       style={[
         styles.actionButton,
         {
-          backgroundColor: colorScheme === 'dark'
-            ? 'rgba(255, 255, 255, 0.08)'
-            : 'rgba(0, 0, 0, 0.05)',
+          backgroundColor: getBackgroundColor(),
         },
       ]}
     >
       <Text style={styles.actionEmoji}>{emoji}</Text>
-      <Text style={[Typography.caption1, { color: colors.text }]}>{label}</Text>
+      <Text style={[Typography.caption1, { color: getTextColor() }]}>{label}</Text>
     </Pressable>
   );
 }

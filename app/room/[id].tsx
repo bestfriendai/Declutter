@@ -1,61 +1,69 @@
 /**
  * Declutterly - Room Detail Screen
- * Apple TV style room progress, tasks, and photos
+ * Redesigned to match Pencil designs: hero photo with progress ring overlay,
+ * clean task list, "Start Your Flow" CTA
  * With ADHD-friendly features: combo tracking, encouragement, single task mode
  */
 
-import React, { useState, useMemo, useCallback } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  Pressable,
-  Alert,
-  useColorScheme,
-  RefreshControl,
-  Share,
-} from 'react-native';
-import Animated, {
-  FadeInDown,
-  FadeOut,
-  useSharedValue,
-  useAnimatedStyle,
-  withSpring,
-  withTiming,
-  ZoomIn,
-} from 'react-native-reanimated';
 import { BlurView } from 'expo-blur';
-import { LinearGradient } from 'expo-linear-gradient';
-import { Image } from 'expo-image';
-import { router, useLocalSearchParams } from 'expo-router';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
-
-import { Colors } from '@/constants/Colors';
-import { Typography } from '@/theme/typography';
-import { Spacing, BorderRadius } from '@/theme/spacing';
-import { useDeclutter } from '@/context/DeclutterContext';
-import { CleaningTask, Room } from '@/types/declutter';
-import { GlassCard } from '@/components/ui/GlassCard';
-import { GlassButton } from '@/components/ui/GlassButton';
-import { SingleRing } from '@/components/ui/ActivityRings';
-import { Toast } from '@/components/ui/Toast';
-
+import { Image } from 'expo-image';
+import { LinearGradient } from 'expo-linear-gradient';
+import { router, useLocalSearchParams } from 'expo-router';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  TaskCard,
-  PhotoLightbox,
-  RoomCompleteModal,
-  GoodEnoughModal,
-  OverwhelmModal,
-  FilterPill,
-  ActionButton,
-  MilestoneParticles,
-  TaskModal,
-  SessionCheckIn,
-} from '@/components/room';
+    Alert,
+    Pressable,
+    RefreshControl,
+    ScrollView,
+    StyleSheet,
+    Text,
+    View,
+} from 'react-native';
+import { useColorScheme } from '@/hooks/useColorScheme';
+import Animated, {
+    Easing,
+    FadeIn,
+    FadeInDown,
+    FadeOut,
+    useAnimatedProps,
+    useAnimatedStyle,
+    useSharedValue,
+    withDelay,
+    withSpring,
+    withTiming,
+    ZoomIn,
+} from 'react-native-reanimated';
+import Svg, { Circle } from 'react-native-svg';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+import { ComboCounter } from '@/components/ui/ComboCounter';
+import { GlassButton } from '@/components/ui/GlassButton';
+import { MysteryReward, RewardType } from '@/components/ui/MysteryReward';
+import { ShareableCard } from '@/components/ui/ShareableCard';
+import { Toast } from '@/components/ui/Toast';
+import { XPPopup } from '@/components/ui/XPPopup';
+import { AmbientBackdrop } from '@/components/ui/AmbientBackdrop';
+import { ExpressiveStateView } from '@/components/ui/ExpressiveStateView';
+import { Colors } from '@/constants/Colors';
+import { useDeclutter } from '@/context/DeclutterContext';
+import { Typography } from '@/theme/typography';
+import { useReducedMotion } from '@/hooks/useReducedMotion';
+import { CleaningTask, EnergyLevel, Room } from '@/types/declutter';
+
 import type { SessionPreferences, TimeAvailable } from '@/components/room';
-import { EnergyLevel } from '@/types/declutter';
+import {
+    GoodEnoughModal,
+    MilestoneParticles,
+    OverwhelmModal,
+    PhotoLightbox,
+    RoomCompleteModal,
+    SessionCheckIn,
+    TaskCard,
+    TaskModal,
+} from '@/components/room';
+
+const AnimatedCircle: any = Animated.createAnimatedComponent(Circle as any);
 
 const ENCOURAGEMENT_MESSAGES = [
   "You're doing amazing!",
@@ -70,8 +78,94 @@ const ENCOURAGEMENT_MESSAGES = [
   "Keep the momentum!",
 ];
 
+// Progress ring component matching the Pencil design
+function ProgressRing({
+  progress,
+  size = 160,
+  strokeWidth = 10,
+  isDark,
+}: {
+  progress: number;
+  size?: number;
+  strokeWidth?: number;
+  isDark: boolean;
+}) {
+  const center = size / 2;
+  const radius = center - strokeWidth / 2;
+  const circumference = 2 * Math.PI * radius;
+  const progressValue = Math.min(progress / 100, 1);
+
+  const animatedProgress = useSharedValue(0);
+
+  useEffect(() => {
+    animatedProgress.value = withDelay(
+      300,
+      withTiming(progressValue, {
+        duration: 1400,
+        easing: Easing.out(Easing.cubic),
+      })
+    );
+  }, [progressValue]);
+
+  const animatedProps = useAnimatedProps(() => ({
+    strokeDashoffset: circumference * (1 - animatedProgress.value),
+  }));
+
+  return (
+    <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
+      <Svg width={size} height={size}>
+        {/* Background track */}
+        <Circle
+          cx={center}
+          cy={center}
+          r={radius}
+          stroke={isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.08)'}
+          strokeWidth={strokeWidth}
+          fill="none"
+        />
+        {/* Progress fill */}
+        <AnimatedCircle
+          cx={center}
+          cy={center}
+          r={radius}
+          stroke={isDark ? '#FFFFFF' : '#1A1A1A'}
+          strokeWidth={strokeWidth}
+          fill="none"
+          strokeLinecap="round"
+          strokeDasharray={circumference}
+          animatedProps={animatedProps}
+          rotation="-90"
+          origin={`${center}, ${center}`}
+        />
+      </Svg>
+      {/* Center text */}
+      <View style={StyleSheet.absoluteFill} pointerEvents="none">
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+          <Text style={{
+            fontSize: 36,
+            fontWeight: '700',
+            color: isDark ? '#FFFFFF' : '#1A1A1A',
+            letterSpacing: -1,
+          }}>
+            {Math.round(progress)}%
+          </Text>
+          <Text style={{
+            fontSize: 13,
+            fontWeight: '400',
+            color: isDark ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.4)',
+            marginTop: 2,
+          }}>
+            complete
+          </Text>
+        </View>
+      </View>
+    </View>
+  );
+}
+
 export default function RoomDetailScreen() {
-  const colorScheme = useColorScheme() ?? 'dark';
+  const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
   const colors = Colors[colorScheme];
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -87,6 +181,7 @@ export default function RoomDetailScreen() {
     deletePhotoFromRoom,
     setActiveRoom,
     settings,
+    stats,
   } = useDeclutter();
 
   const [filter, setFilter] = useState<'all' | 'pending' | 'completed'>('all');
@@ -97,10 +192,27 @@ export default function RoomDetailScreen() {
   const [comboCount, setComboCount] = useState(0);
   const [lastCompletionTime, setLastCompletionTime] = useState<number | null>(null);
   const [showEncouragement, setShowEncouragement] = useState<string | null>(null);
-  const [singleTaskMode, setSingleTaskMode] = useState(false);
-  const [singleTaskId, setSingleTaskId] = useState<string | null>(null);
+
+  // Reward system state
+  const [xpPopup, setXPPopup] = useState<{
+    visible: boolean;
+    amount: number;
+    combo?: number;
+  } | null>(null);
+  const [mysteryReward, setMysteryReward] = useState<{
+    visible: boolean;
+    type: RewardType;
+    amount: number;
+  } | null>(null);
+  const tasksCompletedInSession = useRef(0);
+  const sessionXPTotal = useRef(0);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [_singleTaskMode, setSingleTaskMode] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [_singleTaskId, setSingleTaskId] = useState<string | null>(null);
 
   const [showRoomComplete, setShowRoomComplete] = useState(false);
+  const [showShareCard, setShowShareCard] = useState(false);
   const [showSessionCheckIn, setShowSessionCheckIn] = useState(false);
   const [sessionPreferences, setSessionPreferences] = useState<SessionPreferences | null>(null);
   const [showGoodEnough, setShowGoodEnough] = useState(false);
@@ -119,6 +231,9 @@ export default function RoomDetailScreen() {
 
   const celebrationOpacity = useSharedValue(0);
   const celebrationScale = useSharedValue(0.5);
+
+  // Reduced motion for accessibility
+  const reducedMotion = useReducedMotion();
 
   const room = rooms.find(r => r.id === id);
 
@@ -140,11 +255,11 @@ export default function RoomDetailScreen() {
     transform: [{ scale: celebrationScale.value }],
   }));
 
-  const filteredTasks = useMemo(() => {
+  const getTasksForSession = useCallback((preferences: SessionPreferences | null) => {
     if (!room) return [];
-    
-    let tasks = room.tasks;
-    
+
+    let tasks = room.tasks ?? [];
+
     switch (filter) {
       case 'pending':
         tasks = tasks.filter(t => !t.completed);
@@ -153,25 +268,25 @@ export default function RoomDetailScreen() {
         tasks = tasks.filter(t => t.completed);
         break;
     }
-    
-    if (sessionPreferences) {
+
+    if (preferences) {
       const energyOrder: EnergyLevel[] = ['minimal', 'low', 'moderate', 'high'];
-      const userEnergyIndex = energyOrder.indexOf(sessionPreferences.energy);
-      
+      const userEnergyIndex = energyOrder.indexOf(preferences.energy);
+
       tasks = tasks.filter(t => {
         if (!t.energyRequired) return true;
         const taskEnergyIndex = energyOrder.indexOf(t.energyRequired);
         return taskEnergyIndex <= userEnergyIndex;
       });
-      
+
       const timeMinutes: Record<TimeAvailable, number> = {
         minimal: 5,
         quick: 15,
         standard: 30,
         complete: 120,
       };
-      const availableMinutes = timeMinutes[sessionPreferences.time];
-      
+      const availableMinutes = timeMinutes[preferences.time];
+
       let cumulativeTime = 0;
       tasks = tasks.filter(t => {
         if (cumulativeTime + t.estimatedMinutes <= availableMinutes) {
@@ -181,32 +296,34 @@ export default function RoomDetailScreen() {
         return false;
       });
     }
-    
+
     return tasks;
-  }, [room, filter, sessionPreferences]);
+  }, [room, filter]);
 
-  // Group tasks by priority
-  const tasksByPriority = useMemo(() => {
-    const high = filteredTasks.filter(t => t.priority === 'high');
-    const medium = filteredTasks.filter(t => t.priority === 'medium');
-    const low = filteredTasks.filter(t => t.priority === 'low');
-    return { high, medium, low };
-  }, [filteredTasks]);
+  const filteredTasks = useMemo(
+    () => getTasksForSession(sessionPreferences),
+    [getTasksForSession, sessionPreferences]
+  );
 
-  // Quick wins
-  const quickWins = useMemo(() => {
-    if (!room) return [];
-    return room.tasks.filter(t => t.difficulty === 'quick' && !t.completed).slice(0, 3);
-  }, [room]);
+  const focusFirstPendingTask = useCallback((preferences: SessionPreferences | null) => {
+    const nextTask = getTasksForSession(preferences).find(task => !task.completed);
 
-  const completedCount = room ? room.tasks.filter(t => t.completed).length : 0;
-  const totalTime = room ? room.tasks.reduce((acc, t) => acc + t.estimatedMinutes, 0) : 0;
-  const remainingTime = room
-    ? room.tasks.filter(t => !t.completed).reduce((acc, t) => acc + t.estimatedMinutes, 0)
-    : 0;
+    if (!nextTask) {
+      return false;
+    }
+
+    setExpandedTasks(new Set([nextTask.id]));
+    return true;
+  }, [getTasksForSession]);
+
+  const completedCount = room ? (room.tasks ?? []).filter(t => t.completed).length : 0;
+  const totalCount = room ? (room.tasks ?? []).length : 0;
+  const pendingCount = totalCount - completedCount;
+  const totalTime = room ? (room.tasks ?? []).reduce((acc, t) => acc + (t.estimatedMinutes ?? 0), 0) : 0;
 
   const calculateNewProgress = useCallback((currentRoom: Room, completedTaskId: string) => {
-    const tasks = currentRoom.tasks;
+    const tasks = currentRoom.tasks ?? [];
+    if (tasks.length === 0) return 0;
     const completed = tasks.filter(t => t.completed || t.id === completedTaskId).length;
     return Math.round((completed / tasks.length) * 100);
   }, []);
@@ -216,11 +333,11 @@ export default function RoomDetailScreen() {
       setTriggeredGoodEnough(true);
       setTimeout(() => setShowGoodEnough(true), 500);
     }
-    
+
     if (progress === 100) {
       setTimeout(() => setShowRoomComplete(true), 500);
     }
-    
+
     const milestones = [25, 50, 75, 100];
     for (const milestone of milestones) {
       if (progress >= milestone && prevProgress < milestone) {
@@ -233,14 +350,15 @@ export default function RoomDetailScreen() {
 
   const handleDeleteTask = useCallback((taskId: string) => {
     if (!room) return;
-    const taskIndex = room.tasks.findIndex(t => t.id === taskId);
-    const task = room.tasks[taskIndex];
-    
+    const tasks = room.tasks ?? [];
+    const taskIndex = tasks.findIndex(t => t.id === taskId);
+    const task = tasks[taskIndex];
+
     if (task) {
       setDeletedTask({ task, index: taskIndex });
       deleteTask(room.id, taskId);
       setToastMessage(`"${task.title}" deleted`);
-      
+
       setTimeout(() => {
         setToastMessage(null);
         setDeletedTask(null);
@@ -273,18 +391,13 @@ export default function RoomDetailScreen() {
 
   const enterSingleTaskMode = useCallback(() => {
     if (!room) return;
-    const pendingTasks = room.tasks.filter(t => !t.completed);
+    const pendingTasks = (room.tasks ?? []).filter(t => !t.completed);
     if (pendingTasks.length > 0) {
       const quickWin = pendingTasks.find(t => t.difficulty === 'quick');
       setSingleTaskId(quickWin?.id || pendingTasks[0].id);
       setSingleTaskMode(true);
     }
   }, [room]);
-
-  const exitSingleTaskMode = useCallback(() => {
-    setSingleTaskMode(false);
-    setSingleTaskId(null);
-  }, []);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
@@ -293,16 +406,20 @@ export default function RoomDetailScreen() {
 
   if (!room) {
     return (
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <View style={[styles.container, { backgroundColor: isDark ? '#0A0A0A' : '#FAFAFA' }]}>
+        <AmbientBackdrop isDark={isDark} variant="home" />
         <View style={styles.emptyContainer}>
-          <Text style={styles.emptyEmoji}>🔍</Text>
-          <Text style={[Typography.title2, { color: colors.text, marginTop: 16 }]}>
-            Room not found
-          </Text>
-          <GlassButton
-            title="Go Back"
-            onPress={() => router.back()}
-            style={{ marginTop: 24 }}
+          <ExpressiveStateView
+            isDark={isDark}
+            kicker="ROOM"
+            icon="home-outline"
+            title="Room not found"
+            description="This room link no longer points to a saved space. Head back to your rooms and start a fresh flow."
+            primaryLabel="Go Back"
+            onPrimary={() => router.back()}
+            secondaryLabel="Open Rooms"
+            onSecondary={() => router.replace('/(tabs)/rooms')}
+            style={styles.emptyStateCard}
           />
         </View>
       </View>
@@ -310,7 +427,8 @@ export default function RoomDetailScreen() {
   }
 
   const handleTaskToggle = (taskId: string) => {
-    const task = room.tasks.find(t => t.id === taskId);
+    if (!room) return;
+    const task = (room.tasks ?? []).find(t => t.id === taskId);
     const wasCompleted = task?.completed;
     const prevProgress = room.currentProgress;
 
@@ -325,33 +443,82 @@ export default function RoomDetailScreen() {
     toggleTask(room.id, taskId);
 
     if (!wasCompleted) {
+      tasksCompletedInSession.current += 1;
+
       const now = Date.now();
-      if (lastCompletionTime && now - lastCompletionTime < 60000) {
-        setComboCount(prev => prev + 1);
+      let newCombo = 1;
+      if (lastCompletionTime && now - lastCompletionTime < 5 * 60 * 1000) {
+        newCombo = comboCount + 1;
+        setComboCount(newCombo);
       } else {
         setComboCount(1);
       }
       setLastCompletionTime(now);
 
-      if (Math.random() < 0.25) {
+      const baseXP = 10;
+      const comboBonus = newCombo > 1 ? newCombo * 2 : 0;
+      const totalXP = baseXP + comboBonus;
+      sessionXPTotal.current += totalXP;
+
+      setXPPopup({
+        visible: true,
+        amount: totalXP,
+        combo: newCombo > 1 ? newCombo : undefined,
+      });
+
+      if (tasksCompletedInSession.current % 3 === 0) {
+        const rewards: RewardType[] = ['bonus_xp', 'streak_shield', 'mystery_collectible', 'mascot_treat'];
+        const weights = [0.4, 0.25, 0.2, 0.15];
+        const rand = Math.random();
+        let cumulative = 0;
+        let selectedReward: RewardType = 'bonus_xp';
+        for (let i = 0; i < weights.length; i++) {
+          cumulative += weights[i];
+          if (rand <= cumulative) {
+            selectedReward = rewards[i];
+            break;
+          }
+        }
+        setTimeout(() => {
+          setMysteryReward({
+            visible: true,
+            type: selectedReward,
+            amount: totalXP,
+          });
+        }, 2000);
+      }
+
+      if (Math.random() < 0.15) {
         const msg = ENCOURAGEMENT_MESSAGES[Math.floor(Math.random() * ENCOURAGEMENT_MESSAGES.length)];
         setShowEncouragement(msg);
         setTimeout(() => setShowEncouragement(null), 2500);
       }
 
       celebrateCompletion(taskId);
-      
+
       const newProgress = calculateNewProgress(room, taskId);
       checkMilestones(newProgress, prevProgress);
     }
   };
 
-  const handleStartFocusMode = () => {
-    setActiveRoom(room.id);
-    router.push('/focus');
+  const handleStartFlow = () => {
+    if (!room) return;
+    if (settings.hapticFeedback) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }
+
+    if (!sessionPreferences) {
+      setShowSessionCheckIn(true);
+      return;
+    }
+
+    if (!focusFirstPendingTask(sessionPreferences)) {
+      setShowSessionCheckIn(true);
+    }
   };
 
   const handleSubTaskToggle = (taskId: string, subTaskId: string) => {
+    if (!room) return;
     if (settings.hapticFeedback) {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
@@ -374,18 +541,7 @@ export default function RoomDetailScreen() {
   };
 
   const handleShare = async () => {
-    try {
-      const completedCount = room.tasks.filter(t => t.completed).length;
-      const message = `🎉 I just finished decluttering my ${room.name}! Completed ${completedCount} tasks and achieved ${Math.round(room.currentProgress)}% progress with Declutterly!`;
-
-      await Share.share({
-        message,
-        title: `${room.emoji} ${room.name} Complete!`,
-      });
-    } catch (error) {
-      // User cancelled or share failed - no need to show error
-      console.log('Share cancelled or failed:', error);
-    }
+    setShowShareCard(true);
   };
 
   const handleDeleteRoom = () => {
@@ -406,8 +562,17 @@ export default function RoomDetailScreen() {
     );
   };
 
+  // Motivational message based on progress
+  const getMotivationalText = () => {
+    if (room.currentProgress >= 100) return 'All done! Amazing work!';
+    if (room.currentProgress >= 75) return 'Almost done! Keep going.';
+    if (room.currentProgress >= 50) return 'Halfway there! Great momentum.';
+    if (room.currentProgress >= 25) return 'Good start! Keep it up.';
+    return "Let's get started!";
+  };
+
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <View style={[styles.container, { backgroundColor: isDark ? '#0A0A0A' : '#FAFAFA' }]}>
       {/* Celebration Overlay */}
       {celebratingTask && (
         <Animated.View
@@ -425,21 +590,21 @@ export default function RoomDetailScreen() {
               entering={ZoomIn.delay(100).springify()}
               style={styles.celebrationEmojis}
             >
-              🎉 ✨ ⭐ 🌟 💫 🎊
+              {'\u{1F389}'} {'\u2728'} {'\u2B50'} {'\u{1F31F}'} {'\u{1F4AB}'} {'\u{1F38A}'}
             </Animated.Text>
             <Animated.Text
               entering={FadeInDown.delay(200).springify()}
-              style={[styles.celebrationText, { color: colors.textOnPrimary }]}
+              style={[styles.celebrationText, { color: '#FFFFFF' }]}
             >
               Task Complete!
             </Animated.Text>
             {comboCount > 1 && (
               <Animated.View
                 entering={ZoomIn.delay(300).springify()}
-                style={[styles.comboIndicator, { backgroundColor: colors.warning + '30' }]}
+                style={[styles.comboIndicator, { backgroundColor: 'rgba(255,159,10,0.3)' }]}
               >
-                <Text style={[Typography.caption1, { color: colors.warning, fontWeight: '700' }]}>
-                  🔥 {comboCount}x Combo!
+                <Text style={{ fontSize: 12, color: '#FF9F0A', fontWeight: '700' }}>
+                  {'\u{1F525}'} {comboCount}x Combo!
                 </Text>
               </Animated.View>
             )}
@@ -449,15 +614,10 @@ export default function RoomDetailScreen() {
 
       <ScrollView
         style={styles.scrollView}
-        contentContainerStyle={[
-          styles.scrollContent,
-          { paddingTop: insets.top + 8, paddingBottom: insets.bottom + 120 },
-        ]}
-        contentInsetAdjustmentBehavior="automatic"
+        contentContainerStyle={{ paddingBottom: insets.bottom + 120 }}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
         bounces={true}
-        alwaysBounceVertical={true}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -466,581 +626,313 @@ export default function RoomDetailScreen() {
           />
         }
       >
-        {/* Header with back button */}
-        <Animated.View
-          entering={FadeInDown.delay(100).springify()}
-          style={styles.header}
-        >
-          <Pressable
-            style={styles.backButton}
-            onPress={() => router.back()}
-            accessibilityRole="button"
-            accessibilityLabel="Go back"
-          >
-            <BlurView
-              intensity={40}
-              tint={colorScheme}
-              style={styles.backButtonBlur}
+        {/* ============================================= */}
+        {/* HERO SECTION — Room photo with progress ring  */}
+        {/* ============================================= */}
+        <View style={styles.heroSection}>
+          {/* Room photo background — tappable to open lightbox */}
+          {room.photos.length > 0 ? (
+            <Pressable
+              onPress={() => setSelectedPhotoIndex(room.photos.length - 1)}
+              accessibilityRole="button"
+              accessibilityLabel="View room photo"
+              style={StyleSheet.absoluteFill}
             >
-              <Text style={[Typography.body, { color: colors.text }]}>← Back</Text>
-            </BlurView>
-          </Pressable>
-          <View style={{ flex: 1 }} />
-          <Pressable
-            style={styles.deleteButton}
-            onPress={handleDeleteRoom}
-            accessibilityRole="button"
-            accessibilityLabel="Delete room"
+              <Image
+                source={{ uri: room.photos[room.photos.length - 1].uri }}
+                style={styles.heroImage}
+                contentFit="cover"
+              />
+            </Pressable>
+          ) : (
+            <View style={[styles.heroImage, { backgroundColor: isDark ? '#1C1C1E' : '#E5E5EA' }]}>
+              <Text style={{ fontSize: 60 }}>{room.emoji}</Text>
+            </View>
+          )}
+
+          {/* Gradient overlay */}
+          <LinearGradient
+            colors={isDark
+              ? ['rgba(10,10,10,0.1)', 'rgba(10,10,10,0)', 'rgba(10,10,10,0.5)', 'rgba(10,10,10,0.95)']
+              : ['rgba(250,250,250,0.1)', 'rgba(250,250,250,0)', 'rgba(250,250,250,0.5)', 'rgba(250,250,250,0.95)']
+            }
+            locations={[0, 0.2, 0.6, 1]}
+            style={StyleSheet.absoluteFill}
+          />
+
+          {/* Header row — back button + room name */}
+          <View style={[styles.heroHeader, { paddingTop: insets.top + 8 }]}>
+            <Pressable
+              onPress={() => router.back()}
+              hitSlop={12}
+              accessibilityRole="button"
+              accessibilityLabel="Go back to Rooms"
+              style={styles.heroBackButton}
+            >
+              <Text style={{
+                fontSize: 17,
+                fontWeight: '400',
+                color: isDark ? '#FFFFFF' : '#1A1A1A',
+              }}>
+                {'<'} Rooms
+              </Text>
+            </Pressable>
+
+            <Text style={{
+              fontSize: 17,
+              fontWeight: '600',
+              color: isDark ? '#FFFFFF' : '#1A1A1A',
+              textAlign: 'center',
+            }}>
+              {room.name}
+            </Text>
+
+            <Pressable
+              onPress={handleDeleteRoom}
+              hitSlop={12}
+              accessibilityRole="button"
+              accessibilityLabel="Room options"
+              style={{ width: 60, alignItems: 'flex-end' }}
+            >
+              <Text style={{ fontSize: 17, color: isDark ? '#FFFFFF' : '#1A1A1A' }}>
+                {'\u2022\u2022\u2022'}
+              </Text>
+            </Pressable>
+          </View>
+
+          {/* Progress ring — centered */}
+          <Animated.View
+            entering={reducedMotion ? undefined : FadeIn.delay(300)}
+            style={styles.progressRingContainer}
           >
-            <Text style={{ fontSize: 20 }}>🗑️</Text>
-          </Pressable>
+            <ProgressRing
+              progress={room.currentProgress}
+              size={160}
+              strokeWidth={10}
+              isDark={isDark}
+            />
+          </Animated.View>
+
+          {/* Motivational text */}
+          <Animated.Text
+            entering={reducedMotion ? undefined : FadeInDown.delay(500)}
+            style={{
+              fontSize: 15,
+              fontWeight: '400',
+              fontStyle: 'italic',
+              color: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.4)',
+              textAlign: 'center',
+              marginTop: 12,
+              paddingBottom: 20,
+            }}
+          >
+            {getMotivationalText()}
+          </Animated.Text>
+        </View>
+
+        {/* ============================= */}
+        {/* TO DO section header           */}
+        {/* ============================= */}
+        <Animated.View
+          entering={reducedMotion ? undefined : FadeInDown.delay(400)}
+          style={styles.todoHeader}
+        >
+          <Text style={{
+            fontSize: 11,
+            fontWeight: '600',
+            letterSpacing: 2,
+            textTransform: 'uppercase',
+            color: isDark ? '#808080' : '#808080',
+          }}>
+            TO DO {'\u00B7'} {pendingCount} TASK{pendingCount !== 1 ? 'S' : ''}
+          </Text>
         </Animated.View>
 
-        {/* Room Hero Section */}
-        <Animated.View
-          entering={FadeInDown.delay(200).springify()}
-          style={styles.heroSection}
-        >
-          <GlassCard variant="hero" style={styles.heroCard}>
-            <View style={styles.heroContent}>
-              {/* Room image or emoji */}
-              <View style={styles.roomImageContainer}>
-                {room.photos.length > 0 ? (
-                  <Image
-                    source={{ uri: room.photos[room.photos.length - 1].uri }}
-                    style={styles.roomImage}
-                    contentFit="cover"
-                  />
+        {/* ============================= */}
+        {/* Task cards list                */}
+        {/* ============================= */}
+        <View style={styles.taskListContainer}>
+          {filteredTasks.map((task, index) => (
+            <Animated.View
+              key={task.id}
+              entering={reducedMotion ? undefined : FadeInDown.delay(500 + index * 60)}
+            >
+              <TaskCard
+                task={task}
+                index={index}
+                expanded={expandedTasks.has(task.id)}
+                onToggle={() => handleTaskToggle(task.id)}
+                onExpand={() => toggleTaskExpanded(task.id)}
+                onSubTaskToggle={(subTaskId) => handleSubTaskToggle(task.id, subTaskId)}
+                onDelete={() => handleDeleteTask(task.id)}
+                onEdit={() => handleEditTask(task)}
+                colors={colors}
+                reducedMotion={reducedMotion}
+                comboMultiplier={comboCount > 1 ? comboCount : undefined}
+              />
+            </Animated.View>
+          ))}
+
+          {filteredTasks.length === 0 && (
+            <View style={styles.emptyTasks}>
+              <Text style={{ fontSize: 40, marginBottom: 12 }}>{'\u{1F4CB}'}</Text>
+              <Text style={[Typography.body, { color: colors.textSecondary, textAlign: 'center' }]}>
+                {totalCount === 0
+                  ? 'No tasks yet. Take a photo to generate tasks!'
+                  : 'Nothing fits this flow yet. Adjust your session or show every task.'}
+              </Text>
+
+              <View style={styles.emptyActionsRow}>
+                {totalCount === 0 ? (
+                  <Pressable
+                    onPress={handleTakePhoto}
+                    style={[
+                      styles.emptyActionButton,
+                      { backgroundColor: isDark ? '#FFFFFF' : '#1A1A1A' },
+                    ]}
+                    accessibilityRole="button"
+                    accessibilityLabel="Scan this room"
+                  >
+                    <Text
+                      style={{
+                        fontSize: 15,
+                        fontWeight: '600',
+                        color: isDark ? '#0A0A0A' : '#FFFFFF',
+                      }}
+                    >
+                      Scan this room
+                    </Text>
+                  </Pressable>
                 ) : (
-                  <View style={[styles.roomEmojiContainer, { backgroundColor: colors.surfaceSecondary }]}>
-                    <Text style={styles.roomEmoji}>{room.emoji}</Text>
-                  </View>
+                  <>
+                    <Pressable
+                      onPress={() => setShowSessionCheckIn(true)}
+                      style={[
+                        styles.emptyActionButton,
+                        { backgroundColor: isDark ? '#FFFFFF' : '#1A1A1A' },
+                      ]}
+                      accessibilityRole="button"
+                      accessibilityLabel="Adjust your flow"
+                    >
+                      <Text
+                        style={{
+                          fontSize: 15,
+                          fontWeight: '600',
+                          color: isDark ? '#0A0A0A' : '#FFFFFF',
+                        }}
+                      >
+                        Adjust your flow
+                      </Text>
+                    </Pressable>
+
+                    <Pressable
+                      onPress={() => setSessionPreferences(null)}
+                      style={[
+                        styles.emptyActionButton,
+                        styles.emptySecondaryButton,
+                        {
+                          backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+                          borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)',
+                        },
+                      ]}
+                      accessibilityRole="button"
+                      accessibilityLabel="Show all tasks"
+                    >
+                      <Text
+                        style={{
+                          fontSize: 15,
+                          fontWeight: '600',
+                          color: isDark ? '#FFFFFF' : '#1A1A1A',
+                        }}
+                      >
+                        Show all tasks
+                      </Text>
+                    </Pressable>
+                  </>
                 )}
               </View>
-
-              {/* Room info */}
-              <View style={styles.roomInfo}>
-                <Text style={[Typography.title1, { color: colors.text }]}>
-                  {room.name}
-                </Text>
-                <Text style={[Typography.subheadline, { color: colors.textSecondary, marginTop: 4 }]}>
-                  {completedCount}/{room.tasks.length} tasks • ~{remainingTime} min left
-                </Text>
-              </View>
-
-              {/* Progress ring */}
-              <SingleRing
-                value={room.currentProgress}
-                maxValue={100}
-                size={80}
-                strokeWidth={8}
-                label="%"
-                gradientColors={[...colors.gradientPrimary]}
-              />
             </View>
+          )}
+        </View>
 
-            {room.aiSummary && (
-              <View style={styles.aiSummary}>
-                <Text style={[Typography.caption1, { color: colors.textSecondary }]}>
-                  {room.aiSummary}
-                </Text>
-              </View>
-            )}
-          </GlassCard>
-        </Animated.View>
-
-        {/* Focus Mode CTA */}
-        {room.tasks.filter(t => !t.completed).length > 0 && (
+        {/* "Start Your Flow" CTA — only show if there are pending tasks */}
+        {pendingCount > 0 && (
           <Animated.View
-            entering={FadeInDown.delay(300).springify()}
-            style={styles.focusSection}
-          >
-            <Pressable onPress={handleStartFocusMode}>
-              <LinearGradient
-                colors={[...colors.gradientPrimary]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.focusModeCard}
-              >
-                <View style={styles.focusModeIcon}>
-                  <Text style={{ fontSize: 28 }}>🎯</Text>
-                </View>
-                <View style={styles.focusModeText}>
-                  <Text style={[Typography.headline, { color: colors.textOnPrimary }]}>
-                    Start Focus Session
-                  </Text>
-                  <Text style={[Typography.caption1, { color: colors.textOnPrimary, opacity: 0.8 }]}>
-                    {room.tasks.filter(t => !t.completed).length} tasks • ~{remainingTime} min
-                  </Text>
-                </View>
-                <Text style={[styles.focusModeArrow, { color: colors.textOnPrimary }]}>→</Text>
-              </LinearGradient>
-            </Pressable>
-          </Animated.View>
-        )}
-
-        {/* Photos Gallery */}
-        {room.photos.length > 0 && (
-          <Animated.View
-            entering={FadeInDown.delay(400).springify()}
-            style={styles.photosSection}
-          >
-            <View style={styles.sectionHeader}>
-              <Text style={[Typography.title3, { color: colors.text }]}>Photos</Text>
-              <Pressable onPress={handleTakePhoto}>
-                <Text style={[Typography.subheadlineMedium, { color: colors.primary }]}>
-                  + Add
-                </Text>
-              </Pressable>
-            </View>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.photosScroll}
-            >
-              {room.photos.map((photo, index) => (
-                <Pressable
-                  key={photo.id}
-                  onPress={() => setSelectedPhotoIndex(index)}
-                >
-                  <View style={styles.photoCard}>
-                    <Image
-                      source={{ uri: photo.uri }}
-                      style={styles.photoImage}
-                      contentFit="cover"
-                    />
-                    <View style={[styles.photoLabel, { backgroundColor: colors.surfaceSecondary }]}>
-                      <Text style={[Typography.caption2, { color: colors.text }]}>
-                        {photo.type}
-                      </Text>
-                    </View>
-                  </View>
-                </Pressable>
-              ))}
-            </ScrollView>
-          </Animated.View>
-        )}
-
-        {/* Quick Actions */}
-        {!singleTaskMode && (
-          <Animated.View
-            entering={FadeInDown.delay(450).springify()}
-            style={styles.actionsSection}
-          >
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.actionsScroll}
-            >
-              <ActionButton
-                emoji="📸"
-                label="Take Photo"
-                onPress={handleTakePhoto}
-                colors={colors}
-              />
-              {room.tasks.filter(t => !t.completed).length > 0 && (
-                <ActionButton
-                  emoji="☝️"
-                  label="Just ONE"
-                  onPress={enterSingleTaskMode}
-                  colors={colors}
-                />
-              )}
-              <ActionButton
-                emoji="😰"
-                label="Overwhelmed?"
-                onPress={() => setShowOverwhelm(true)}
-                colors={colors}
-              />
-              {room.photos.length >= 2 && (
-                <ActionButton
-                  emoji="📊"
-                  label="Compare"
-                  onPress={() => router.push({
-                    pathname: '/analysis',
-                    params: { roomId: room.id, mode: 'compare' }
-                  })}
-                  colors={colors}
-                />
-              )}
-            </ScrollView>
-          </Animated.View>
-        )}
-
-        {/* Filter Pills */}
-        {room.tasks.length > 0 && !singleTaskMode && (
-          <Animated.View
-            entering={FadeInDown.delay(500).springify()}
-            style={styles.filterSection}
-          >
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.filterScroll}
-            >
-              <FilterPill
-                label="All"
-                count={room.tasks.length}
-                active={filter === 'all'}
-                onPress={() => setFilter('all')}
-                colors={colors}
-              />
-              <FilterPill
-                label="To Do"
-                count={room.tasks.filter(t => !t.completed).length}
-                active={filter === 'pending'}
-                onPress={() => setFilter('pending')}
-                colors={colors}
-              />
-              <FilterPill
-                label="Done"
-                count={room.tasks.filter(t => t.completed).length}
-                active={filter === 'completed'}
-                onPress={() => setFilter('completed')}
-                colors={colors}
-              />
-              {sessionPreferences && (
-                <Pressable
-                  onPress={() => setShowSessionCheckIn(true)}
-                  style={[
-                    styles.sessionIndicator,
-                    { backgroundColor: colors.primaryMuted }
-                  ]}
-                >
-                  <Text style={styles.sessionIndicatorEmoji}>
-                    {sessionPreferences.energy === 'minimal' ? '😴' :
-                     sessionPreferences.energy === 'low' ? '😐' :
-                     sessionPreferences.energy === 'moderate' ? '🙂' : '⚡'}
-                  </Text>
-                  <Text style={[Typography.caption2, { color: colors.textSecondary }]}>
-                    {sessionPreferences.time === 'minimal' ? '5m' :
-                     sessionPreferences.time === 'quick' ? '15m' :
-                     sessionPreferences.time === 'standard' ? '30m' : '60m+'}
-                  </Text>
-                </Pressable>
-              )}
-            </ScrollView>
-          </Animated.View>
-        )}
-
-        {/* Add Task Button */}
-        {room.tasks.length > 0 && !singleTaskMode && (
-          <Animated.View
-            entering={FadeInDown.delay(525).springify()}
-            style={styles.addTaskSection}
-          >
-            <Pressable 
-              onPress={() => setShowAddTask(true)}
-              style={[styles.addTaskButton, { backgroundColor: colors.surfaceSecondary }]}
-            >
-              <Text style={styles.addTaskIcon}>+</Text>
-              <Text style={[Typography.body, { color: colors.primary }]}>Add Custom Task</Text>
-            </Pressable>
-          </Animated.View>
-        )}
-
-        {/* Quick Wins */}
-        {quickWins.length > 0 && filter !== 'completed' && !singleTaskMode && (
-          <Animated.View
-            entering={FadeInDown.delay(550).springify()}
-            style={styles.taskSection}
-          >
-            <View style={styles.sectionHeader}>
-              <Text style={[Typography.title3, { color: colors.text }]}>
-                ⚡ Quick Wins
-              </Text>
-              <Text style={[Typography.caption1, { color: colors.textSecondary }]}>
-                Under 5 min
-              </Text>
-            </View>
-            <View style={styles.taskList}>
-              {quickWins.map((task, index) => (
-                <TaskCard
-                  key={task.id}
-                  task={task}
-                  index={index}
-                  expanded={expandedTasks.has(task.id)}
-                  onToggle={() => handleTaskToggle(task.id)}
-                  onExpand={() => toggleTaskExpanded(task.id)}
-                  onSubTaskToggle={(subTaskId) => handleSubTaskToggle(task.id, subTaskId)}
-                  onDelete={() => handleDeleteTask(task.id)}
-                  onEdit={() => handleEditTask(task)}
-                  showQuickWinBadge
-                  colors={colors}
-                />
-              ))}
-            </View>
-          </Animated.View>
-        )}
-
-        {/* Single Task Mode */}
-        {singleTaskMode && singleTaskId && (
-          <Animated.View entering={FadeInDown.springify()}>
-            <View style={[styles.singleTaskModeHeader, { backgroundColor: colors.primary + '20' }]}>
-              <View style={styles.singleTaskModeTitle}>
-                <Text style={{ fontSize: 24 }}>☝️</Text>
-                <Text style={[Typography.headline, { color: colors.text }]}>Just ONE Task</Text>
-              </View>
-              <Pressable 
-                onPress={exitSingleTaskMode}
-                style={[styles.exitButton, { backgroundColor: colors.surfaceSecondary }]}
-              >
-                <Text style={[Typography.caption1, { color: colors.primary }]}>Show All</Text>
-              </Pressable>
-            </View>
-            <View style={styles.taskList}>
-              {room.tasks.filter(t => t.id === singleTaskId).map((task, index) => (
-                <TaskCard
-                  key={task.id}
-                  task={task}
-                  index={index}
-                  expanded={true}
-                  onToggle={() => {
-                    handleTaskToggle(task.id);
-                    if (!task.completed) {
-                      const nextPending = room.tasks.find(t => !t.completed && t.id !== task.id);
-                      if (nextPending) {
-                        setSingleTaskId(nextPending.id);
-                      } else {
-                        exitSingleTaskMode();
-                      }
-                    }
-                  }}
-                  onExpand={() => {}}
-                  onSubTaskToggle={(subTaskId) => handleSubTaskToggle(task.id, subTaskId)}
-                  onDelete={() => handleDeleteTask(task.id)}
-                  onEdit={() => handleEditTask(task)}
-                  colors={colors}
-                />
-              ))}
-            </View>
-            <View style={{ paddingHorizontal: 20, marginTop: 16 }}>
-              <Text style={[Typography.body, { color: colors.textSecondary, textAlign: 'center' }]}>
-                Focus on just this one task. You&apos;ve got this! 💪
-              </Text>
-            </View>
-          </Animated.View>
-        )}
-
-        {/* High Priority Tasks */}
-        {tasksByPriority.high.length > 0 && !singleTaskMode && (
-          <Animated.View
-            entering={FadeInDown.delay(600).springify()}
-            style={styles.taskSection}
-          >
-            <View style={styles.sectionHeader}>
-              <Text style={[Typography.title3, { color: colors.text }]}>
-                🔴 High Priority
-              </Text>
-            </View>
-            <View style={styles.taskList}>
-              {tasksByPriority.high.map((task, index) => (
-                <TaskCard
-                  key={task.id}
-                  task={task}
-                  index={index}
-                  expanded={expandedTasks.has(task.id)}
-                  onToggle={() => handleTaskToggle(task.id)}
-                  onExpand={() => toggleTaskExpanded(task.id)}
-                  onSubTaskToggle={(subTaskId) => handleSubTaskToggle(task.id, subTaskId)}
-                  onDelete={() => handleDeleteTask(task.id)}
-                  onEdit={() => handleEditTask(task)}
-                  colors={colors}
-                />
-              ))}
-            </View>
-          </Animated.View>
-        )}
-
-        {/* Medium Priority Tasks */}
-        {tasksByPriority.medium.length > 0 && !singleTaskMode && (
-          <Animated.View
-            entering={FadeInDown.delay(650).springify()}
-            style={styles.taskSection}
-          >
-            <View style={styles.sectionHeader}>
-              <Text style={[Typography.title3, { color: colors.text }]}>
-                🟡 Medium Priority
-              </Text>
-            </View>
-            <View style={styles.taskList}>
-              {tasksByPriority.medium.map((task, index) => (
-                <TaskCard
-                  key={task.id}
-                  task={task}
-                  index={index}
-                  expanded={expandedTasks.has(task.id)}
-                  onToggle={() => handleTaskToggle(task.id)}
-                  onExpand={() => toggleTaskExpanded(task.id)}
-                  onSubTaskToggle={(subTaskId) => handleSubTaskToggle(task.id, subTaskId)}
-                  onDelete={() => handleDeleteTask(task.id)}
-                  onEdit={() => handleEditTask(task)}
-                  colors={colors}
-                />
-              ))}
-            </View>
-          </Animated.View>
-        )}
-
-        {/* Low Priority Tasks */}
-        {tasksByPriority.low.length > 0 && !singleTaskMode && (
-          <Animated.View
-            entering={FadeInDown.delay(700).springify()}
-            style={styles.taskSection}
-          >
-            <View style={styles.sectionHeader}>
-              <Text style={[Typography.title3, { color: colors.text }]}>
-                🟢 Low Priority
-              </Text>
-            </View>
-            <View style={styles.taskList}>
-              {tasksByPriority.low.map((task, index) => (
-                <TaskCard
-                  key={task.id}
-                  task={task}
-                  index={index}
-                  expanded={expandedTasks.has(task.id)}
-                  onToggle={() => handleTaskToggle(task.id)}
-                  onExpand={() => toggleTaskExpanded(task.id)}
-                  onSubTaskToggle={(subTaskId) => handleSubTaskToggle(task.id, subTaskId)}
-                  onDelete={() => handleDeleteTask(task.id)}
-                  onEdit={() => handleEditTask(task)}
-                  colors={colors}
-                />
-              ))}
-            </View>
-          </Animated.View>
-        )}
-
-        {/* "Good enough for today" Button */}
-        {room.tasks.length > 0 && completedCount > 0 && completedCount < room.tasks.length && !singleTaskMode && (
-          <Animated.View
-            entering={FadeInDown.delay(720).springify()}
-            style={styles.goodEnoughSection}
+            entering={reducedMotion ? undefined : FadeInDown.delay(700)}
+            style={styles.ctaSection}
           >
             <Pressable
-              onPress={() => {
-                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-                setShowGoodEnough(true);
-              }}
-              style={[styles.goodEnoughButton, {
-                backgroundColor: colorScheme === 'dark' ? colors.surface : colors.backgroundSecondary,
-                borderColor: colorScheme === 'dark' ? colors.cardBorder : colors.borderLight,
-              }]}
+              onPress={handleStartFlow}
+              style={({ pressed }) => [
+                styles.ctaButton,
+                {
+                  backgroundColor: isDark ? '#FFFFFF' : '#1A1A1A',
+                  opacity: pressed ? 0.9 : 1,
+                  transform: [{ scale: pressed ? 0.98 : 1 }],
+                },
+              ]}
               accessibilityRole="button"
-              accessibilityLabel="Good enough for today"
+              accessibilityLabel="Start Your Flow"
             >
-              <Text style={{ fontSize: 20 }}>🌿</Text>
-              <View style={styles.goodEnoughText}>
-                <Text style={[Typography.subheadlineMedium, { color: colors.text }]}>
-                  Good enough for today
-                </Text>
-                <Text style={[Typography.caption1, { color: colors.textSecondary, marginTop: 2 }]}>
-                  You did {completedCount} task{completedCount !== 1 ? 's' : ''}. That&apos;s real progress.
-                </Text>
-              </View>
+              <Text style={{
+                fontSize: 15,
+                fontWeight: '600',
+                color: isDark ? '#0A0A0A' : '#FFFFFF',
+                marginRight: 6,
+              }}>
+                {'\u2728'}
+              </Text>
+              <Text style={{
+                fontSize: 17,
+                fontWeight: '600',
+                color: isDark ? '#0A0A0A' : '#FFFFFF',
+              }}>
+                Start Your Flow
+              </Text>
             </Pressable>
           </Animated.View>
         )}
 
-        {/* No Tasks Empty State */}
-        {room.tasks.length === 0 && (
-          <Animated.View
-            entering={FadeInDown.delay(500).springify()}
-            style={styles.emptyStateSection}
-          >
-            <GlassCard style={styles.emptyStateCard}>
-              <View style={styles.emptyStateIllustration}>
-                <Text style={styles.emptyStateEmoji}>📋</Text>
-                <Text style={styles.emptyStateSparkle1}>✨</Text>
-                <Text style={styles.emptyStateSparkle2}>🧹</Text>
-              </View>
-              <Text style={[Typography.title2, { color: colors.text, textAlign: 'center' }]}>
-                Ready for AI Analysis
-              </Text>
-              <Text style={[Typography.subheadline, { color: colors.textSecondary, textAlign: 'center', marginTop: 8 }]}>
-                Take a photo of this space and our AI will create a personalized cleaning plan.
-              </Text>
-
-              <View style={styles.emptyStateFeatures}>
-                <View style={styles.emptyStateFeature}>
-                  <Text style={styles.featureEmoji}>📸</Text>
-                  <Text style={[Typography.caption1, { color: colors.textSecondary }]}>
-                    Capture
-                  </Text>
-                </View>
-                <View style={styles.emptyStateFeature}>
-                  <Text style={styles.featureEmoji}>🤖</Text>
-                  <Text style={[Typography.caption1, { color: colors.textSecondary }]}>
-                    Analyze
-                  </Text>
-                </View>
-                <View style={styles.emptyStateFeature}>
-                  <Text style={styles.featureEmoji}>⚡</Text>
-                  <Text style={[Typography.caption1, { color: colors.textSecondary }]}>
-                    Declutter
-                  </Text>
-                </View>
-              </View>
-
-              <GlassButton
-                title="📸 Capture Space"
-                variant="primary"
-                onPress={handleTakePhoto}
-                style={{ marginTop: 20, width: '100%' }}
-              />
-            </GlassCard>
-          </Animated.View>
-        )}
-
-        {/* Motivation */}
-        {room.motivationalMessage && (
-          <Animated.View
-            entering={FadeInDown.delay(750).springify()}
-            style={styles.motivationSection}
-          >
-            <GlassCard variant="subtle" style={styles.motivationCard}>
-              <Text style={[Typography.body, { color: colors.text, textAlign: 'center' }]}>
-                {room.motivationalMessage}
-              </Text>
-            </GlassCard>
-          </Animated.View>
-        )}
+        {/* Extra space so content doesn't hide behind tab bar */}
+        <View style={{ height: 40 }} />
       </ScrollView>
-
-      {/* Floating Camera Button */}
-      <Animated.View
-        entering={ZoomIn.delay(800)}
-        style={[styles.fab, { bottom: insets.bottom + 90 }]}
-      >
-        <Pressable onPress={handleTakePhoto}>
-          <LinearGradient
-            colors={[...colors.gradientPrimary]}
-            style={styles.fabGradient}
-          >
-            <Text style={styles.fabIcon}>📸</Text>
-          </LinearGradient>
-        </Pressable>
-      </Animated.View>
 
       {/* Encouragement Banner */}
       {showEncouragement && (
-        <Animated.View 
+        <Animated.View
           entering={FadeInDown.springify()}
           exiting={FadeOut}
           style={styles.encouragementBanner}
         >
           <BlurView intensity={80} tint="dark" style={styles.encouragementBlur}>
-            <Text style={[styles.encouragementText, { color: colors.textOnPrimary }]}>{showEncouragement}</Text>
+            <Text style={[styles.encouragementText, { color: '#FFFFFF' }]}>{showEncouragement}</Text>
           </BlurView>
         </Animated.View>
       )}
 
       {/* Combo Counter */}
-      {comboCount >= 2 && (
-        <Animated.View entering={ZoomIn.springify()} style={styles.comboCounter}>
-          <Text style={[styles.comboText, { color: colors.textOnWarning }]}>{comboCount}x Combo!</Text>
-        </Animated.View>
+      <ComboCounter count={comboCount} visible={comboCount >= 2} position="floating" />
+
+      {/* XP Popup */}
+      {xpPopup?.visible && (
+        <XPPopup
+          amount={xpPopup.amount}
+          isCombo={!!xpPopup.combo}
+          comboCount={xpPopup.combo}
+          visible={xpPopup.visible}
+          onDismiss={() => setXPPopup(null)}
+        />
+      )}
+
+      {/* Mystery Reward Modal */}
+      {mysteryReward?.visible && (
+        <MysteryReward
+          visible={mysteryReward.visible}
+          rewardType={mysteryReward.type}
+          amount={mysteryReward.amount}
+          onClaim={() => setMysteryReward(null)}
+          onDismiss={() => setMysteryReward(null)}
+        />
       )}
 
       {/* Milestone Particles */}
@@ -1071,6 +963,25 @@ export default function RoomDetailScreen() {
         onShare={handleShare}
         colors={colors}
       />
+
+      {/* Shareable Before/After Card */}
+      {showShareCard && room && (
+        <ShareableCard
+          beforeImageUri={room.photos.find(p => p.type === 'before')?.uri ?? ''}
+          afterImageUri={room.photos.find(p => p.type === 'after')?.uri ?? room.photos[room.photos.length - 1]?.uri ?? ''}
+          roomName={room.name}
+          roomEmoji={room.emoji}
+          tasksCompleted={room.tasks.filter(t => t.completed).length}
+          timeSpent={totalTime}
+          messLevelBefore={room.messLevel}
+          messLevelAfter={Math.max(0, room.messLevel - room.currentProgress)}
+          streak={stats?.currentStreak ?? 0}
+          level={stats?.level ?? 1}
+          visible={showShareCard}
+          onShare={() => setShowShareCard(false)}
+          onDismiss={() => setShowShareCard(false)}
+        />
+      )}
 
       {/* Good Enough Modal */}
       <GoodEnoughModal
@@ -1129,14 +1040,16 @@ export default function RoomDetailScreen() {
         onComplete={(prefs) => {
           setSessionPreferences(prefs);
           setShowSessionCheckIn(false);
+          focusFirstPendingTask(prefs);
         }}
-        onSkip={() => setShowSessionCheckIn(false)}
+        onSkip={() => {
+          setShowSessionCheckIn(false);
+          focusFirstPendingTask(null);
+        }}
       />
     </View>
   );
 }
-
-
 
 const styles = StyleSheet.create({
   container: {
@@ -1145,331 +1058,87 @@ const styles = StyleSheet.create({
   scrollView: {
     flex: 1,
   },
-  scrollContent: {
-    paddingHorizontal: 0,
-    flexGrow: 1,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    marginBottom: 16,
-  },
-  backButton: {
-    borderRadius: 12,
-    overflow: 'hidden',
-  },
-  backButtonBlur: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  deleteButton: {
-    padding: Spacing.xs,
-    minWidth: 44,
-    minHeight: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  // Hero section
   heroSection: {
-    paddingHorizontal: Spacing.ml,
-    marginBottom: Spacing.md,
-  },
-  heroCard: {
-    padding: Spacing.ml,
-  },
-  heroContent: {
-    flexDirection: 'row',
+    height: 360,
+    position: 'relative',
     alignItems: 'center',
+    justifyContent: 'flex-end',
   },
-  roomImageContainer: {
-    marginRight: 16,
-  },
-  roomImage: {
-    width: 72,
-    height: 72,
-    borderRadius: 16,
-  },
-  roomEmojiContainer: {
-    width: 72,
-    height: 72,
-    borderRadius: 16,
+  heroImage: {
+    ...StyleSheet.absoluteFillObject,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  roomEmoji: {
-    fontSize: 36,
-  },
-  roomInfo: {
-    flex: 1,
-  },
-  aiSummary: {
-    marginTop: 16,
-    paddingTop: 16,
-    borderTopWidth: 0.5,
-    borderTopColor: 'rgba(255, 255, 255, 0.1)',
-  },
-  focusSection: {
-    paddingHorizontal: Spacing.ml,
-    marginBottom: Spacing.md,
-  },
-  focusModeCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: Spacing.md,
-    borderRadius: BorderRadius.lg,
-  },
-  focusModeIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  focusModeText: {
-    flex: 1,
-  },
-  focusModeArrow: {
-    ...Typography.title2,
-    fontWeight: '300',
-  },
-  photosSection: {
-    marginBottom: 16,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    marginBottom: 12,
-  },
-  photosScroll: {
-    paddingHorizontal: 20,
-    gap: 12,
-  },
-  photoCard: {
-    borderRadius: 12,
-    overflow: 'hidden',
-  },
-  photoImage: {
-    width: 100,
-    height: 100,
-    borderRadius: 12,
-  },
-  photoLabel: {
+  heroHeader: {
     position: 'absolute',
-    bottom: 0,
+    top: 0,
     left: 0,
     right: 0,
-    paddingVertical: 4,
-    paddingHorizontal: 8,
+    flexDirection: 'row',
     alignItems: 'center',
-  },
-  actionsSection: {
-    marginBottom: 16,
-  },
-  actionsScroll: {
+    justifyContent: 'space-between',
     paddingHorizontal: 20,
-    gap: 12,
+    zIndex: 10,
   },
-  actionButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    gap: 8,
+  heroBackButton: {
+    width: 60,
+    minHeight: 44,
+    justifyContent: 'center',
   },
-  actionEmoji: {
-    fontSize: 18,
-  },
-  filterSection: {
-    marginBottom: 20,
-  },
-  filterScroll: {
-    paddingHorizontal: 20,
-    gap: 8,
-  },
-  sessionIndicator: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 20,
-    gap: 6,
-    marginLeft: 4,
-  },
-  sessionIndicatorEmoji: {
-    fontSize: 16,
-  },
-  filterPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 20,
-    borderWidth: 1,
-    gap: 8,
-  },
-  filterCount: {
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 10,
-  },
-  taskSection: {
-    marginBottom: 24,
-  },
-  taskList: {
-    paddingHorizontal: 20,
-    gap: 8,
-  },
-  taskCard: {
-    padding: Spacing.md,
-    borderRadius: BorderRadius.lg,
-  },
-  taskRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  checkbox: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    borderWidth: 2,
+  progressRingContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 12,
-  },
-  checkmark: {
-    fontSize: 14,
-    fontWeight: 'bold',
-  },
-  taskInfo: {
-    flex: 1,
-  },
-  taskTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  taskEmoji: {
-    fontSize: 18,
-    marginRight: 8,
-  },
-  taskMeta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 4,
-  },
-  quickWinBadge: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  priorityDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginLeft: 8,
-  },
-  expandArrow: {
-    marginLeft: 8,
-    fontSize: 10,
-  },
-  expandedContent: {
-    marginTop: 16,
-    paddingTop: 16,
-    borderTopWidth: 0.5,
-    borderTopColor: 'rgba(255, 255, 255, 0.1)',
-  },
-  tipsContainer: {
-    marginBottom: 12,
-  },
-  subtasksContainer: {
-    marginTop: 12,
-  },
-  subtaskRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  subtaskCheckbox: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    borderWidth: 1.5,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 10,
-  },
-  subtaskCheck: {
-    fontSize: 10,
-    fontWeight: 'bold',
-  },
-  emptyStateSection: {
-    paddingHorizontal: 20,
-    marginBottom: 24,
-  },
-  emptyStateCard: {
-    padding: Spacing.xl,
-    alignItems: 'center',
-  },
-  emptyStateIllustration: {
-    position: 'relative',
-    marginBottom: 20,
-  },
-  emptyStateEmoji: {
-    fontSize: 64,
-  },
-  emptyStateSparkle1: {
-    position: 'absolute',
-    top: -8,
-    right: -20,
-    fontSize: 24,
-  },
-  emptyStateSparkle2: {
-    position: 'absolute',
-    bottom: -5,
-    left: -20,
-    fontSize: 20,
-  },
-  emptyStateFeatures: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    width: '100%',
-    marginTop: 24,
-  },
-  emptyStateFeature: {
-    alignItems: 'center',
-    flex: 1,
-  },
-  featureEmoji: {
-    fontSize: 28,
     marginBottom: 4,
   },
-  goodEnoughSection: {
-    paddingHorizontal: Spacing.ml,
-    marginBottom: Spacing.md,
+  // TO DO header
+  todoHeader: {
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 16,
   },
-  goodEnoughButton: {
+  // Task list
+  taskListContainer: {
+    paddingHorizontal: 20,
+    gap: 10,
+  },
+  emptyTasks: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 40,
+    paddingHorizontal: 16,
+    gap: 16,
+  },
+  emptyActionsRow: {
+    width: '100%',
+    gap: 12,
+    marginTop: 4,
+  },
+  emptyActionButton: {
+    minHeight: 48,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 18,
+  },
+  emptySecondaryButton: {
+    borderWidth: 1,
+  },
+  // CTA button
+  ctaSection: {
+    paddingHorizontal: 20,
+    paddingTop: 24,
+    paddingBottom: 8,
+  },
+  ctaButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: Spacing.md,
-    borderRadius: BorderRadius.card,
-    borderWidth: 0.5,
-    gap: Spacing.sm,
+    justifyContent: 'center',
+    paddingVertical: 18,
+    borderRadius: 16,
+    minHeight: 56,
   },
-  goodEnoughText: {
-    flex: 1,
-  },
-  motivationSection: {
-    paddingHorizontal: 20,
-    marginBottom: 24,
-  },
-  motivationCard: {
-    padding: Spacing.ml,
-  },
+  // Celebration
   celebrationOverlay: {
     ...StyleSheet.absoluteFillObject,
     zIndex: 100,
@@ -1496,34 +1165,15 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 20,
   },
-  fab: {
-    position: 'absolute',
-    right: 20,
-    zIndex: 50,
-  },
-  fabGradient: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  fabIcon: {
-    fontSize: 24,
-  },
+  // Misc
   emptyContainer: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: Spacing.xxl,
+    padding: 40,
   },
-  emptyEmoji: {
-    fontSize: 64,
+  emptyStateCard: {
+    width: '100%',
   },
   encouragementBanner: {
     position: 'absolute',
@@ -1540,63 +1190,10 @@ const styles = StyleSheet.create({
   encouragementText: {
     ...Typography.subheadlineMedium,
   },
-  comboCounter: {
-    position: 'absolute',
-    top: 100,
-    right: 20,
-    backgroundColor: 'rgba(255, 149, 0, 0.9)',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    zIndex: 80,
-  },
-  comboText: {
-    ...Typography.caption1Medium,
-    fontWeight: '700',
-  },
   milestoneOverlay: {
     position: 'absolute',
     top: '40%',
     alignSelf: 'center',
     zIndex: 100,
-  },
-  addTaskSection: {
-    paddingHorizontal: 20,
-    marginBottom: 16,
-  },
-  addTaskButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.ml,
-    borderRadius: BorderRadius.input,
-    gap: Spacing.xs,
-    minHeight: 44,
-  },
-  addTaskIcon: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#007AFF',
-  },
-  singleTaskModeHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    marginBottom: 16,
-  },
-  singleTaskModeTitle: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  exitButton: {
-    paddingVertical: Spacing.xs,
-    paddingHorizontal: Spacing.md,
-    borderRadius: BorderRadius.card,
-    minHeight: 44,
-    justifyContent: 'center',
   },
 });

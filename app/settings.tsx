@@ -1,19 +1,21 @@
 /**
- * Declutterly — Settings Screen (Apple 2026)
- * Consolidated to 3 groups: Account, Preferences, Support
- * Reset requires typing "RESET", no-op handlers removed
+ * Declutterly -- Settings Screen
+ * Matches Pencil design: back arrow + title, grouped card sections,
+ * rows with Lucide-style icons, chevrons, and toggle switches.
  */
 
 import { Colors, ColorTokens } from '@/constants/Colors';
+import { AmbientBackdrop } from '@/components/ui/AmbientBackdrop';
 import { useColorScheme } from '@/hooks/useColorScheme';
-import { Typography } from '@/theme/typography';
-import { Spacing, BorderRadius } from '@/theme/spacing';
+import { useReducedMotion } from '@/hooks/useReducedMotion';
 import { router } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import * as Linking from 'expo-linking';
-import React, { useState } from 'react';
+import { Ionicons } from '@expo/vector-icons';
+import React, { useEffect, useState } from 'react';
 import {
   Alert,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -25,14 +27,16 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@/context/AuthContext';
 import { useDeclutter } from '@/context/DeclutterContext';
-import { useReducedMotion } from '@/hooks/useReducedMotion';
+import { LinearGradient } from 'expo-linear-gradient';
+import { PromptModal } from '@/components/ui/PromptModal';
 
+// ─────────────────────────────────────────────────────────────────────────────
 // Settings Row
+// ─────────────────────────────────────────────────────────────────────────────
 interface RowProps {
-  emoji: string;
+  icon: keyof typeof Ionicons.glyphMap;
   label: string;
   sublabel?: string;
-  value?: string;
   onPress?: () => void;
   toggle?: boolean;
   toggleValue?: boolean;
@@ -40,122 +44,137 @@ interface RowProps {
   destructive?: boolean;
   colors: ColorTokens;
   isDark: boolean;
-  isFirst?: boolean;
   isLast?: boolean;
+  highlightIcon?: boolean;
 }
 
 function Row({
-  emoji, label, sublabel, value, onPress, toggle, toggleValue, onToggle,
-  destructive, colors, isDark, isFirst, isLast,
+  icon, label, sublabel, onPress, toggle, toggleValue, onToggle,
+  destructive, colors, isDark, isLast, highlightIcon,
 }: RowProps) {
-  const isInteractive = !!(onPress || toggle);
-
   return (
-    <Pressable
-      onPress={() => {
-        if (onPress) {
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-          onPress();
-        }
-      }}
-      disabled={!isInteractive}
-      accessibilityRole={toggle ? 'switch' : onPress ? 'button' : 'none'}
-      accessibilityLabel={label}
-      accessibilityHint={sublabel}
-      accessibilityState={toggle ? { checked: toggleValue } : undefined}
-      style={({ pressed }) => [
-        styles.row,
-        {
-          backgroundColor: isDark ? colors.surface : '#FFFFFF',
-          opacity: pressed && onPress ? 0.7 : 1,
-        },
-        isFirst && styles.rowFirst,
-        isLast && styles.rowLast,
-        !isLast && {
-          borderBottomWidth: StyleSheet.hairlineWidth,
-          borderBottomColor: isDark ? colors.divider : colors.borderLight,
-        },
-      ]}
-    >
-      {/* Icon */}
-      <View style={[styles.rowIcon, {
-        backgroundColor: destructive
-          ? colors.dangerMuted
-          : (isDark ? colors.fillTertiary : colors.surfaceTertiary),
-      }]}>
-        <Text style={styles.rowEmoji} accessibilityElementsHidden>{emoji}</Text>
-      </View>
-
-      {/* Label */}
-      <View style={styles.rowContent}>
-        <Text style={[styles.rowLabel, {
-          color: destructive ? colors.danger : colors.text,
-        }]}>
-          {label}
-        </Text>
-        {sublabel && (
-          <Text style={[styles.rowSublabel, { color: colors.textSecondary }]}>
-            {sublabel}
-          </Text>
-        )}
-      </View>
-
-      {/* Right side */}
-      {toggle ? (
-        <Switch
-          value={toggleValue}
-          onValueChange={(v) => {
+    <View>
+      <Pressable
+        onPress={() => {
+          if (toggle && onToggle) {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            onToggle?.(v);
-          }}
-          trackColor={{ false: colors.fillTertiary, true: colors.accent }}
-          thumbColor="#FFFFFF"
-          ios_backgroundColor={colors.fillTertiary}
-        />
-      ) : value ? (
-        <Text style={[styles.rowValue, { color: colors.textSecondary }]}>{value}</Text>
-      ) : onPress ? (
-        <Text style={[styles.rowChevron, { color: colors.textTertiary }]}>{'>'}</Text>
-      ) : null}
-    </Pressable>
-  );
-}
+            onToggle(!toggleValue);
+            return;
+          }
+          if (onPress) {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            onPress();
+          }
+        }}
+        disabled={!onPress && !toggle}
+        accessibilityRole={toggle ? 'switch' : onPress ? 'button' : 'none'}
+        accessibilityLabel={label}
+        accessibilityHint={sublabel}
+        accessibilityState={toggle ? { checked: toggleValue } : undefined}
+        style={({ pressed }) => [
+          styles.row,
+          { opacity: pressed && (onPress || toggle) ? 0.7 : 1 },
+        ]}
+      >
+        {/* Icon */}
+        <View
+          style={[
+            styles.rowIconWrap,
+            {
+              backgroundColor: highlightIcon
+                ? (isDark ? 'rgba(255,196,126,0.18)' : 'rgba(255,213,166,0.44)')
+                : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'),
+              borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)',
+            },
+          ]}
+        >
+          <Ionicons
+            name={icon}
+            size={18}
+            color={
+              highlightIcon
+                ? (isDark ? '#FDE7C6' : '#7B5326')
+                : (isDark ? '#D7D7DD' : '#4B4B56')
+            }
+          />
+        </View>
 
-// Settings Group
-interface GroupProps {
-  title?: string;
-  footer?: string;
-  children: React.ReactNode;
-  colors: ColorTokens;
-  isDark: boolean;
-}
+        {/* Label + sublabel */}
+        <View style={styles.rowContent}>
+          <Text style={[styles.rowLabel, {
+            color: destructive ? colors.danger : (isDark ? '#FFFFFF' : '#1A1A1A'),
+          }]}>
+            {label}
+          </Text>
+          {sublabel && (
+            <Text style={[styles.rowSublabel, { color: '#707070' }]}>
+              {sublabel}
+            </Text>
+          )}
+        </View>
 
-function Group({ title, footer, children, colors, isDark }: GroupProps) {
-  return (
-    <View style={styles.group}>
-      {title && (
-        <Text style={[styles.groupTitle, { color: colors.textSecondary }]}>
-          {title.toUpperCase()}
-        </Text>
-      )}
-      <View style={[styles.groupContent, {
-        borderRadius: 12,
-        overflow: 'hidden',
-        borderWidth: StyleSheet.hairlineWidth,
-        borderColor: isDark ? colors.divider : colors.borderLight,
-      }]}>
-        {children}
-      </View>
-      {footer && (
-        <Text style={[styles.groupFooter, { color: colors.textSecondary }]}>
-          {footer}
-        </Text>
+        {/* Right side: toggle or chevron */}
+        {toggle ? (
+          <Switch
+            value={toggleValue}
+            onValueChange={(v) => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              onToggle?.(v);
+            }}
+            trackColor={{
+              false: isDark ? '#141414' : '#E5E5EA',
+              true: isDark ? '#0A84FF' : '#007AFF',
+            }}
+            thumbColor="#FFFFFF"
+            ios_backgroundColor={isDark ? '#141414' : '#E5E5EA'}
+          />
+        ) : onPress ? (
+          <Text style={[styles.rowChevron, {
+            color: isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.2)',
+          }]}>
+            {'\u203A'}
+          </Text>
+        ) : null}
+      </Pressable>
+      {!isLast && (
+        <View style={[styles.rowDivider, {
+          backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+        }]} />
       )}
     </View>
   );
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Settings Group
+// ─────────────────────────────────────────────────────────────────────────────
+interface GroupProps {
+  title: string;
+  children: React.ReactNode;
+  isDark: boolean;
+}
+
+function Group({ title, children, isDark }: GroupProps) {
+  return (
+    <View style={styles.group}>
+      <Text style={[styles.groupTitle, {
+        color: isDark ? 'rgba(255,255,255,0.38)' : 'rgba(0,0,0,0.4)',
+      }]}>
+        {title}
+      </Text>
+      <View style={[styles.groupCard, {
+        backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : '#FFFFFF',
+        borderColor: isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)',
+      }]}>
+        {children}
+      </View>
+    </View>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Main Screen
+// ─────────────────────────────────────────────────────────────────────────────
 export default function SettingsScreen() {
   const rawScheme = useColorScheme();
   const colorScheme = rawScheme === 'dark' ? 'dark' : 'light';
@@ -164,58 +183,72 @@ export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const reducedMotion = useReducedMotion();
 
-  const { signOut } = useAuth();
-  const { user, resetStats } = useDeclutter();
+  const { updateProfile, signOut } = useAuth();
+  const { user, settings, updateSettings, setUser } = useDeclutter();
 
   // Toggle states
-  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
-  const [dailyReminder, setDailyReminder] = useState(true);
-  const [soundEnabled, setSoundEnabled] = useState(true);
-  const [hapticEnabled, setHapticEnabled] = useState(true);
+  const [darkModeEnabled, setDarkModeEnabled] = useState(isDark);
+  const [soundFXEnabled, setSoundFXEnabled] = useState(true);
+  const [hapticEnabled, setHapticEnabled] = useState(settings?.hapticFeedback ?? true);
+  const [isEditProfileVisible, setIsEditProfileVisible] = useState(false);
+  const [displayNameDraft, setDisplayNameDraft] = useState('');
 
-  const handleSignOut = () => {
-    Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Sign Out',
-        style: 'destructive',
-        onPress: async () => {
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-          await signOut();
-          router.replace('/auth/login');
-        },
-      },
-    ]);
+  useEffect(() => {
+    setDarkModeEnabled(isDark);
+  }, [isDark]);
+
+  useEffect(() => {
+    setHapticEnabled(settings?.hapticFeedback ?? true);
+  }, [settings?.hapticFeedback]);
+
+  const handleDarkModeToggle = (value: boolean) => {
+    setDarkModeEnabled(value);
+    updateSettings?.({ theme: value ? 'dark' : 'light' });
   };
 
-  // Reset requires typing "RESET"
-  const handleResetProgress = () => {
-    Alert.prompt(
-      'Reset All Progress',
-      'This will permanently delete all your rooms, tasks, and progress. Type "RESET" to confirm.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Reset Everything',
-          style: 'destructive',
-          onPress: (input?: string) => {
-            if (input?.trim().toUpperCase() === 'RESET') {
-              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-              resetStats?.();
-            } else {
-              Alert.alert('Reset Cancelled', 'You must type "RESET" to confirm.');
-            }
-          },
-        },
-      ],
-      'plain-text'
-    );
+  const handleSoundFXToggle = (value: boolean) => {
+    setSoundFXEnabled(value);
+  };
+
+  const handleHapticToggle = (value: boolean) => {
+    setHapticEnabled(value);
+    updateSettings?.({ hapticFeedback: value });
+  };
+
+  const openEditProfile = () => {
+    setDisplayNameDraft(user?.name ?? '');
+    setIsEditProfileVisible(true);
+  };
+
+  const handleEditProfileSave = async () => {
+    const trimmedName = displayNameDraft.trim();
+    if (!trimmedName) {
+      Alert.alert('Name required', 'Enter a display name to save your profile.');
+      return;
+    }
+
+    const result = await updateProfile({ displayName: trimmedName });
+    if (!result.success) {
+      Alert.alert('Error', result.error ?? 'Could not update your name.');
+      return;
+    }
+
+    if (user) {
+      setUser({
+        ...user,
+        name: trimmedName,
+      });
+    }
+
+    setIsEditProfileVisible(false);
   };
 
   const handleRateApp = async () => {
     try {
-      // Open App Store page for rating
-      await Linking.openURL('https://apps.apple.com/app/declutterly');
+      const storeUrl = Platform.OS === 'ios'
+        ? 'https://apps.apple.com/app/declutterly'
+        : 'https://play.google.com/store/apps/details?id=com.declutterly';
+      await Linking.openURL(storeUrl);
     } catch {
       // Unable to open App Store
     }
@@ -225,26 +258,61 @@ export default function SettingsScreen() {
     Linking.openURL('mailto:support@declutterly.app?subject=Declutterly%20Support');
   };
 
+  const handleSignOut = () => {
+    Alert.alert(
+      'Sign Out',
+      'Are you sure you want to sign out?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Sign Out',
+          style: 'destructive',
+          onPress: async () => {
+            await signOut();
+            router.replace('/');
+          },
+        },
+      ]
+    );
+  };
+
+  const enterAnim = (delay: number) =>
+    reducedMotion ? undefined : FadeInDown.delay(delay).springify();
+
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <View style={[styles.container, { backgroundColor: isDark ? '#0A0A0A' : '#F8F8F8' }]}>
+      <AmbientBackdrop isDark={isDark} variant="settings" />
+      <LinearGradient
+        colors={isDark
+          ? ['rgba(10,10,10,0.72)', 'rgba(10,10,10,0.92)'] as const
+          : ['rgba(248,248,248,0.44)', 'rgba(248,248,248,0.92)'] as const
+        }
+        style={StyleSheet.absoluteFill}
+      />
+
       {/* Header */}
-      <View style={[styles.navBar, {
-        paddingTop: insets.top,
-        backgroundColor: colors.background,
-        borderBottomWidth: StyleSheet.hairlineWidth,
-        borderBottomColor: isDark ? colors.divider : colors.borderLight,
-      }]}>
+      <View style={[styles.navBar, { paddingTop: insets.top + 8 }]}>
         <Pressable
-          onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.back(); }}
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            router.back();
+          }}
           style={styles.backButton}
           accessibilityRole="button"
           accessibilityLabel="Go back"
         >
-          <Text style={[styles.backIcon, { color: colors.accent }]}>{'<'}</Text>
-          <Text style={[Typography.body, { color: colors.accent }]}>Back</Text>
+          <Text style={[styles.backIcon, {
+            color: isDark ? '#FFFFFF' : '#1A1A1A',
+          }]}>
+            {'\u2039'}
+          </Text>
         </Pressable>
-        <Text style={[Typography.navTitle, { color: colors.text }]}>Settings</Text>
-        <View style={styles.navSpacer} />
+        <Text style={[styles.navTitle, { color: isDark ? '#FFFFFF' : '#1A1A1A' }]}>
+          Settings
+        </Text>
+        <Text style={[styles.navSubtitle, { color: isDark ? 'rgba(255,255,255,0.52)' : 'rgba(0,0,0,0.48)' }]}>
+          Tune the app so your resets feel lighter, calmer, and easier to repeat.
+        </Text>
       </View>
 
       <ScrollView
@@ -255,34 +323,108 @@ export default function SettingsScreen() {
         ]}
         showsVerticalScrollIndicator={false}
       >
-        {/* Account */}
-        <Animated.View entering={reducedMotion ? undefined : FadeInDown.delay(0).springify()}>
-          <Group title="Account" colors={colors} isDark={isDark}>
+        <Animated.View entering={enterAnim(0)} style={styles.heroCard}>
+          <LinearGradient
+            colors={
+              isDark
+                ? ['rgba(255,198,127,0.20)', 'rgba(139,130,255,0.10)', 'rgba(255,255,255,0.03)']
+                : ['rgba(255,221,183,0.74)', 'rgba(203,198,255,0.40)', 'rgba(255,255,255,0.30)']
+            }
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={[
+              styles.heroCardFill,
+              {
+                borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+                backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : '#FFFFFF',
+              },
+            ]}
+          >
+            <View style={styles.heroHeader}>
+              <View>
+                <Text style={[styles.heroEyebrow, { color: isDark ? '#FFE6C4' : '#7D572A' }]}>
+                  YOUR RHYTHM
+                </Text>
+                <Text style={[styles.heroTitle, { color: isDark ? '#FFF8EF' : '#1A1A1A' }]}>
+                  Keep the app working with your brain.
+                </Text>
+              </View>
+              <View
+                style={[
+                  styles.heroStateChip,
+                  {
+                    backgroundColor: isDark ? 'rgba(255,255,255,0.07)' : 'rgba(255,255,255,0.72)',
+                    borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)',
+                  },
+                ]}
+              >
+                <Ionicons name={darkModeEnabled ? 'moon' : 'sunny'} size={14} color={isDark ? '#FFF2DE' : '#6F522E'} />
+                <Text style={[styles.heroStateChipText, { color: isDark ? '#FFF2DE' : '#6F522E' }]}>
+                  {darkModeEnabled ? 'dark mode' : 'light mode'}
+                </Text>
+              </View>
+            </View>
+
+            <Text style={[styles.heroBody, { color: isDark ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.56)' }]}>
+              Save the theme, trim friction, and set up the kind of nudges that keep you from dropping the routine.
+            </Text>
+
+            <View style={styles.heroMetrics}>
+              {[
+                { label: 'Theme', value: darkModeEnabled ? 'Dark' : 'Light' },
+                { label: 'Haptics', value: hapticEnabled ? 'On' : 'Off' },
+                { label: 'Account', value: user?.name ? 'Ready' : 'Guest' },
+              ].map((item) => (
+                <View
+                  key={item.label}
+                  style={[
+                    styles.heroMetricCard,
+                    {
+                      backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.74)',
+                      borderColor: isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.05)',
+                    },
+                  ]}
+                >
+                  <Text style={[styles.heroMetricValue, { color: isDark ? '#FFF8EF' : '#1A1A1A' }]}>
+                    {item.value}
+                  </Text>
+                  <Text style={[styles.heroMetricLabel, { color: isDark ? 'rgba(255,255,255,0.42)' : 'rgba(0,0,0,0.42)' }]}>
+                    {item.label}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          </LinearGradient>
+        </Animated.View>
+
+        {/* GENERAL */}
+        <Animated.View entering={enterAnim(40)}>
+          <Group title="GENERAL" isDark={isDark}>
             <Row
-              emoji="N"
-              label={user?.name || 'Your Name'}
-              sublabel="Tap to edit your profile"
-              onPress={() => router.push('/profile/edit' as any)}
+              icon="person-outline"
+              label="Edit Profile"
+              sublabel="Change your name and photo"
+              onPress={openEditProfile}
               colors={colors}
               isDark={isDark}
-              isFirst
             />
             <Row
-              emoji="B"
-              label="Push Notifications"
-              toggle
-              toggleValue={notificationsEnabled}
-              onToggle={setNotificationsEnabled}
+              icon="notifications-outline"
+              label="Notifications"
+              sublabel="Push & email alerts"
+              onPress={() => {
+                router.push('/notification-permission');
+              }}
               colors={colors}
               isDark={isDark}
             />
             <Row
-              emoji="R"
-              label="Daily Reminder"
-              sublabel="Get reminded to declutter each day"
+              icon="moon-outline"
+              label="Dark Mode"
+              sublabel="Enable dark theme"
               toggle
-              toggleValue={dailyReminder}
-              onToggle={setDailyReminder}
+              toggleValue={darkModeEnabled}
+              onToggle={handleDarkModeToggle}
               colors={colors}
               isDark={isDark}
               isLast
@@ -290,30 +432,24 @@ export default function SettingsScreen() {
           </Group>
         </Animated.View>
 
-        {/* Preferences */}
-        <Animated.View entering={reducedMotion ? undefined : FadeInDown.delay(60).springify()}>
-          <Group
-            title="Preferences"
-            footer="Sound and haptic feedback enhance the decluttering experience."
-            colors={colors}
-            isDark={isDark}
-          >
+        {/* APPEARANCE */}
+        <Animated.View entering={enterAnim(100)}>
+          <Group title="APPEARANCE" isDark={isDark}>
             <Row
-              emoji="S"
-              label="Sound Effects"
+              icon="volume-high-outline"
+              label="Sound FX"
               toggle
-              toggleValue={soundEnabled}
-              onToggle={setSoundEnabled}
+              toggleValue={soundFXEnabled}
+              onToggle={handleSoundFXToggle}
               colors={colors}
               isDark={isDark}
-              isFirst
             />
             <Row
-              emoji="H"
+              icon="flash-outline"
               label="Haptic Feedback"
               toggle
               toggleValue={hapticEnabled}
-              onToggle={setHapticEnabled}
+              onToggle={handleHapticToggle}
               colors={colors}
               isDark={isDark}
               isLast
@@ -321,40 +457,47 @@ export default function SettingsScreen() {
           </Group>
         </Animated.View>
 
-        {/* Support & Account Actions */}
-        <Animated.View entering={reducedMotion ? undefined : FadeInDown.delay(120).springify()}>
-          <Group
-            title="Support"
-            footer="These destructive actions are permanent and cannot be undone."
-            colors={colors}
-            isDark={isDark}
-          >
+        {/* SUPPORT & ABOUT */}
+        <Animated.View entering={enterAnim(160)}>
+          <Group title="SUPPORT & ABOUT" isDark={isDark}>
             <Row
-              emoji="R"
-              label="Rate the App"
-              onPress={handleRateApp}
-              colors={colors}
-              isDark={isDark}
-              isFirst
-            />
-            <Row
-              emoji="C"
-              label="Contact Support"
+              icon="help-circle-outline"
+              label="Help & FAQ"
               onPress={handleContactSupport}
               colors={colors}
               isDark={isDark}
             />
             <Row
-              emoji="T"
-              label="Reset All Progress"
-              sublabel="Requires typing RESET to confirm"
-              onPress={handleResetProgress}
-              destructive
+              icon="shield-checkmark-outline"
+              label="Privacy Policy"
+              onPress={() => Linking.openURL('https://declutterly.app/privacy')}
               colors={colors}
               isDark={isDark}
             />
             <Row
-              emoji="X"
+              icon="document-text-outline"
+              label="Terms of Service"
+              onPress={() => Linking.openURL('https://declutterly.app/terms')}
+              colors={colors}
+              isDark={isDark}
+            />
+            <Row
+              icon="star-outline"
+              label="Rate Declutter"
+              onPress={handleRateApp}
+              colors={colors}
+              isDark={isDark}
+              highlightIcon
+              isLast
+            />
+          </Group>
+        </Animated.View>
+
+        {/* ACCOUNT */}
+        <Animated.View entering={enterAnim(220)}>
+          <Group title="ACCOUNT" isDark={isDark}>
+            <Row
+              icon="log-out-outline"
               label="Sign Out"
               onPress={handleSignOut}
               destructive
@@ -366,101 +509,189 @@ export default function SettingsScreen() {
         </Animated.View>
 
         {/* Version */}
-        <Text style={[styles.versionText, { color: colors.textTertiary }]}>
-          Declutterly v1.0.0 {'\n'} Made with care for a cleaner life
+        <Text style={[styles.versionText, { color: isDark ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.3)' }]}>
+          Declutterly v1.0.0
         </Text>
       </ScrollView>
+
+      <PromptModal
+        visible={isEditProfileVisible}
+        title="Edit profile"
+        description="Update the name shown across your Declutterly account."
+        value={displayNameDraft}
+        placeholder="Your display name"
+        submitLabel="Save"
+        autoCapitalize="words"
+        onChangeText={setDisplayNameDraft}
+        onSubmit={() => {
+          void handleEditProfileSave();
+        }}
+        onCancel={() => setIsEditProfileVisible(false)}
+        submitDisabled={!displayNameDraft.trim()}
+      />
     </View>
   );
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Styles
+// ─────────────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   container: { flex: 1 },
 
+  // ── Nav Bar ──
   navBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: Spacing.md,
-    paddingBottom: Spacing.sm,
-    minHeight: 44,
+    paddingHorizontal: 20,
+    paddingBottom: 12,
   },
   backButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 2,
-    minWidth: 70,
+    marginBottom: 8,
     minHeight: 44,
+    minWidth: 44,
   },
   backIcon: {
-    fontSize: 28,
+    fontSize: 34,
     fontWeight: '300',
-    lineHeight: 32,
+    lineHeight: 38,
   },
-  navSpacer: { minWidth: 70 },
+  navTitle: {
+    fontSize: 34,
+    fontWeight: '700',
+    letterSpacing: -0.4,
+  },
+  navSubtitle: {
+    marginTop: 6,
+    fontSize: 14,
+    lineHeight: 21,
+  },
 
   scrollView: { flex: 1 },
   scrollContent: {
-    paddingHorizontal: Spacing.ml,
-    paddingTop: Spacing.md,
-    gap: 0,
+    paddingHorizontal: 20,
+    paddingTop: 8,
+  },
+  heroCard: {
+    marginBottom: 28,
+  },
+  heroCardFill: {
+    borderRadius: 28,
+    borderWidth: 1,
+    padding: 20,
+  },
+  heroHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  heroEyebrow: {
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.4,
+  },
+  heroTitle: {
+    marginTop: 6,
+    fontSize: 28,
+    lineHeight: 32,
+    fontWeight: '700',
+    letterSpacing: -0.6,
+  },
+  heroStateChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    alignSelf: 'flex-start',
+  },
+  heroStateChipText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  heroBody: {
+    marginTop: 12,
+    fontSize: 14,
+    lineHeight: 21,
+  },
+  heroMetrics: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 16,
+  },
+  heroMetricCard: {
+    flex: 1,
+    borderRadius: 20,
+    borderWidth: 1,
+    padding: 14,
+    gap: 4,
+  },
+  heroMetricValue: {
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  heroMetricLabel: {
+    fontSize: 12,
+    fontWeight: '600',
   },
 
+  // ── Group ──
   group: {
-    marginBottom: Spacing.lg + Spacing.xxs,
+    marginBottom: 28,
   },
   groupTitle: {
-    ...Typography.overline,
-    marginBottom: Spacing.xs,
-    marginLeft: Spacing.xxs,
+    fontSize: 11,
+    fontWeight: '500',
+    letterSpacing: 0.5,
+    marginBottom: 8,
+    marginLeft: 4,
   },
-  groupContent: {},
-  groupFooter: {
-    ...Typography.caption1,
-    lineHeight: 18,
-    marginTop: Spacing.xs,
-    marginLeft: Spacing.xxs,
+  groupCard: {
+    borderRadius: 20,
+    overflow: 'hidden',
+    borderWidth: 1,
   },
 
+  // ── Row ──
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.md,
-    gap: Spacing.sm,
-    minHeight: 52,
+    padding: 16,
+    gap: 12,
   },
-  rowFirst: {
-    borderTopLeftRadius: BorderRadius.md,
-    borderTopRightRadius: BorderRadius.md,
-  },
-  rowLast: {
-    borderBottomLeftRadius: BorderRadius.md,
-    borderBottomRightRadius: BorderRadius.md,
-  },
-  rowIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
+  rowIconWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
   },
-  rowEmoji: { fontSize: 16 },
-  rowContent: { flex: 1, gap: 2 },
+  rowContent: {
+    flex: 1,
+    gap: 2,
+  },
   rowLabel: {
-    ...Typography.body,
+    fontSize: 15,
+    fontWeight: '500',
   },
   rowSublabel: {
-    ...Typography.caption1,
-  },
-  rowValue: {
-    ...Typography.subheadline,
+    fontSize: 13,
+    fontWeight: '400',
   },
   rowChevron: {
-    fontSize: 22,
+    fontSize: 28,
     fontWeight: '300',
+    lineHeight: 28,
+  },
+  rowDivider: {
+    height: 1,
+    marginLeft: 48,
   },
 
+  // ── Version ──
   versionText: {
     textAlign: 'center',
     fontSize: 12,

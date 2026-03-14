@@ -4,12 +4,12 @@
  */
 
 import React from 'react';
+import { useColorScheme } from '@/hooks/useColorScheme';
 import {
   View,
   Text,
   Pressable,
   StyleSheet,
-  useColorScheme,
 } from 'react-native';
 import Animated, {
   SlideInUp,

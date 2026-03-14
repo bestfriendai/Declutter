@@ -4,15 +4,15 @@
  */
 
 // Layout Components
-export { ScreenLayout } from './ScreenLayout';
+export { ContentRow } from './ContentRow';
 export { GlassCard } from './GlassCard';
 export { ModernCard } from './ModernCard';
-export { ContentRow } from './ContentRow';
+export { ScreenLayout } from './ScreenLayout';
 
 // Interactive Components
+export { Chip } from './Chip';
 export { GlassButton } from './GlassButton';
 export { SegmentedControl } from './SegmentedControl';
-export { Chip } from './Chip';
 export { SwipeableTaskCard } from './SwipeableTaskCard';
 export type { Task as SwipeableTask } from './SwipeableTaskCard';
 
@@ -21,41 +21,59 @@ export { FocusableInput } from './FocusableInput';
 export type { FocusableInputRef } from './FocusableInput';
 export { PasswordRequirements, PasswordStrengthBar } from './PasswordRequirements';
 
+// Celebration Engine
+export { CelebrationProvider, useCelebration } from './CelebrationEngine';
+
 // Feedback Components
-export { Toast } from './Toast';
 export { Banner, InlineBanner } from './Banner';
-export { Skeleton, SkeletonText, SkeletonCard } from './Skeleton';
 export { Confetti } from './Confetti';
 export { EmptyStateCard } from './EmptyStateCard';
+export { Skeleton, SkeletonCard, SkeletonText } from './Skeleton';
+export { Toast } from './Toast';
 
 // Modal Components
-export { BottomSheet } from './BottomSheet';
-export type { BottomSheetRef } from './BottomSheet';
 export { ActionSheet } from './ActionSheet';
 export type { ActionSheetAction } from './ActionSheet';
+export { BottomSheet } from './BottomSheet';
+export type { BottomSheetRef } from './BottomSheet';
+export { PromptModal } from './PromptModal';
 
 // Progress Components
+export { ActivityRings } from './ActivityRings';
+export { ProgressComparison } from './ProgressComparison';
+export type { ProgressComparisonProps } from './ProgressComparison';
 export { ProgressSteps } from './ProgressSteps';
 export type { Step as ProgressStep } from './ProgressSteps';
-export { ActivityRings } from './ActivityRings';
 export { StatCard } from './StatCard';
 
 // Media Components
 export { BeforeAfterSlider, VerticalBeforeAfterSlider } from './BeforeAfterSlider';
 export { HeroCarousel } from './HeroCarousel';
 
+// Share Components
+export { ShareableCard } from './ShareableCard';
+export type { ShareableCardProps } from './ShareableCard';
+
 // Animation Components
 export { AnimatedListItem } from './AnimatedListItem';
 
+// Reward Components
+export { ComboCounter } from './ComboCounter';
+export type { ComboCounterProps } from './ComboCounter';
+export { MysteryReward } from './MysteryReward';
+export type { MysteryRewardProps, RewardType } from './MysteryReward';
+export { XPPopup } from './XPPopup';
+export type { XPPopupProps } from './XPPopup';
+
 // Contextual Components
-export { ContextualGreeting, CompactGreeting } from './ContextualGreeting';
+export { CompactGreeting, ContextualGreeting } from './ContextualGreeting';
+export { OfflineIndicator } from './OfflineIndicator';
 export {
-  OnboardingTooltipProvider,
-  useOnboardingTooltip,
-  useTooltipTrigger,
+    OnboardingTooltipProvider,
+    useOnboardingTooltip,
+    useTooltipTrigger
 } from './OnboardingTooltip';
 export type { TooltipId } from './OnboardingTooltip';
-export { OfflineIndicator } from './OfflineIndicator';
 
 // Wizard Components
 export { ApiKeySetupWizard } from './ApiKeySetupWizard';

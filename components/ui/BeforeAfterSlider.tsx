@@ -4,11 +4,11 @@
  * High priority item from UI/UX improvement guide
  */
 
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
+import { useColorScheme } from '@/hooks/useColorScheme';
 import {
   View,
   StyleSheet,
-  useColorScheme,
   Image,
   Pressable,
   Text,
@@ -67,15 +67,19 @@ export function BeforeAfterSlider({
   const isDragging = useSharedValue(false);
 
   const handleAutoPlay = useCallback(() => {
-    if (!autoPlay) return;
-
     // Animate from before to after and back
     sliderPosition.value = withTiming(0.9, { duration: autoPlayDuration / 2 }, () => {
       sliderPosition.value = withTiming(0.1, { duration: autoPlayDuration / 2 }, () => {
         sliderPosition.value = withSpring(0.5, SpringConfigs.gentle);
       });
     });
-  }, [autoPlay, autoPlayDuration]);
+  }, [autoPlayDuration, sliderPosition]);
+
+  useEffect(() => {
+    if (autoPlay) {
+      handleAutoPlay();
+    }
+  }, [autoPlay, handleAutoPlay]);
 
   const gesture = Gesture.Pan()
     .onStart(() => {

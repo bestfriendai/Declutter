@@ -8,12 +8,16 @@
  * @module
  */
 
+import type * as accountability from "../accountability.js";
+import type * as activityLog from "../activityLog.js";
 import type * as auth from "../auth.js";
 import type * as badges from "../badges.js";
 import type * as collection from "../collection.js";
 import type * as gemini from "../gemini.js";
 import type * as http from "../http.js";
+import type * as leaderboard from "../leaderboard.js";
 import type * as mascots from "../mascots.js";
+import type * as notifications from "../notifications.js";
 import type * as photos from "../photos.js";
 import type * as rooms from "../rooms.js";
 import type * as settings from "../settings.js";
@@ -23,6 +27,7 @@ import type * as subtasks from "../subtasks.js";
 import type * as sync from "../sync.js";
 import type * as tasks from "../tasks.js";
 import type * as users from "../users.js";
+import type * as variableRewards from "../variableRewards.js";
 
 import type {
   ApiFromModules,
@@ -31,12 +36,16 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  accountability: typeof accountability;
+  activityLog: typeof activityLog;
   auth: typeof auth;
   badges: typeof badges;
   collection: typeof collection;
   gemini: typeof gemini;
   http: typeof http;
+  leaderboard: typeof leaderboard;
   mascots: typeof mascots;
+  notifications: typeof notifications;
   photos: typeof photos;
   rooms: typeof rooms;
   settings: typeof settings;
@@ -46,6 +55,7 @@ declare const fullApi: ApiFromModules<{
   sync: typeof sync;
   tasks: typeof tasks;
   users: typeof users;
+  variableRewards: typeof variableRewards;
 }>;
 
 /**

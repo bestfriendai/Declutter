@@ -5,18 +5,28 @@
 
 import { Redirect } from 'expo-router';
 import { useAuth } from '@/context/AuthContext';
+import { useDeclutter } from '@/context/DeclutterContext';
+import { api } from '@/convex/_generated/api';
 import { View, ActivityIndicator, StyleSheet, Text } from 'react-native';
 import { useTheme } from '@/theme/ThemeProvider';
 import { Typography } from '@/theme/typography';
 import { Spacing } from '@/theme/spacing';
 import { StatusBar } from 'expo-status-bar';
 import Animated, { FadeIn } from 'react-native-reanimated';
+import { useQuery } from 'convex/react';
 
 export default function Index() {
   const { isAuthenticated, isLoading, isAuthReady } = useAuth();
+  const { user, isLoaded } = useDeclutter();
   const { colors, isDark } = useTheme();
+  const cloudUser = useQuery(api.users.get, isAuthenticated ? {} : 'skip');
+  const isResolvingCloudUser = isAuthenticated && cloudUser === undefined;
+  const hasCompletedLocalOnboarding = !!user?.onboardingComplete;
+  const hasCompletedCloudOnboarding = !!cloudUser?.onboardingComplete;
+  const hasCompletedOnboarding =
+    hasCompletedLocalOnboarding || hasCompletedCloudOnboarding;
 
-  if (isLoading) {
+  if (isLoading || !isLoaded || isResolvingCloudUser) {
     return (
       <View
         style={[styles.container, { backgroundColor: colors.background }]}
@@ -42,8 +52,8 @@ export default function Index() {
     );
   }
 
-  if (isAuthReady && !isAuthenticated) {
-    return <Redirect href="/auth/login" />;
+  if (isAuthReady && !hasCompletedOnboarding) {
+    return <Redirect href="/onboarding" />;
   }
 
   return <Redirect href="/(tabs)" />;

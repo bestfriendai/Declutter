@@ -1,6 +1,6 @@
+import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
-import { getAuthUserId } from "@convex-dev/auth/server";
 
 const BADGE_DEFS = [
   { id: "first-task", name: "First Step", description: "Complete your first task", emoji: "🌱", requirement: 1, type: "tasks" as const },
@@ -14,6 +14,16 @@ const BADGE_DEFS = [
   { id: "streak-30", name: "Monthly Master", description: "30 day streak", emoji: "🏆", requirement: 30, type: "streak" as const },
   { id: "time-60", name: "Hour Power", description: "Clean for 60 minutes total", emoji: "⏰", requirement: 60, type: "time" as const },
   { id: "time-300", name: "Time Investor", description: "Clean for 5 hours total", emoji: "📈", requirement: 300, type: "time" as const },
+  // Comeback Engine badges — celebrate returns, not punish absence
+  { id: "comeback-1", name: "Comeback Kid", description: "Return after 3+ days away", emoji: "💛", requirement: 1, type: "comeback" as const },
+  { id: "comeback-3", name: "Resilient Cleaner", description: "Come back 3 times", emoji: "🌈", requirement: 3, type: "comeback" as const },
+  { id: "comeback-champion", name: "Comeback Champion", description: "Return after 7+ days away", emoji: "🏆", requirement: 7, type: "longComeback" as const },
+  // Cumulative session badges — emphasize total over streaks
+  { id: "sessions-10", name: "Getting Started", description: "10 cleaning sessions total", emoji: "🌱", requirement: 10, type: "sessions" as const },
+  { id: "sessions-25", name: "Building Habits", description: "25 cleaning sessions total", emoji: "🌿", requirement: 25, type: "sessions" as const },
+  { id: "sessions-50", name: "Persistent Cleaner", description: "50 cleaning sessions total", emoji: "🌳", requirement: 50, type: "sessions" as const },
+  { id: "sessions-100", name: "Century Club", description: "100 cleaning sessions total", emoji: "💯", requirement: 100, type: "sessions" as const },
+  { id: "sessions-250", name: "Declutter Legend", description: "250 cleaning sessions total", emoji: "⭐", requirement: 250, type: "sessions" as const },
 ];
 
 export const listByUser = query({
@@ -36,7 +46,15 @@ export const unlock = mutation({
     description: v.string(),
     emoji: v.string(),
     requirement: v.number(),
-    type: v.union(v.literal("tasks"), v.literal("rooms"), v.literal("streak"), v.literal("time")),
+    type: v.union(
+      v.literal("tasks"),
+      v.literal("rooms"),
+      v.literal("streak"),
+      v.literal("time"),
+      v.literal("comeback"),
+      v.literal("longComeback"),
+      v.literal("sessions")
+    ),
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
@@ -83,6 +101,18 @@ export const checkAndUnlock = mutation({
     const rooms = stats?.totalRoomsCleaned ?? 0;
     const streak = stats?.currentStreak ?? 0;
     const minutes = stats?.totalMinutesCleaned ?? 0;
+    // Comeback Engine stats
+    const comebackCount = stats?.comebackCount ?? 0;
+    const totalSessions = stats?.totalCleaningSessions ?? tasks;
+    // Calculate days since last activity for long comeback badge
+    let daysSinceActivity = 0;
+    if (stats?.lastActivityDate) {
+      const lastDate = new Date(stats.lastActivityDate);
+      const now = new Date();
+      lastDate.setHours(0, 0, 0, 0);
+      now.setHours(0, 0, 0, 0);
+      daysSinceActivity = Math.floor((now.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24));
+    }
 
     // Get already unlocked badges
     const unlockedBadges = await ctx.db
@@ -109,6 +139,21 @@ export const checkAndUnlock = mutation({
           break;
         case "time":
           value = minutes;
+          break;
+        case "comeback":
+          // Number of times user has come back after 3+ days
+          value = comebackCount;
+          break;
+        case "longComeback":
+          // Awarded when returning after 7+ days (check daysSinceActivity at comeback time)
+          // This is checked during recordActivity, so we track via comebackCount with long breaks
+          // For simplicity, this badge is unlocked when the comebackCount is 1+ and a recent comeback was 7+ days
+          // We'll use a special flag in stats to track long comebacks
+          value = daysSinceActivity >= 7 && comebackCount > 0 ? 7 : 0;
+          break;
+        case "sessions":
+          // Total cumulative cleaning sessions (never resets)
+          value = totalSessions;
           break;
       }
 

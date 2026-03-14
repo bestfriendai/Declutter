@@ -47,13 +47,14 @@ export const create = mutation({
     targetObjects: v.optional(v.array(v.string())),
     destinationLocation: v.optional(v.string()),
     destinationInstructions: v.optional(v.string()),
-    destinationRequiresSetup: v.optional(v.string()),
+    destinationRequiresSetup: v.optional(v.boolean()),
     category: v.optional(v.string()),
     energyRequired: v.optional(v.string()),
     decisionLoad: v.optional(v.string()),
     visualImpact: v.optional(v.string()),
     whyThisMatters: v.optional(v.string()),
     resistanceHandler: v.optional(v.string()),
+    suppliesNeeded: v.optional(v.array(v.string())),
     dependencies: v.optional(v.array(v.string())),
     enables: v.optional(v.array(v.string())),
     parallelWith: v.optional(v.array(v.string())),
@@ -90,6 +91,7 @@ export const create = mutation({
       visualImpact: args.visualImpact,
       whyThisMatters: args.whyThisMatters,
       resistanceHandler: args.resistanceHandler,
+      suppliesNeeded: args.suppliesNeeded,
       dependencies: args.dependencies,
       enables: args.enables,
       parallelWith: args.parallelWith,
@@ -115,13 +117,14 @@ export const createMany = mutation({
         targetObjects: v.optional(v.array(v.string())),
         destinationLocation: v.optional(v.string()),
         destinationInstructions: v.optional(v.string()),
-        destinationRequiresSetup: v.optional(v.string()),
+        destinationRequiresSetup: v.optional(v.boolean()),
         category: v.optional(v.string()),
         energyRequired: v.optional(v.string()),
         decisionLoad: v.optional(v.string()),
         visualImpact: v.optional(v.string()),
         whyThisMatters: v.optional(v.string()),
         resistanceHandler: v.optional(v.string()),
+        suppliesNeeded: v.optional(v.array(v.string())),
         dependencies: v.optional(v.array(v.string())),
         enables: v.optional(v.array(v.string())),
         parallelWith: v.optional(v.array(v.string())),
@@ -163,6 +166,7 @@ export const createMany = mutation({
         visualImpact: task.visualImpact,
         whyThisMatters: task.whyThisMatters,
         resistanceHandler: task.resistanceHandler,
+        suppliesNeeded: task.suppliesNeeded,
         dependencies: task.dependencies,
         enables: task.enables,
         parallelWith: task.parallelWith,
@@ -188,13 +192,14 @@ export const update = mutation({
     targetObjects: v.optional(v.array(v.string())),
     destinationLocation: v.optional(v.string()),
     destinationInstructions: v.optional(v.string()),
-    destinationRequiresSetup: v.optional(v.string()),
+    destinationRequiresSetup: v.optional(v.boolean()),
     category: v.optional(v.string()),
     energyRequired: v.optional(v.string()),
     decisionLoad: v.optional(v.string()),
     visualImpact: v.optional(v.string()),
     whyThisMatters: v.optional(v.string()),
     resistanceHandler: v.optional(v.string()),
+    suppliesNeeded: v.optional(v.array(v.string())),
     dependencies: v.optional(v.array(v.string())),
     enables: v.optional(v.array(v.string())),
     parallelWith: v.optional(v.array(v.string())),
@@ -257,7 +262,7 @@ export const remove = mutation({
     // Delete all subtasks
     const subtasks = await ctx.db
       .query("subtasks")
-      .filter((q) => q.eq(q.field("taskId"), args.id))
+      .withIndex("by_taskId", (q) => q.eq("taskId", args.id))
       .collect();
     for (const subtask of subtasks) {
       await ctx.db.delete(subtask._id);

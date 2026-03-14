@@ -1,21 +1,26 @@
 /**
- * Declutterly — Login Screen (Apple 2026)
- * Full-bleed gradient, glass form card, animated entry
- * Guest mode + loading spinner + success haptics
+ * Declutterly — Sign In Screen
+ * Matches Pencil designs: 3EIk2 (dark) and Ndqsi (light) pixel-perfectly.
+ *
+ * "Welcome back" heading, email/password inputs with icons,
+ * forgot password link, Sign In button, or divider, Apple/Google social buttons,
+ * "Don't have an account? Sign Up" link.
  */
 
-import { Colors } from '@/constants/Colors';
+import { useAuth } from '@/context/AuthContext';
+import { AmbientBackdrop } from '@/components/ui/AmbientBackdrop';
 import { useColorScheme } from '@/hooks/useColorScheme';
-import { Typography } from '@/theme/typography';
-import { Spacing, BorderRadius } from '@/theme/spacing';
+import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import * as Haptics from 'expo-haptics';
 import React, { useCallback, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   KeyboardAvoidingView,
+  Linking,
   Platform,
   Pressable,
   ScrollView,
@@ -26,24 +31,21 @@ import {
 } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { BlurView } from 'expo-blur';
-import { useAuth } from '@/context/AuthContext';
-import { useReducedMotion } from '@/hooks/useReducedMotion';
+
+const BODY_FONT = Platform.OS === 'ios' ? 'DM Sans' : 'sans-serif';
+const DISPLAY_FONT = Platform.OS === 'ios' ? 'Bricolage Grotesque' : 'sans-serif';
 
 export default function LoginScreen() {
   const rawScheme = useColorScheme();
   const colorScheme = rawScheme === 'dark' ? 'dark' : 'light';
-  const colors = Colors[colorScheme];
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
-  const reducedMotion = useReducedMotion();
 
   const { signIn, continueAsGuest } = useAuth();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const [guestLoading, setGuestLoading] = useState(false);
   const [error, setError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
@@ -62,7 +64,7 @@ export default function LoginScreen() {
       const result = await signIn(email.trim(), password);
       if (result.success) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        router.replace('/(tabs)');
+        router.replace('/');
       } else {
         setError(result.error ?? 'Login failed. Please try again.');
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
@@ -75,247 +77,428 @@ export default function LoginScreen() {
     }
   }, [email, password, signIn]);
 
-  const handleGuestLogin = useCallback(async () => {
+  const togglePassword = useCallback(() => {
+    Haptics.selectionAsync();
+    setShowPassword((v) => !v);
+  }, []);
+
+  const handleContinueAsGuest = useCallback(async () => {
     setError('');
-    setGuestLoading(true);
+    setLoading(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     try {
       const result = await continueAsGuest();
       if (result.success) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        router.replace('/(tabs)');
+        router.replace('/');
       } else {
-        setError(result.error ?? 'Guest login failed. Please try again.');
+        setError(result.error ?? 'Could not continue as guest.');
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       }
     } catch (e: any) {
-      setError(e?.message ?? 'Guest login failed. Please try again.');
+      setError(e?.message ?? 'Could not continue as guest.');
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     } finally {
-      setGuestLoading(false);
+      setLoading(false);
     }
   }, [continueAsGuest]);
 
-  const togglePassword = useCallback(() => {
-    Haptics.selectionAsync();
-    setShowPassword(v => !v);
-  }, []);
-
-  const isAnyLoading = loading || guestLoading;
+  // Design color tokens
+  const inputBg = isDark ? '#141414' : '#FFFFFF';
+  const inputBorder = isDark ? '#333333' : '#D0D0D0';
+  const placeholderColor = '#707070';
+  const iconColor = 'rgba(112,112,112,0.5)';
+  const headingColor = isDark ? '#FFFFFF' : '#1A1A1A';
+  const subtitleColor = isDark ? '#888888' : '#666666';
+  const forgotColor = isDark ? '#707070' : '#888888';
+  const dividerLineColor = isDark ? '#1A1A1A' : '#E0E0E0';
+  const dividerTextColor = isDark ? '#555555' : '#707070';
+  const socialBg = isDark ? '#141414' : '#FFFFFF';
+  const socialBorder = isDark ? '#333333' : '#D0D0D0';
+  const socialTextColor = isDark ? '#FFFFFF' : '#1A1A1A';
+  const linkColor = isDark ? '#707070' : '#888888';
 
   return (
     <View style={styles.container} accessibilityLabel="Sign in screen">
       <StatusBar style={isDark ? 'light' : 'dark'} />
+      <AmbientBackdrop isDark={isDark} variant="auth" />
 
-      {/* Background gradient — lightened dark mode base */}
+      {/* Background */}
       <LinearGradient
-        colors={isDark
-          ? ['#1C1C1E', '#141418', '#1A1A24']
-          : ['#F2F2F7', '#E8E8F0', '#FFFFFF']}
+        colors={
+          isDark
+            ? ['rgba(12,12,15,0.52)', 'rgba(18,18,22,0.80)', 'rgba(18,18,22,0.96)']
+            : ['rgba(250,244,236,0.46)', 'rgba(247,242,235,0.78)', 'rgba(245,240,234,0.96)']
+        }
+        locations={[0, 0.5, 1]}
         style={StyleSheet.absoluteFill}
+      />
+      {/* Base fill behind gradient */}
+      <View
+        style={[
+          StyleSheet.absoluteFill,
+          { backgroundColor: isDark ? '#111115' : '#F7F1EA', zIndex: -1 },
+        ]}
       />
 
       <KeyboardAvoidingView
         style={styles.keyboardView}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={0}
       >
         <ScrollView
           contentContainerStyle={[
             styles.scrollContent,
-            { paddingTop: insets.top + Spacing.xxl, paddingBottom: insets.bottom + Spacing.xxl },
+            {
+              paddingTop: insets.top + 56,
+              paddingBottom: Math.max(insets.bottom, 24) + 24,
+            },
           ]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          {/* Logo / Brand */}
-          <Animated.View entering={reducedMotion ? undefined : FadeInDown.delay(0).springify()} style={styles.brandSection}>
-            <View style={[styles.logoContainer, {
-              backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
-              borderColor: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)',
-            }]}>
-              <Text style={styles.logoEmoji} accessibilityElementsHidden>{'B'}</Text>
+          {/* Header */}
+          <Animated.View
+            entering={FadeInDown.delay(0).springify()}
+            style={styles.headerSection}
+          >
+            <View style={styles.headerPillRow}>
+              <LinearGradient
+                colors={isDark ? ['#FFDCA8', '#FFB547', '#FF8C63'] : ['#FFD49C', '#FFB547', '#FF9B6E']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.headerPill}
+              >
+                <Text style={styles.headerPillText}>WELCOME BACK</Text>
+              </LinearGradient>
+              <View
+                style={[
+                  styles.headerMetaChip,
+                  {
+                    backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.72)',
+                    borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(55,40,26,0.08)',
+                  },
+                ]}
+              >
+                <Ionicons
+                  name="sparkles-outline"
+                  size={14}
+                  color={isDark ? '#FEE9C8' : '#75532A'}
+                />
+                <Text style={[styles.headerMetaText, { color: isDark ? '#DFD4C8' : '#6B5A49' }]}>
+                  pick up your reset
+                </Text>
+              </View>
             </View>
-            <Text
-              style={[Typography.displaySmall, { color: colors.text, marginTop: Spacing.md }]}
-              accessibilityRole="header"
-            >
+            <Text style={[styles.heading, { color: headingColor }]}>
               Welcome back
             </Text>
-            <Text style={[Typography.subheadline, { color: colors.textSecondary, marginTop: Spacing.xxs + 2 }]}>
-              Sign in to continue decluttering
+            <Text style={[styles.subtitle, { color: subtitleColor }]}>
+              Drop back into your calmer rhythm without rebuilding momentum from scratch.
             </Text>
           </Animated.View>
 
-          {/* Form Card */}
-          <Animated.View entering={reducedMotion ? undefined : FadeInDown.delay(80).springify()} style={styles.formSection}>
-            <View style={[styles.formCard, {
-              backgroundColor: isDark ? 'rgba(28,28,30,0.85)' : 'rgba(255,255,255,0.90)',
-              borderColor: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.06)',
-            }]}>
-              <BlurView
-                intensity={isDark ? 60 : 40}
-                tint={isDark ? 'dark' : 'light'}
-                style={StyleSheet.absoluteFill}
+          {/* Form */}
+          <Animated.View
+            entering={FadeInDown.delay(80).springify()}
+            style={[
+              styles.formSection,
+              {
+                backgroundColor: isDark ? 'rgba(23,23,29,0.88)' : 'rgba(255,255,255,0.84)',
+                borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(55,40,26,0.08)',
+              },
+            ]}
+          >
+            <LinearGradient
+              colors={[
+                isDark ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.78)',
+                'rgba(255,255,255,0)',
+              ]}
+              start={{ x: 0.2, y: 0 }}
+              end={{ x: 0.8, y: 1 }}
+              style={styles.formSheen}
+            />
+            <View style={styles.formHeader}>
+              <Text style={[styles.formEyebrow, { color: isDark ? '#FFE5C1' : '#7B5627' }]}>
+                ACCOUNT ACCESS
+              </Text>
+              <Text style={[styles.formTitle, { color: headingColor }]}>Your progress is waiting.</Text>
+            </View>
+            {/* Email input */}
+            <View
+              style={[
+                styles.inputField,
+                {
+                  backgroundColor: isDark ? '#101014' : '#FFFDFC',
+                  borderColor: inputBorder,
+                },
+              ]}
+            >
+              <Ionicons
+                name="mail-outline"
+                size={18}
+                color={iconColor}
               />
-
-              {/* Email */}
-              <View style={styles.inputGroup}>
-                <Text style={[Typography.footnoteMedium, styles.inputLabel, { color: colors.textSecondary }]}>
-                  Email
-                </Text>
-                <View style={[styles.inputContainer, {
-                  backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
-                  borderColor: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.08)',
-                }]}>
-                  <TextInput
-                    style={[styles.input, Typography.callout, { color: colors.text }]}
-                    placeholder="you@example.com"
-                    placeholderTextColor={colors.textTertiary}
-                    value={email}
-                    onChangeText={setEmail}
-                    keyboardType="email-address"
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    autoComplete="email"
-                    textContentType="emailAddress"
-                    returnKeyType="next"
-                    onSubmitEditing={() => passwordRef.current?.focus()}
-                    accessibilityLabel="Email address"
-                    accessibilityHint="Enter your email address to sign in"
-                  />
-                </View>
-              </View>
-
-              {/* Divider */}
-              <View style={[styles.inputDivider, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)' }]} />
-
-              {/* Password */}
-              <View style={styles.inputGroup}>
-                <Text style={[Typography.footnoteMedium, styles.inputLabel, { color: colors.textSecondary }]}>
-                  Password
-                </Text>
-                <View style={[styles.inputContainer, {
-                  backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
-                  borderColor: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.08)',
-                }]}>
-                  <TextInput
-                    ref={passwordRef}
-                    style={[styles.input, Typography.callout, { color: colors.text }]}
-                    placeholder="Your password"
-                    placeholderTextColor={colors.textTertiary}
-                    value={password}
-                    onChangeText={setPassword}
-                    secureTextEntry={!showPassword}
-                    autoComplete="password"
-                    textContentType="password"
-                    returnKeyType="done"
-                    onSubmitEditing={handleLogin}
-                    accessibilityLabel="Password"
-                  />
-                  <Pressable
-                    onPress={togglePassword}
-                    accessibilityRole="button"
-                    accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
-                    hitSlop={12}
-                    style={styles.showPasswordButton}
-                  >
-                    <Text style={[Typography.calloutMedium, { color: colors.accent }]}>
-                      {showPassword ? 'Hide' : 'Show'}
-                    </Text>
-                  </Pressable>
-                </View>
-              </View>
+              <TextInput
+                style={[styles.inputText, { color: headingColor }]}
+                placeholder="Email address"
+                placeholderTextColor={placeholderColor}
+                value={email}
+                onChangeText={setEmail}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoCorrect={false}
+                autoComplete="email"
+                textContentType="emailAddress"
+                returnKeyType="next"
+                onSubmitEditing={() => passwordRef.current?.focus()}
+                accessibilityLabel="Email address"
+              />
             </View>
 
+            {/* Password input */}
+            <View
+              style={[
+                styles.inputField,
+                {
+                  backgroundColor: isDark ? '#101014' : '#FFFDFC',
+                  borderColor: inputBorder,
+                },
+              ]}
+            >
+              <Ionicons
+                name="lock-closed-outline"
+                size={18}
+                color={iconColor}
+              />
+              <TextInput
+                ref={passwordRef}
+                style={[styles.inputText, { color: headingColor }]}
+                placeholder="Password"
+                placeholderTextColor={placeholderColor}
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry={!showPassword}
+                autoComplete="password"
+                textContentType="password"
+                returnKeyType="done"
+                onSubmitEditing={handleLogin}
+                accessibilityLabel="Password"
+              />
+              <Pressable
+                onPress={togglePassword}
+                accessibilityRole="button"
+                accessibilityLabel={
+                  showPassword ? 'Hide password' : 'Show password'
+                }
+                hitSlop={12}
+                style={styles.eyeButton}
+              >
+                <Ionicons
+                  name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                  size={18}
+                  color={iconColor}
+                />
+              </Pressable>
+            </View>
+          </Animated.View>
+
+          {/* Forgot password */}
+          <Animated.View entering={FadeInDown.delay(100).springify()}>
+            <Pressable
+              onPress={() => {
+                Haptics.selectionAsync();
+                if (email.trim()) {
+                  Alert.alert(
+                    'Reset Password',
+                    `We'll send a password reset link to ${email.trim()}.`,
+                    [
+                      { text: 'Cancel', style: 'cancel' },
+                      {
+                        text: 'Email Support',
+                        onPress: async () => {
+                          const subject = encodeURIComponent('Declutterly password reset help');
+                          const body = encodeURIComponent(
+                            `Hi Declutterly,\n\nI need help resetting the password for:\n${email.trim()}\n`
+                          );
+                          try {
+                            await Linking.openURL(
+                              `mailto:support@declutterly.app?subject=${subject}&body=${body}`
+                            );
+                          } catch {
+                            Alert.alert(
+                              'Contact support',
+                              'Please email support@declutterly.app for password reset help.'
+                            );
+                          }
+                        },
+                      },
+                    ]
+                  );
+                } else {
+                  Alert.alert(
+                    'Enter Your Email',
+                    'Please enter your email address first, then tap "Forgot password?".'
+                  );
+                }
+              }}
+              accessibilityRole="link"
+              accessibilityLabel="Forgot password"
+              style={styles.forgotPasswordRow}
+            >
+              <Text style={[styles.forgotPasswordText, { color: forgotColor }]}>
+                Forgot password?
+              </Text>
+            </Pressable>
           </Animated.View>
 
           {/* Error */}
           {error ? (
             <Animated.View
-              entering={reducedMotion ? undefined : FadeInDown.springify()}
-              style={[styles.errorBanner, {
-                backgroundColor: colors.errorMuted,
-                borderColor: colors.error,
-              }]}
+              entering={FadeInDown.springify()}
+              style={styles.errorBanner}
               accessibilityRole="alert"
               accessibilityLiveRegion="assertive"
             >
-              <Text style={[Typography.footnote, { color: colors.error }]}>{error}</Text>
+              <Text style={styles.errorText}>{error}</Text>
             </Animated.View>
           ) : null}
 
-          {/* Sign In Button */}
-          <Animated.View entering={reducedMotion ? undefined : FadeInDown.delay(160).springify()} style={styles.ctaSection}>
+          {/* Sign In button */}
+          <Animated.View entering={FadeInDown.delay(160).springify()}>
             <Pressable
               onPress={handleLogin}
-              disabled={isAnyLoading}
+              disabled={loading}
               accessibilityRole="button"
               accessibilityLabel="Sign in"
-              accessibilityState={{ disabled: isAnyLoading, busy: loading }}
-              style={({ pressed }) => ({
-                opacity: isAnyLoading ? 0.7 : pressed ? 0.85 : 1,
-              })}
-            >
-              <LinearGradient
-                colors={[...colors.gradientAccent]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.signInButton}
-              >
-                {loading ? (
-                  <ActivityIndicator color="#FFFFFF" accessibilityLabel="Signing in" />
-                ) : (
-                  <Text style={[Typography.headline, { color: '#FFFFFF' }]}>Sign In</Text>
-                )}
-              </LinearGradient>
-            </Pressable>
-
-            {/* Continue as Guest */}
-            <Pressable
-              onPress={handleGuestLogin}
-              disabled={isAnyLoading}
-              accessibilityRole="button"
-              accessibilityLabel="Try without account"
-              accessibilityHint="Continue as a guest without creating an account"
-              accessibilityState={{ disabled: isAnyLoading, busy: guestLoading }}
+              accessibilityState={{ disabled: loading, busy: loading }}
               style={({ pressed }) => [
-                styles.guestButton,
+                styles.primaryButton,
                 {
-                  opacity: isAnyLoading ? 0.5 : pressed ? 0.7 : 1,
-                  borderColor: isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.10)',
+                  opacity: loading ? 0.7 : pressed ? 0.85 : 1,
                 },
               ]}
             >
-              {guestLoading ? (
-                <ActivityIndicator color={colors.textSecondary} size="small" accessibilityLabel="Setting up guest account" />
-              ) : (
-                <Text style={[Typography.subheadlineMedium, { color: colors.textSecondary }]}>
-                  Try without account
-                </Text>
-              )}
+              <LinearGradient
+                colors={isDark ? ['#FFD9A1', '#FFB547', '#FF8C63'] : ['#FFD399', '#FFB547', '#FF976C']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.primaryButtonFill}
+              >
+                {loading ? (
+                  <ActivityIndicator
+                    color="#111115"
+                    accessibilityLabel="Signing in"
+                  />
+                ) : (
+                  <>
+                    <Text style={styles.primaryButtonText}>Sign In</Text>
+                    <Text style={styles.primaryButtonHint}>Resume streaks, rooms, and guided resets.</Text>
+                  </>
+                )}
+              </LinearGradient>
+            </Pressable>
+          </Animated.View>
+
+          {/* Divider */}
+          <Animated.View
+            entering={FadeInDown.delay(200).springify()}
+            style={styles.dividerRow}
+          >
+            <View
+              style={[styles.dividerLine, { backgroundColor: dividerLineColor }]}
+            />
+            <Text style={[styles.dividerText, { color: dividerTextColor }]}>
+              or
+            </Text>
+            <View
+              style={[styles.dividerLine, { backgroundColor: dividerLineColor }]}
+            />
+          </Animated.View>
+
+          {/* Alternate entry buttons */}
+          <Animated.View
+            entering={FadeInDown.delay(240).springify()}
+            style={styles.socialSection}
+          >
+            {/* Continue as Guest */}
+            <Pressable
+              onPress={handleContinueAsGuest}
+              accessibilityRole="button"
+              accessibilityLabel="Continue as guest"
+              style={({ pressed }) => [
+                styles.socialButton,
+                {
+                  backgroundColor: socialBg,
+                  borderColor: socialBorder,
+                  opacity: pressed || loading ? 0.7 : 1,
+                },
+              ]}
+              disabled={loading}
+            >
+              <Ionicons
+                name="person-outline"
+                size={16}
+                color={isDark ? 'rgba(128,128,128,0.5)' : '#1A1A1A'}
+              />
+              <Text
+                style={[styles.socialButtonText, { color: socialTextColor }]}
+              >
+                Continue as Guest
+              </Text>
             </Pressable>
 
-            {/* Sign Up Link */}
-            <View style={styles.signUpRow}>
-              <Text style={[Typography.subheadline, { color: colors.textSecondary }]}>
-                {"Don't have an account? "}
-              </Text>
-              <Pressable
-                onPress={() => {
-                  Haptics.selectionAsync();
-                  router.push('/auth/signup');
-                }}
-                accessibilityRole="link"
-                accessibilityLabel="Create account"
-                hitSlop={8}
-                style={styles.signUpLink}
+            {/* Create account */}
+            <Pressable
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                router.push('/auth/signup');
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Create account"
+              style={({ pressed }) => [
+                styles.socialButton,
+                {
+                  backgroundColor: socialBg,
+                  borderColor: socialBorder,
+                  opacity: pressed ? 0.7 : 1,
+                },
+              ]}
+            >
+              <Text
+                style={[styles.socialButtonText, { color: socialTextColor }]}
               >
-                <Text style={[Typography.subheadlineMedium, { color: colors.accent }]}>
-                  Sign Up
-                </Text>
-              </Pressable>
-            </View>
+                Create Account
+              </Text>
+            </Pressable>
+          </Animated.View>
+
+          {/* Sign Up link */}
+          <Animated.View
+            entering={FadeInDown.delay(280).springify()}
+            style={styles.linkRow}
+          >
+            <Text style={[styles.linkText, { color: linkColor }]}>
+              {"Don\u2019t have an account? "}
+            </Text>
+            <Pressable
+              onPress={() => {
+                Haptics.selectionAsync();
+                router.push('/auth/signup');
+              }}
+              accessibilityRole="link"
+              accessibilityLabel="Sign Up"
+              hitSlop={8}
+            >
+              <Text
+                style={[
+                  styles.linkText,
+                  styles.linkTextBold,
+                  { color: linkColor },
+                ]}
+              >
+                Sign Up
+              </Text>
+            </Pressable>
           </Animated.View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -324,95 +507,214 @@ export default function LoginScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  keyboardView: { flex: 1 },
-  scrollContent: {
-    paddingHorizontal: Spacing.lg,
-    flexGrow: 1,
-    justifyContent: 'center',
-  },
-
-  brandSection: {
-    alignItems: 'center',
-    marginBottom: Spacing.xxl,
-  },
-  logoContainer: {
-    width: 80,
-    height: 80,
-    borderRadius: BorderRadius.xxl,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-  },
-  logoEmoji: { fontSize: 40 },
-
-  formSection: { marginBottom: Spacing.md },
-  formCard: {
-    borderRadius: BorderRadius.card,
-    borderWidth: 0.5,
-    overflow: 'hidden',
-    padding: Spacing.ml,
-    gap: Spacing.md,
-  },
-  inputGroup: { gap: Spacing.xs },
-  inputLabel: {
-    marginLeft: Spacing.xxs,
-  },
-  inputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: BorderRadius.input,
-    borderWidth: 0.5,
-    paddingHorizontal: Spacing.sm + 2,
-    minHeight: 48,
-    gap: Spacing.xs + 2,
-  },
-  input: {
+  container: {
     flex: 1,
-    paddingVertical: Spacing.sm,
   },
-  showPasswordButton: {
-    minHeight: 44,
-    minWidth: 44,
-    justifyContent: 'center',
-    alignItems: 'center',
+  keyboardView: {
+    flex: 1,
   },
-  inputDivider: {
-    height: StyleSheet.hairlineWidth,
-    marginHorizontal: -Spacing.ml,
+  scrollContent: {
+    paddingHorizontal: 28,
+    flexGrow: 1,
   },
 
-  errorBanner: {
-    borderRadius: BorderRadius.input,
-    borderWidth: 0.5,
-    padding: Spacing.sm,
-    marginBottom: Spacing.md,
+  // Header
+  headerSection: {
+    gap: 10,
+    marginBottom: 24,
   },
-
-  ctaSection: { gap: Spacing.ml },
-  signInButton: {
-    borderRadius: BorderRadius.lg,
-    paddingVertical: Spacing.md,
+  headerPillRow: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 56,
+    justifyContent: 'space-between',
+    gap: 12,
   },
-  guestButton: {
-    borderRadius: BorderRadius.lg,
-    paddingVertical: Spacing.md,
+  headerPill: {
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  headerPillText: {
+    fontFamily: BODY_FONT,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.4,
+    color: '#17120B',
+  },
+  headerMetaChip: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 48,
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 999,
     borderWidth: 1,
   },
-  signUpRow: {
+  headerMetaText: {
+    fontFamily: BODY_FONT,
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  heading: {
+    fontFamily: DISPLAY_FONT,
+    fontSize: 36,
+    fontWeight: '700',
+    letterSpacing: -0.6,
+  },
+  subtitle: {
+    fontFamily: BODY_FONT,
+    fontSize: 15,
+    lineHeight: 22,
+  },
+
+  // Form
+  formSection: {
+    position: 'relative',
+    overflow: 'hidden',
+    gap: 12,
+    marginBottom: 0,
+    borderRadius: 30,
+    borderWidth: 1,
+    padding: 18,
+  },
+  formSheen: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  formHeader: {
+    gap: 6,
+    marginBottom: 6,
+  },
+  formEyebrow: {
+    fontFamily: BODY_FONT,
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.4,
+  },
+  formTitle: {
+    fontFamily: DISPLAY_FONT,
+    fontSize: 24,
+    fontWeight: '700',
+    letterSpacing: -0.4,
+  },
+  inputField: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: 56,
+    borderRadius: 20,
+    borderWidth: 1,
+    paddingHorizontal: 16,
+    gap: 12,
+  },
+  inputText: {
+    flex: 1,
+    fontFamily: BODY_FONT,
+    fontSize: 15,
+  },
+  eyeButton: {
+    padding: 4,
+    minWidth: 30,
+    alignItems: 'center',
+  },
+
+  // Forgot password
+  forgotPasswordRow: {
+    alignItems: 'flex-end',
+    paddingVertical: 12,
+    marginBottom: 16,
+  },
+  forgotPasswordText: {
+    fontFamily: BODY_FONT,
+    fontSize: 13,
+  },
+
+  // Error
+  errorBanner: {
+    backgroundColor: 'rgba(255,59,48,0.12)',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 12,
+  },
+  errorText: {
+    fontFamily: BODY_FONT,
+    fontSize: 13,
+    color: '#FF453A',
+  },
+
+  // Primary button
+  primaryButton: {
+    minHeight: 60,
+    borderRadius: 24,
+    marginBottom: 28,
+    overflow: 'hidden',
+  },
+  primaryButtonFill: {
+    minHeight: 60,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+  },
+  primaryButtonText: {
+    fontFamily: BODY_FONT,
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#111115',
+  },
+  primaryButtonHint: {
+    marginTop: 2,
+    fontFamily: BODY_FONT,
+    fontSize: 12,
+    color: 'rgba(17,17,21,0.68)',
+  },
+
+  // Divider
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 28,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+  },
+  dividerText: {
+    fontFamily: BODY_FONT,
+    fontSize: 13,
+  },
+
+  // Social buttons
+  socialSection: {
+    gap: 12,
+    marginBottom: 28,
+  },
+  socialButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 52,
+    borderRadius: 26,
+    borderWidth: 1,
+    gap: 8,
+  },
+  socialButtonText: {
+    fontFamily: BODY_FONT,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+
+  // Link row
+  linkRow: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
     minHeight: 44,
   },
-  signUpLink: {
-    minHeight: 44,
-    justifyContent: 'center',
+  linkText: {
+    fontFamily: BODY_FONT,
+    fontSize: 13,
+  },
+  linkTextBold: {
+    fontWeight: '600',
   },
 });

@@ -32,6 +32,8 @@ export type MascotActivity = 'idle' | 'cheering' | 'sleeping' | 'dancing' | 'cle
 
 // Mascot personality types
 export type MascotPersonality = 'spark' | 'bubbles' | 'dusty' | 'tidy';
+export type LivingSituation = 'studio' | 'apartment' | 'house' | 'dorm' | 'shared';
+export type OnboardingEnergyLevel = 'exhausted' | 'low' | 'moderate' | 'high' | 'hyperfocused';
 
 // Mascot data
 export interface Mascot {
@@ -294,6 +296,10 @@ export interface Room {
   motivationalMessage?: string; // Encouraging message from AI
 }
 
+// Subscription types
+export type SubscriptionStatus = 'free' | 'trial' | 'active' | 'expired';
+export type SubscriptionTier = 'weekly' | 'monthly' | 'annual' | null;
+
 // User profile
 export interface UserProfile {
   id: string;
@@ -301,6 +307,18 @@ export interface UserProfile {
   avatar?: string;
   createdAt: Date;
   onboardingComplete: boolean;
+  livingSituation?: LivingSituation;
+  cleaningStruggles?: string[];
+  energyLevel?: OnboardingEnergyLevel;
+  timeAvailability?: number;
+  motivationStyle?: string;
+  guidePersonality?: MascotPersonality;
+  // Subscription
+  subscriptionStatus?: SubscriptionStatus;
+  subscriptionTier?: SubscriptionTier;
+  trialEndsAt?: Date;
+  subscriptionExpiresAt?: Date;
+  subscriptionId?: string;
 }
 
 // User stats for gamification
@@ -321,6 +339,12 @@ export interface UserStats {
   streakFreezesAvailable?: number;
   streakFreezesUsedThisMonth?: number;
   lastStreakFreezeUsed?: string;
+  // Comeback Engine (matches Convex stats schema)
+  totalCleaningSessions?: number;
+  gracePeriodEndsAt?: string;
+  comebackBonusMultiplier?: number;
+  lastComebackDate?: string;
+  comebackCount?: number;
 }
 
 // Achievement badges
@@ -331,7 +355,7 @@ export interface Badge {
   emoji: string;
   unlockedAt?: Date;
   requirement: number; // Number needed to unlock
-  type: 'tasks' | 'rooms' | 'streak' | 'time';
+  type: 'tasks' | 'rooms' | 'streak' | 'time' | 'comeback' | 'longComeback' | 'sessions';
 }
 
 export interface PhotoQuality {
@@ -399,16 +423,6 @@ export interface AIAnalysisResult {
   
   estimatedTotalTime: number;
   beforeAfterMetrics?: string[];
-}
-
-export interface SessionContext {
-  energyLevel: EnergyLevel;
-  availableMinutes: number;
-  timeOfDay: 'morning' | 'afternoon' | 'evening' | 'night';
-  dayOfWeek: number;
-  visitorExpected?: boolean;
-  userMood?: string;
-  priorityFocus?: string;
 }
 
 export interface PhotoQualityFeedback {
@@ -493,6 +507,7 @@ export interface CleaningSession {
 // App state
 export interface DeclutterState {
   // User
+  isLoaded: boolean;
   user: UserProfile | null;
   stats: UserStats;
 
@@ -590,6 +605,16 @@ export const BADGES: Badge[] = [
   { id: 'streak-30', name: 'Monthly Master', description: '30 day streak', emoji: '🏆', requirement: 30, type: 'streak' },
   { id: 'time-60', name: 'Hour Power', description: 'Clean for 60 minutes total', emoji: '⏰', requirement: 60, type: 'time' },
   { id: 'time-300', name: 'Time Investor', description: 'Clean for 5 hours total', emoji: '📈', requirement: 300, type: 'time' },
+  // Comeback Engine badges — celebrate returns, not punish absence
+  { id: 'comeback-1', name: 'Comeback Kid', description: 'Return after 3+ days away', emoji: '💛', requirement: 1, type: 'comeback' },
+  { id: 'comeback-3', name: 'Resilient Cleaner', description: 'Come back 3 times', emoji: '🌈', requirement: 3, type: 'comeback' },
+  { id: 'comeback-champion', name: 'Comeback Champion', description: 'Return after 7+ days away', emoji: '🏆', requirement: 7, type: 'longComeback' },
+  // Cumulative session badges — emphasize total over streaks
+  { id: 'sessions-10', name: 'Getting Started', description: '10 cleaning sessions total', emoji: '🌱', requirement: 10, type: 'sessions' },
+  { id: 'sessions-25', name: 'Building Habits', description: '25 cleaning sessions total', emoji: '🌿', requirement: 25, type: 'sessions' },
+  { id: 'sessions-50', name: 'Persistent Cleaner', description: '50 cleaning sessions total', emoji: '🌳', requirement: 50, type: 'sessions' },
+  { id: 'sessions-100', name: 'Century Club', description: '100 cleaning sessions total', emoji: '💯', requirement: 100, type: 'sessions' },
+  { id: 'sessions-250', name: 'Declutter Legend', description: '250 cleaning sessions total', emoji: '⭐', requirement: 250, type: 'sessions' },
 ];
 
 // Room type info
@@ -656,20 +681,4 @@ export const COLLECTIBLES: Collectible[] = [
   { id: 'special-streak-master', name: 'Streak Flame', description: '7-day cleaning streak!', emoji: '🔥', rarity: 'epic', category: 'special', xpValue: 200, spawnChance: 0, requiredTasks: 0, isSpecial: true },
   { id: 'special-speed-demon', name: 'Speed Demon', description: 'Finished 5 tasks in one session', emoji: '⚡', rarity: 'legendary', category: 'special', xpValue: 350, spawnChance: 0, requiredTasks: 0, isSpecial: true },
   { id: 'special-perfectionist', name: 'Perfectionist Star', description: '100% room completion', emoji: '⭐', rarity: 'legendary', category: 'special', xpValue: 400, spawnChance: 0, requiredTasks: 0, isSpecial: true },
-];
-
-// Motivational quotes for focus mode
-export const FOCUS_QUOTES: string[] = [
-  "You're doing amazing! One task at a time.",
-  "Small steps lead to big transformations.",
-  "Your space reflects your mind. Keep going!",
-  "Progress, not perfection.",
-  "Every minute counts. You've got this!",
-  "The hardest part is starting. You did it!",
-  "Cleaning is self-care for your space.",
-  "Future you will be so grateful.",
-  "Just 5 more minutes of awesome!",
-  "You're creating calm, one task at a time.",
-  "Messy to amazing - that's your superpower!",
-  "Your focus is unstoppable right now.",
 ];

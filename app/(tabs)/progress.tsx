@@ -1,21 +1,14 @@
-/**
- * Declutterly — Progress Screen (Apple 2026)
- * Meaningful metrics: rooms improved, tasks this week, before/after placeholder
- * Simplified activity rings, this week vs last week comparison
- */
-
-import { Colors, ColorTokens, RingColors } from '@/constants/Colors';
-import { GlassCard } from '@/components/ui/GlassCard';
+import { AmbientBackdrop } from '@/components/ui/AmbientBackdrop';
 import { useDeclutter } from '@/context/DeclutterContext';
 import { useColorScheme } from '@/hooks/useColorScheme';
-import { Typography } from '@/theme/typography';
-import { Spacing, BorderRadius } from '@/theme/spacing';
+import { useReducedMotion } from '@/hooks/useReducedMotion';
+import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
-import * as Haptics from 'expo-haptics';
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Dimensions,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -23,377 +16,897 @@ import {
   View,
 } from 'react-native';
 import Animated, {
+  Easing,
   FadeInDown,
+  useAnimatedProps,
+  useSharedValue,
+  withDelay,
+  withTiming,
 } from 'react-native-reanimated';
+import type { SharedValue } from 'react-native-reanimated';
+import Svg, { Circle, Defs, LinearGradient as SvgGradient, Stop } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useReducedMotion } from '@/hooks/useReducedMotion';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const AnimatedCircle: any = Animated.createAnimatedComponent(Circle as any);
 
-// Weekly Bar Chart
-interface WeeklyChartProps {
-  data: number[];
-  maxValue: number;
-  colors: ColorTokens;
-  isDark: boolean;
-}
+const BODY_FONT = Platform.OS === 'ios' ? 'DM Sans' : 'sans-serif';
+const DISPLAY_FONT = Platform.OS === 'ios' ? 'Bricolage Grotesque' : 'sans-serif';
+const WEEKDAY_LABELS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 
-function WeeklyChart({ data, maxValue, colors, isDark }: WeeklyChartProps) {
-  const today = new Date().getDay();
-  const todayIndex = today === 0 ? 6 : today - 1;
-  const reducedMotion = useReducedMotion();
+type WindowMode = 'weekly' | 'monthly';
+
+function AnimatedRing({
+  cx,
+  cy,
+  radius,
+  strokeWidth,
+  circumference,
+  gradientId,
+  progress,
+}: {
+  cx: number;
+  cy: number;
+  radius: number;
+  strokeWidth: number;
+  circumference: number;
+  gradientId: string;
+  progress: SharedValue<number>;
+}) {
+  const animatedProps = useAnimatedProps(() => ({
+    strokeDashoffset: circumference * (1 - progress.value),
+  }));
 
   return (
-    <View style={styles.chartContainer}>
-      {data.map((value, index) => {
-        const isToday = index === todayIndex;
-        const barHeight = maxValue > 0 ? (value / maxValue) * 80 : 0;
+    <AnimatedCircle
+      cx={cx}
+      cy={cy}
+      r={radius}
+      stroke={`url(#${gradientId})`}
+      strokeWidth={strokeWidth}
+      fill="none"
+      strokeLinecap="round"
+      strokeDasharray={circumference}
+      rotation="-90"
+      origin={`${cx}, ${cy}`}
+      animatedProps={animatedProps}
+    />
+  );
+}
 
-        return (
-          <View key={index} style={styles.chartBar}>
-            <View style={[styles.chartBarTrack, { backgroundColor: isDark ? colors.fillTertiary : colors.surfaceTertiary }]}>
-              <Animated.View
-                entering={reducedMotion ? undefined : FadeInDown.delay(index * 80).springify()}
-                style={[
-                  styles.chartBarFill,
-                  {
-                    height: `${Math.max(barHeight, value > 0 ? 8 : 0)}%`,
-                    backgroundColor: isToday ? colors.accent : colors.success,
-                    opacity: isToday ? 1 : 0.6,
-                  },
-                ]}
+function ConcentricRings({
+  roomsPercent,
+  tasksPercent,
+  streakPercent,
+  overallPercent,
+  isDark,
+  reducedMotion,
+}: {
+  roomsPercent: number;
+  tasksPercent: number;
+  streakPercent: number;
+  overallPercent: number;
+  isDark: boolean;
+  reducedMotion: boolean;
+}) {
+  const size = 184;
+  const center = size / 2;
+
+  const rings = [
+    {
+      key: 'rooms',
+      radius: 78,
+      strokeWidth: 16,
+      bg: isDark ? '#222226' : '#E7E7EA',
+      gradientStart: isDark ? '#FFFFFF' : '#A9A9AD',
+      gradientEnd: isDark ? '#F4F4F6' : '#C9C9CF',
+      value: roomsPercent / 100,
+    },
+    {
+      key: 'tasks',
+      radius: 56,
+      strokeWidth: 16,
+      bg: isDark ? '#242427' : '#ECECEF',
+      gradientStart: isDark ? '#D9E3D2' : '#C9D3C4',
+      gradientEnd: isDark ? '#A9B99F' : '#B6C0B0',
+      value: tasksPercent / 100,
+    },
+    {
+      key: 'streak',
+      radius: 34,
+      strokeWidth: 14,
+      bg: isDark ? '#262629' : '#EFEFF2',
+      gradientStart: isDark ? '#BFBFBF' : '#D8D8DB',
+      gradientEnd: isDark ? '#8E8E92' : '#B8B8BE',
+      value: streakPercent / 100,
+    },
+  ];
+
+  const outer = useSharedValue(reducedMotion ? rings[0].value : 0);
+  const middle = useSharedValue(reducedMotion ? rings[1].value : 0);
+  const inner = useSharedValue(reducedMotion ? rings[2].value : 0);
+
+  useEffect(() => {
+    const duration = 900;
+
+    if (reducedMotion) {
+      outer.value = rings[0].value;
+      middle.value = rings[1].value;
+      inner.value = rings[2].value;
+      return;
+    }
+
+    outer.value = withDelay(80, withTiming(rings[0].value, { duration, easing: Easing.out(Easing.cubic) }));
+    middle.value = withDelay(180, withTiming(rings[1].value, { duration, easing: Easing.out(Easing.cubic) }));
+    inner.value = withDelay(280, withTiming(rings[2].value, { duration, easing: Easing.out(Easing.cubic) }));
+  }, [inner, middle, outer, reducedMotion, rings]);
+
+  const shared = [outer, middle, inner];
+
+  return (
+    <View style={styles.ringShell}>
+      <Svg width={size} height={size}>
+        <Defs>
+          {rings.map((ring) => (
+            <SvgGradient
+              key={ring.key}
+              id={`progress-${ring.key}`}
+              x1="0%"
+              y1="0%"
+              x2="100%"
+              y2="100%"
+            >
+              <Stop offset="0%" stopColor={ring.gradientStart} />
+              <Stop offset="100%" stopColor={ring.gradientEnd} />
+            </SvgGradient>
+          ))}
+        </Defs>
+
+        {rings.map((ring, index) => {
+          const circumference = 2 * Math.PI * ring.radius;
+          return (
+            <React.Fragment key={ring.key}>
+              <Circle
+                cx={center}
+                cy={center}
+                r={ring.radius}
+                stroke={ring.bg}
+                strokeWidth={ring.strokeWidth}
+                fill="none"
               />
-            </View>
-            <Text style={[styles.chartDayLabel, {
-              color: isToday ? colors.accent : colors.textSecondary,
-              fontWeight: isToday ? '700' : '400',
-            }]}>
-              {DAYS[index]}
-            </Text>
-            {value > 0 && (
-              <Text style={[styles.chartValueLabel, { color: isToday ? colors.accent : colors.textTertiary }]}>
-                {value}
-              </Text>
-            )}
-          </View>
-        );
-      })}
+              <AnimatedRing
+                cx={center}
+                cy={center}
+                radius={ring.radius}
+                strokeWidth={ring.strokeWidth}
+                circumference={circumference}
+                gradientId={`progress-${ring.key}`}
+                progress={shared[index]}
+              />
+            </React.Fragment>
+          );
+        })}
+      </Svg>
+
+      <View style={styles.ringCenter}>
+        <Text style={[styles.ringPercent, { color: isDark ? '#FFFFFF' : '#17171A' }]}>
+          {overallPercent}%
+        </Text>
+        <Text
+          style={[
+            styles.ringLabel,
+            { color: isDark ? 'rgba(255,255,255,0.46)' : 'rgba(23,23,26,0.42)' },
+          ]}
+        >
+          done
+        </Text>
+      </View>
     </View>
   );
 }
 
-// Main Screen
+function MetricCard({
+  isDark,
+  value,
+  label,
+  icon,
+  onPress,
+}: {
+  isDark: boolean;
+  value: string;
+  label: string;
+  icon?: keyof typeof Ionicons.glyphMap;
+  onPress?: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole={onPress ? 'button' : undefined}
+      style={({ pressed }) => [
+        styles.metricCard,
+        {
+          backgroundColor: isDark ? 'rgba(20,20,24,0.96)' : 'rgba(255,255,255,0.96)',
+          borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+          opacity: pressed ? 0.8 : 1,
+        },
+      ]}
+    >
+      <View style={styles.metricValueRow}>
+        {icon ? (
+          <Ionicons
+            name={icon}
+            size={16}
+            color={isDark ? '#FFD39A' : '#A76423'}
+            style={{ marginRight: 4 }}
+          />
+        ) : null}
+        <Text style={[styles.metricNumber, { color: isDark ? '#FFFFFF' : '#17171A' }]}>
+          {value}
+        </Text>
+      </View>
+      <Text
+        style={[
+          styles.metricCaption,
+          { color: isDark ? 'rgba(255,255,255,0.4)' : 'rgba(23,23,26,0.44)' },
+        ]}
+      >
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
+function ProgressChart({
+  isDark,
+  mode,
+  data,
+  total,
+  max,
+  empty,
+  onStartReset,
+}: {
+  isDark: boolean;
+  mode: WindowMode;
+  data: number[];
+  total: number;
+  max: number;
+  empty: boolean;
+  onStartReset: () => void;
+}) {
+  const labels = mode === 'weekly' ? WEEKDAY_LABELS : ['W1', 'W2', 'W3', 'W4'];
+  const highlightIndex =
+    mode === 'weekly'
+      ? (new Date().getDay() + 6) % 7
+      : Math.min(3, Math.floor((new Date().getDate() - 1) / 7));
+
+  return (
+    <View
+      style={[
+        styles.chartCard,
+        {
+          backgroundColor: isDark ? 'rgba(20,20,24,0.96)' : 'rgba(255,255,255,0.96)',
+          borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+        },
+      ]}
+    >
+      <View style={styles.chartHeader}>
+        <View>
+          <Text style={[styles.chartTitle, { color: isDark ? '#FFFFFF' : '#17171A' }]}>
+            {mode === 'weekly' ? 'This Week' : 'This Month'}
+          </Text>
+          <Text
+            style={[
+              styles.chartSubtitle,
+              { color: isDark ? 'rgba(255,255,255,0.48)' : 'rgba(23,23,26,0.46)' },
+            ]}
+          >
+            {empty ? 'Your first reset will wake this up.' : `${total} tasks completed`}
+          </Text>
+        </View>
+
+        <Text
+          style={[
+            styles.chartChip,
+            {
+              color: isDark ? '#F4D0A0' : '#8E5E28',
+              backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(249,244,236,0.92)',
+            },
+          ]}
+        >
+          {empty ? 'Start here' : `${Math.max(...data)} best`}
+        </Text>
+      </View>
+
+      {empty ? (
+        <>
+          <Text
+            style={[
+              styles.emptyCardBody,
+              { color: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(23,23,26,0.48)' },
+            ]}
+          >
+            One room, one photo, one calm win. That is enough to start your rhythm.
+          </Text>
+
+          <View style={styles.emptyTrackRow}>
+            {labels.map((label, index) => {
+              const selected = index === highlightIndex;
+
+              return (
+                <View key={`${label}-${index}`} style={styles.emptyTrackItem}>
+                  <View
+                    style={[
+                      styles.emptyTrackPill,
+                      {
+                        backgroundColor: selected
+                          ? isDark
+                            ? '#FFF4E3'
+                            : '#1B1B20'
+                          : isDark
+                            ? 'rgba(255,255,255,0.10)'
+                            : 'rgba(23,23,26,0.10)',
+                      },
+                    ]}
+                  />
+                  <Text
+                    style={[
+                      styles.emptyTrackLabel,
+                      {
+                        color: selected
+                          ? isDark
+                            ? '#FFF4E3'
+                            : '#1B1B20'
+                          : isDark
+                            ? 'rgba(255,255,255,0.32)'
+                            : 'rgba(23,23,26,0.32)',
+                      },
+                    ]}
+                  >
+                    {label}
+                  </Text>
+                </View>
+              );
+            })}
+          </View>
+        </>
+      ) : (
+        <View style={styles.chartBars}>
+          {data.map((value, index) => {
+            const heightPercent = max > 0 ? value / max : 0;
+            const barHeight = Math.max(18, 78 * heightPercent);
+            const isPrimary = value === max && value > 0;
+
+            return (
+              <View key={`${labels[index]}-${index}`} style={styles.chartBarWrap}>
+                <View
+                  style={[
+                    styles.chartBar,
+                    {
+                      height: barHeight,
+                      backgroundColor: isPrimary
+                        ? isDark
+                          ? '#FFFFFF'
+                          : '#1B1B20'
+                        : isDark
+                          ? 'rgba(255,255,255,0.14)'
+                          : 'rgba(23,23,26,0.16)',
+                    },
+                  ]}
+                />
+                <Text
+                  style={[
+                    styles.chartLabel,
+                    { color: isDark ? 'rgba(255,255,255,0.34)' : 'rgba(23,23,26,0.34)' },
+                  ]}
+                >
+                  {labels[index]}
+                </Text>
+              </View>
+            );
+          })}
+        </View>
+      )}
+
+      {empty ? (
+        <Pressable
+          onPress={onStartReset}
+          accessibilityRole="button"
+          accessibilityLabel="Scan first room"
+          style={({ pressed }) => [{ opacity: pressed ? 0.86 : 1 }]}
+        >
+          <LinearGradient
+            colors={isDark ? ['#FFF4E3', '#F7D19B'] : ['#1B1B20', '#33323A']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.chartButton}
+          >
+            <Ionicons name="scan-outline" size={16} color={isDark ? '#17120B' : '#FFFFFF'} />
+            <Text style={[styles.chartButtonText, { color: isDark ? '#17120B' : '#FFFFFF' }]}>
+              Scan first room
+            </Text>
+          </LinearGradient>
+        </Pressable>
+      ) : null}
+    </View>
+  );
+}
+
 export default function ProgressScreen() {
   const rawScheme = useColorScheme();
-  const colorScheme = rawScheme === 'dark' ? 'dark' : 'light';
-  const colors = Colors[colorScheme];
-  const isDark = colorScheme === 'dark';
-  const insets = useSafeAreaInsets();
+  const isDark = rawScheme === 'dark';
   const reducedMotion = useReducedMotion();
-
-  const { stats, rooms } = useDeclutter();
+  const insets = useSafeAreaInsets();
+  const { stats, rooms: rawRooms, setActiveRoom } = useDeclutter();
+  const rooms = rawRooms ?? [];
+  const [mode, setMode] = useState<WindowMode>('weekly');
 
   const streak = stats?.currentStreak ?? 0;
+  const completedTasks = stats?.totalTasksCompleted ?? 0;
+  const completedRooms = stats?.totalRoomsCleaned ?? 0;
 
-  // Compute weekly data (tasks completed per day this week)
-  const { weeklyData, lastWeekTotal } = useMemo(() => {
-    const data = [0, 0, 0, 0, 0, 0, 0];
-    let lastWeek = 0;
+  const { weeklyData, monthlyData } = useMemo(() => {
+    const weekly = [0, 0, 0, 0, 0, 0, 0];
+    const monthly = [0, 0, 0, 0];
     const now = new Date();
 
-    // This week start (Monday)
     const startOfWeek = new Date(now);
     startOfWeek.setDate(now.getDate() - ((now.getDay() + 6) % 7));
     startOfWeek.setHours(0, 0, 0, 0);
 
-    // Last week start
-    const startOfLastWeek = new Date(startOfWeek);
-    startOfLastWeek.setDate(startOfLastWeek.getDate() - 7);
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
-    rooms.forEach(room => {
-      room.tasks.forEach(task => {
-        if (task.completed && task.completedAt) {
-          const completedDate = new Date(task.completedAt);
-          if (completedDate >= startOfWeek) {
-            const dayIndex = (completedDate.getDay() + 6) % 7;
-            data[dayIndex]++;
-          } else if (completedDate >= startOfLastWeek && completedDate < startOfWeek) {
-            lastWeek++;
-          }
+    rooms.forEach((room) => {
+      (room.tasks ?? []).forEach((task) => {
+        if (!task.completed || !task.completedAt) {
+          return;
+        }
+
+        const completedAt = new Date(task.completedAt);
+        if (completedAt >= startOfWeek) {
+          const weeklyIndex = (completedAt.getDay() + 6) % 7;
+          weekly[weeklyIndex] += 1;
+        }
+
+        if (completedAt >= startOfMonth) {
+          const monthlyIndex = Math.min(3, Math.floor((completedAt.getDate() - 1) / 7));
+          monthly[monthlyIndex] += 1;
         }
       });
     });
 
-    return { weeklyData: data, lastWeekTotal: lastWeek };
+    return { weeklyData: weekly, monthlyData: monthly };
   }, [rooms]);
 
-  const weeklyMax = Math.max(...weeklyData, 1);
-  const weeklyTotal = weeklyData.reduce((a, b) => a + b, 0);
+  const totalTasksAvailable = rooms.reduce((sum, room) => sum + (room.tasks?.length ?? 0), 0);
+  const fullyCompletedRooms = rooms.filter((room) => (room.currentProgress ?? 0) >= 100).length;
+  const roomsPercent = rooms.length > 0 ? Math.round((fullyCompletedRooms / rooms.length) * 100) : 0;
+  const tasksPercent = totalTasksAvailable > 0 ? Math.round((completedTasks / totalTasksAvailable) * 100) : 0;
+  const streakPercent = streak > 0 ? Math.min(Math.round((streak / 7) * 100), 100) : 0;
+  const overallPercent = Math.round((roomsPercent + tasksPercent + streakPercent) / 3);
 
-  // Meaningful metrics
-  const completedTasks = rooms.reduce((a, r) => a + r.tasks.filter(t => t.completed).length, 0);
-  const roomsImproved = rooms.filter(r => r.currentProgress > 0).length;
-  const roomsComplete = rooms.filter(r => r.currentProgress >= 100).length;
-  const focusMinutes = stats?.totalMinutesCleaned ?? 0;
+  const activeData = mode === 'weekly' ? weeklyData : monthlyData;
+  const activeTotal = activeData.reduce((sum, value) => sum + value, 0);
+  const activeMax = Math.max(...activeData, 1);
+  const isEmpty = rooms.length === 0 || (completedTasks === 0 && completedRooms === 0 && streak === 0);
 
-  // Week comparison
-  const weekDiff = weeklyTotal - lastWeekTotal;
-  const weekComparisonText = weekDiff > 0
-    ? `+${weekDiff} more than last week`
-    : weekDiff < 0
-      ? `${Math.abs(weekDiff)} fewer than last week`
-      : 'Same as last week';
-  const weekComparisonColor = weekDiff > 0 ? colors.success : weekDiff < 0 ? colors.warning : colors.textSecondary;
+  const handleAchievements = () => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    router.push('/achievements');
+  };
+
+  const handleStartReset = () => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setActiveRoom(null);
+    router.push('/camera');
+  };
+
+  const enter = (delay: number) =>
+    reducedMotion ? undefined : FadeInDown.duration(380).delay(delay);
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <View style={[styles.container, { backgroundColor: isDark ? '#0A0A0A' : '#F8F8F8' }]}>
+      <AmbientBackdrop isDark={isDark} variant="progress" />
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={[
           styles.scrollContent,
-          { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 100 },
+          { paddingTop: insets.top + 14, paddingBottom: insets.bottom + 100 },
         ]}
         showsVerticalScrollIndicator={false}
-        contentInsetAdjustmentBehavior="automatic"
       >
-        {/* Header */}
-        <Animated.View entering={reducedMotion ? undefined : FadeInDown.delay(0).springify()} style={styles.header}>
-          <Text style={[Typography.largeTitle, { color: colors.text }]} accessibilityRole="header">Progress</Text>
+        <Animated.View entering={enter(0)} style={styles.header}>
+          <Text style={[styles.title, { color: isDark ? '#FFFFFF' : '#17171A' }]}>Progress</Text>
+
+          <Pressable
+            onPress={handleAchievements}
+            accessibilityRole="button"
+            accessibilityLabel="View achievements"
+            style={({ pressed }) => [
+              styles.iconButton,
+              {
+                backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.82)',
+                borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+                opacity: pressed ? 0.78 : 1,
+              },
+            ]}
+          >
+            <Ionicons name="calendar-outline" size={18} color={isDark ? '#FFFFFF' : '#17171A'} />
+          </Pressable>
         </Animated.View>
 
-        {/* Key Metrics — meaningful stats */}
-        <Animated.View entering={reducedMotion ? undefined : FadeInDown.delay(60).springify()} style={styles.section}>
-          <View style={styles.statsGrid}>
-            {[
-              { label: 'Rooms Improved', value: roomsImproved, color: colors.accent },
-              { label: 'Tasks This Week', value: weeklyTotal, color: colors.success },
-              { label: 'Total Tasks Done', value: completedTasks, color: colors.warning },
-              { label: 'Rooms Complete', value: roomsComplete, color: RingColors.tasks },
-              { label: 'Focus Minutes', value: focusMinutes, color: RingColors.time },
-              { label: 'Day Streak', value: streak, color: RingColors.streak },
-            ].map((stat, index) => (
-              <Animated.View
-                key={stat.label}
-                entering={reducedMotion ? undefined : FadeInDown.delay(60 + index * 50).springify()}
-                style={[styles.statCard, {
-                  backgroundColor: isDark ? colors.surface : colors.backgroundSecondary,
-                  borderColor: isDark ? colors.cardBorder : colors.borderLight,
-                }]}
-              >
-                <Text style={[styles.statValue, { color: stat.color }]}
-                  accessibilityLabel={`${stat.value} ${stat.label}`}
+        <Animated.View entering={enter(70)} style={styles.segmentWrap}>
+          <View
+            style={[
+              styles.segment,
+              { backgroundColor: isDark ? 'rgba(22,22,26,0.92)' : 'rgba(26,26,30,0.96)' },
+            ]}
+          >
+            {(['weekly', 'monthly'] as const).map((item) => {
+              const selected = mode === item;
+              return (
+                <Pressable
+                  key={item}
+                  onPress={() => {
+                    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    setMode(item);
+                  }}
+                  style={[
+                    styles.segmentButton,
+                    selected && {
+                      backgroundColor: isDark ? '#2B2B30' : '#FFFFFF',
+                    },
+                  ]}
+                  accessibilityRole="tab"
+                  accessibilityState={{ selected }}
                 >
-                  {stat.value.toLocaleString()}
-                </Text>
-                <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
-                  {stat.label}
-                </Text>
-              </Animated.View>
-            ))}
+                  <Text
+                    style={[
+                      styles.segmentText,
+                      {
+                        color: selected
+                          ? isDark
+                            ? '#FFFFFF'
+                            : '#17171A'
+                          : isDark
+                            ? 'rgba(255,255,255,0.44)'
+                            : 'rgba(255,255,255,0.68)',
+                      },
+                    ]}
+                  >
+                    {item === 'weekly' ? 'Weekly' : 'Monthly'}
+                  </Text>
+                </Pressable>
+              );
+            })}
           </View>
         </Animated.View>
 
-        {/* Weekly Chart with comparison */}
-        <Animated.View entering={reducedMotion ? undefined : FadeInDown.delay(120).springify()} style={styles.section}>
-          <GlassCard variant="flat" style={styles.chartCard}>
-            <View style={styles.chartHeader}>
-              <Text style={[Typography.title3, { color: colors.text }]}>Daily Tasks</Text>
-              <View style={[styles.weeklyBadge, { backgroundColor: colors.accentMuted }]}>
-                <Text style={[Typography.caption1Medium, { color: colors.accent }]}>
-                  {weeklyTotal} this week
-                </Text>
-              </View>
-            </View>
-            <WeeklyChart
-              data={weeklyData}
-              maxValue={weeklyMax}
-              colors={colors}
-              isDark={isDark}
-            />
-            {/* This week vs last week */}
-            <View style={styles.weekComparison}>
-              <Text style={[Typography.caption1, { color: weekComparisonColor }]}>
-                {weekComparisonText}
-              </Text>
-            </View>
-          </GlassCard>
-        </Animated.View>
+        <Animated.View entering={enter(120)} style={styles.ringsBlock}>
+          <ConcentricRings
+            roomsPercent={roomsPercent}
+            tasksPercent={tasksPercent}
+            streakPercent={streakPercent}
+            overallPercent={overallPercent}
+            isDark={isDark}
+            reducedMotion={reducedMotion}
+          />
 
-        {/* Before/After Photo Placeholder */}
-        <Animated.View entering={reducedMotion ? undefined : FadeInDown.delay(180).springify()} style={styles.section}>
-          <GlassCard variant="subtle" style={styles.beforeAfterCard}>
-            <View style={styles.beforeAfterContent}>
-              <View style={[styles.beforeAfterIcon, { backgroundColor: isDark ? colors.fillTertiary : colors.surfaceTertiary }]}>
-                <Text style={{ fontSize: 32 }} accessibilityElementsHidden>P</Text>
-              </View>
-              <Text style={[Typography.headline, { color: colors.text, marginTop: Spacing.sm }]}>
-                Before & After
-              </Text>
-              <Text style={[Typography.subheadline, { color: colors.textSecondary, textAlign: 'center', marginTop: Spacing.xxs, lineHeight: 20 }]}>
-                Take a progress photo to see how far you&apos;ve come!
-              </Text>
-              <Pressable
-                onPress={() => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                  router.push('/camera');
-                }}
-                style={[styles.progressPhotoButton, { backgroundColor: colors.accentMuted }]}
-                accessibilityRole="button"
-                accessibilityLabel="Take a progress photo"
-              >
-                <Text style={[Typography.subheadlineMedium, { color: colors.accent }]}>
-                  Take Progress Photo
-                </Text>
-              </Pressable>
-            </View>
-          </GlassCard>
-        </Animated.View>
-
-        {/* Streak Info */}
-        {streak > 0 && (
-          <Animated.View entering={reducedMotion ? undefined : FadeInDown.delay(240).springify()} style={styles.section}>
-            <LinearGradient
-              colors={['#FF9F0A', '#FF6B00']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.streakCard}
+          {isEmpty ? (
+            <Text
+              style={[
+                styles.emptyHint,
+                { color: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(23,23,26,0.46)' },
+              ]}
             >
-              <View style={styles.streakCardInfo}>
-                <Text style={[Typography.title2, { color: '#FFFFFF' }]}>
-                  {streak} Day Streak!
-                </Text>
-                <Text style={[Typography.subheadline, { color: 'rgba(255,255,255,0.85)' }]}>
-                  {streak >= 7 ? 'You\'re on fire! Keep it up!' :
-                   streak >= 3 ? `${7 - streak} more days for a week streak!` :
-                   'Keep going to build your streak!'}
-                </Text>
-              </View>
-            </LinearGradient>
+              One first reset wakes this page up.
+            </Text>
+          ) : null}
+
+          <View style={styles.legendRow}>
+            <LegendStat isDark={isDark} value={`${roomsPercent}%`} label="Rooms" />
+            <LegendStat isDark={isDark} value={`${tasksPercent}%`} label="Tasks" />
+            <LegendStat isDark={isDark} value={`${streakPercent}%`} label="Streak" />
+          </View>
+        </Animated.View>
+
+        {!isEmpty ? (
+          <Animated.View entering={enter(180)} style={styles.metricRow}>
+            <MetricCard
+              isDark={isDark}
+              value={String(completedRooms)}
+              label="Rooms"
+              onPress={() => router.push('/rooms')}
+            />
+            <MetricCard
+              isDark={isDark}
+              value={String(completedTasks)}
+              label="Tasks Done"
+              onPress={handleAchievements}
+            />
+            <MetricCard
+              isDark={isDark}
+              value={String(streak)}
+              label="Day Streak"
+              icon="flame-outline"
+              onPress={handleAchievements}
+            />
           </Animated.View>
-        )}
+        ) : null}
+
+        <Animated.View entering={enter(240)}>
+          <ProgressChart
+            isDark={isDark}
+            mode={mode}
+            data={activeData}
+            total={activeTotal}
+            max={activeMax}
+            empty={isEmpty}
+            onStartReset={handleStartReset}
+          />
+        </Animated.View>
       </ScrollView>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1 },
-  scrollView: { flex: 1 },
-  scrollContent: { paddingHorizontal: Spacing.ml },
+function LegendStat({
+  isDark,
+  value,
+  label,
+}: {
+  isDark: boolean;
+  value: string;
+  label: string;
+}) {
+  return (
+    <View style={styles.legendStat}>
+      <Text style={[styles.legendValue, { color: isDark ? '#FFFFFF' : '#17171A' }]}>
+        {value}
+      </Text>
+      <Text
+        style={[
+          styles.legendLabel,
+          { color: isDark ? 'rgba(255,255,255,0.38)' : 'rgba(23,23,26,0.38)' },
+        ]}
+      >
+        {label}
+      </Text>
+    </View>
+  );
+}
 
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingHorizontal: 20,
+    gap: 18,
+  },
   header: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: Spacing.ml,
+    justifyContent: 'space-between',
   },
-
-  section: { marginBottom: Spacing.lg },
-
-  // Stats Grid — meaningful metrics
-  statsGrid: {
+  title: {
+    fontFamily: DISPLAY_FONT,
+    fontSize: 32,
+    lineHeight: 36,
+    fontWeight: '700',
+    letterSpacing: -0.7,
+  },
+  iconButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  segmentWrap: {
+    alignItems: 'center',
+  },
+  segment: {
+    width: 194,
+    borderRadius: 999,
+    padding: 4,
     flexDirection: 'row',
-    flexWrap: 'wrap',
+  },
+  segmentButton: {
+    flex: 1,
+    minHeight: 34,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  segmentText: {
+    fontFamily: BODY_FONT,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  ringsBlock: {
+    alignItems: 'center',
+    gap: 12,
+  },
+  ringShell: {
+    width: 184,
+    height: 184,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  ringCenter: {
+    position: 'absolute',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 2,
+  },
+  ringPercent: {
+    fontFamily: DISPLAY_FONT,
+    fontSize: 34,
+    lineHeight: 38,
+    fontWeight: '700',
+    letterSpacing: -0.8,
+  },
+  ringLabel: {
+    fontFamily: BODY_FONT,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  emptyHint: {
+    fontFamily: BODY_FONT,
+    fontSize: 13,
+    lineHeight: 18,
+    textAlign: 'center',
+    paddingHorizontal: 18,
+  },
+  legendRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 28,
+  },
+  legendStat: {
+    alignItems: 'center',
+    gap: 3,
+    minWidth: 64,
+  },
+  legendValue: {
+    fontFamily: DISPLAY_FONT,
+    fontSize: 24,
+    lineHeight: 26,
+    fontWeight: '700',
+  },
+  legendLabel: {
+    fontFamily: BODY_FONT,
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  metricRow: {
+    flexDirection: 'row',
     gap: 10,
   },
-  statCard: {
-    width: (SCREEN_WIDTH - 60) / 3,
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.sm,
-    borderRadius: BorderRadius.lg,
-    borderWidth: 0.5,
+  metricCard: {
+    flex: 1,
+    borderRadius: 20,
+    borderWidth: 1,
+    paddingVertical: 12,
     alignItems: 'center',
-    gap: Spacing.xxs,
+    justifyContent: 'center',
+    gap: 4,
   },
-  statValue: {
-    ...Typography.title3,
+  metricValueRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  statLabel: {
-    ...Typography.caption2,
-    textAlign: 'center',
+  metricNumber: {
+    fontFamily: DISPLAY_FONT,
+    fontSize: 28,
+    lineHeight: 30,
+    fontWeight: '700',
+    letterSpacing: -0.7,
   },
-
-  // Chart
-  chartCard: { padding: Spacing.ml },
+  metricCaption: {
+    fontFamily: BODY_FONT,
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  chartCard: {
+    borderRadius: 24,
+    borderWidth: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    gap: 14,
+  },
   chartHeader: {
     flexDirection: 'row',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: Spacing.ml,
+    gap: 12,
   },
-  weeklyBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: BorderRadius.md,
+  chartTitle: {
+    fontFamily: DISPLAY_FONT,
+    fontSize: 24,
+    lineHeight: 28,
+    fontWeight: '700',
+    letterSpacing: -0.5,
   },
-  chartContainer: {
+  chartSubtitle: {
+    fontFamily: BODY_FONT,
+    fontSize: 13,
+    fontWeight: '500',
+    marginTop: 4,
+  },
+  emptyCardBody: {
+    fontFamily: BODY_FONT,
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  chartChip: {
+    overflow: 'hidden',
+    fontFamily: BODY_FONT,
+    fontSize: 12,
+    fontWeight: '700',
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  chartBars: {
     flexDirection: 'row',
     alignItems: 'flex-end',
     justifyContent: 'space-between',
-    height: 120,
-    gap: 4,
+    gap: 8,
+    minHeight: 86,
   },
-  chartBar: {
+  chartBarWrap: {
     flex: 1,
     alignItems: 'center',
-    gap: 4,
-  },
-  chartBarTrack: {
-    width: '100%',
-    height: 80,
-    borderRadius: 6,
     justifyContent: 'flex-end',
-    overflow: 'hidden',
+    gap: 8,
   },
-  chartBarFill: {
+  chartBar: {
     width: '100%',
-    borderRadius: 6,
-    minHeight: 4,
+    borderRadius: 8,
   },
-  chartDayLabel: {
-    fontSize: 10,
-    fontWeight: '500',
-  },
-  chartValueLabel: {
-    fontSize: 9,
+  chartLabel: {
+    fontFamily: BODY_FONT,
+    fontSize: 11,
     fontWeight: '600',
   },
-  weekComparison: {
-    marginTop: Spacing.sm,
+  emptyTrackRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+  },
+  emptyTrackItem: {
+    flex: 1,
     alignItems: 'center',
+    gap: 8,
   },
-
-  // Before/After placeholder
-  beforeAfterCard: {
-    padding: Spacing.lg,
+  emptyTrackPill: {
+    width: '100%',
+    height: 12,
+    borderRadius: 999,
   },
-  beforeAfterContent: {
-    alignItems: 'center',
+  emptyTrackLabel: {
+    fontFamily: BODY_FONT,
+    fontSize: 11,
+    fontWeight: '700',
   },
-  beforeAfterIcon: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  progressPhotoButton: {
-    marginTop: Spacing.md,
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.button,
-    minHeight: 44,
-    justifyContent: 'center',
-  },
-
-  // Streak Card
-  streakCard: {
+  chartButton: {
+    minHeight: 52,
+    borderRadius: 999,
+    paddingHorizontal: 18,
+    paddingVertical: 14,
     flexDirection: 'row',
     alignItems: 'center',
-    padding: Spacing.ml,
-    borderRadius: BorderRadius.card,
-    gap: Spacing.md,
+    justifyContent: 'center',
+    gap: 8,
   },
-  streakCardInfo: { flex: 1 },
+  chartButtonText: {
+    fontFamily: BODY_FONT,
+    fontSize: 15,
+    fontWeight: '800',
+  },
 });

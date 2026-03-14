@@ -4,11 +4,11 @@
  */
 
 import React, { useMemo } from 'react';
+import { useColorScheme } from '@/hooks/useColorScheme';
 import {
   View,
   Text,
   StyleSheet,
-  useColorScheme,
 } from 'react-native';
 import Animated, {
   FadeIn,

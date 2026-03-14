@@ -1,6 +1,6 @@
+import { authTables } from "@convex-dev/auth/server";
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
-import { authTables } from "@convex-dev/auth/server";
 
 export default defineSchema({
   ...authTables,
@@ -17,9 +17,46 @@ export default defineSchema({
     avatar: v.optional(v.string()),
     createdAt: v.optional(v.number()),
     onboardingComplete: v.optional(v.boolean()),
+    // Onboarding preferences
+    livingSituation: v.optional(v.union(
+      v.literal("studio"),
+      v.literal("apartment"),
+      v.literal("house"),
+      v.literal("dorm"),
+      v.literal("shared")
+    )),
+    cleaningStruggles: v.optional(v.array(v.string())),
+    energyLevel: v.optional(v.union(
+      v.literal("exhausted"),
+      v.literal("low"),
+      v.literal("moderate"),
+      v.literal("high"),
+      v.literal("hyperfocused")
+    )),
+    timeAvailability: v.optional(v.number()),
+    motivationStyle: v.optional(v.string()),
+    // Subscription (RevenueCat)
+    subscriptionStatus: v.optional(v.union(
+      v.literal("free"),
+      v.literal("trial"),
+      v.literal("active"),
+      v.literal("expired")
+    )),
+    subscriptionTier: v.optional(v.union(
+      v.literal("weekly"),
+      v.literal("monthly"),
+      v.literal("annual")
+    )),
+    trialEndsAt: v.optional(v.number()),
+    subscriptionExpiresAt: v.optional(v.number()),
+    subscriptionId: v.optional(v.string()),
+    revenuecatUserId: v.optional(v.string()),
+    expoPushToken: v.optional(v.string()),
+    pushTokenUpdatedAt: v.optional(v.number()),
   })
     .index("email", ["email"])
-    .index("phone", ["phone"]),
+    .index("phone", ["phone"])
+    .index("by_subscriptionStatus", ["subscriptionStatus"]),
 
   // Rooms being tracked
   rooms: defineTable({
@@ -85,7 +122,7 @@ export default defineSchema({
     targetObjects: v.optional(v.array(v.string())),
     destinationLocation: v.optional(v.string()),
     destinationInstructions: v.optional(v.string()),
-    destinationRequiresSetup: v.optional(v.string()),
+    destinationRequiresSetup: v.optional(v.boolean()),
     category: v.optional(v.string()),
     energyRequired: v.optional(v.string()),
     decisionLoad: v.optional(v.string()),
@@ -129,6 +166,12 @@ export default defineSchema({
     streakFreezesAvailable: v.optional(v.number()),
     streakFreezesUsedThisMonth: v.optional(v.number()),
     lastStreakFreezeUsed: v.optional(v.string()),
+    // Comeback Engine fields
+    totalCleaningSessions: v.optional(v.number()),           // Cumulative, never resets
+    gracePeriodEndsAt: v.optional(v.string()),               // When 48hr grace ends (ISO date)
+    comebackBonusMultiplier: v.optional(v.number()),         // 1.5x, 2x based on break length
+    lastComebackDate: v.optional(v.string()),                // When user last "came back"
+    comebackCount: v.optional(v.number()),                   // Times user has returned after breaks
   }).index("by_userId", ["userId"]),
 
   // Unlocked badges
@@ -144,7 +187,10 @@ export default defineSchema({
       v.literal("tasks"),
       v.literal("rooms"),
       v.literal("streak"),
-      v.literal("time")
+      v.literal("time"),
+      v.literal("comeback"),
+      v.literal("longComeback"),
+      v.literal("sessions")
     ),
   }).index("by_userId", ["userId"]),
 
@@ -216,8 +262,8 @@ export default defineSchema({
     userId: v.id("users"),
     collectibleId: v.string(),
     collectedAt: v.number(),
-    roomId: v.optional(v.string()),
-    taskId: v.optional(v.string()),
+    roomId: v.optional(v.id("rooms")),
+    taskId: v.optional(v.id("tasks")),
   }).index("by_userId", ["userId"]),
 
   // Collection statistics per user (one per user)
@@ -262,7 +308,7 @@ export default defineSchema({
     isActive: v.boolean(),
     participants: v.array(
       v.object({
-        userId: v.string(),
+        userId: v.id("users"),
         displayName: v.string(),
         progress: v.number(),
         joined: v.number(),
@@ -287,4 +333,81 @@ export default defineSchema({
   })
     .index("by_userId", ["userId"])
     .index("by_friendId", ["friendId"]),
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // ENGAGEMENT ENGINE — Duolingo-style retention features
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  // GitHub-style streak calendar — daily activity log
+  activityLog: defineTable({
+    userId: v.id("users"),
+    date: v.string(), // ISO date string YYYY-MM-DD
+    tasksCompleted: v.number(),
+    minutesCleaned: v.number(),
+    xpEarned: v.number(),
+    sessionsCount: v.number(),
+  })
+    .index("by_userId", ["userId"])
+    .index("by_userId_date", ["userId", "date"]),
+
+  // Weekly engagement-matched leagues
+  leaderboards: defineTable({
+    userId: v.id("users"),
+    userName: v.string(),
+    userEmoji: v.string(), // mascot emoji
+    weekStart: v.string(), // ISO date of Monday
+    xpEarned: v.number(), // XP earned this week
+    tasksCompleted: v.number(),
+    league: v.union(
+      v.literal("bronze"),
+      v.literal("silver"),
+      v.literal("gold"),
+      v.literal("diamond"),
+      v.literal("champion")
+    ),
+    rank: v.optional(v.number()),
+    promoted: v.optional(v.boolean()),
+    relegated: v.optional(v.boolean()),
+  })
+    .index("by_weekStart", ["weekStart"])
+    .index("by_userId", ["userId"])
+    .index("by_league_weekStart", ["league", "weekStart"])
+    .index("by_weekStart_xpEarned", ["weekStart", "xpEarned"]),
+
+  // Accountability Partners — lightweight pairs for mutual nudging
+  accountabilityPairs: defineTable({
+    userId: v.id("users"),
+    partnerId: v.id("users"),
+    status: v.union(v.literal("pending"), v.literal("active"), v.literal("ended")),
+    createdAt: v.number(),
+    inviteCode: v.string(),
+    // Today's activity visible to partner
+    userActiveToday: v.boolean(),
+    partnerActiveToday: v.boolean(),
+    // Nudge tracking
+    lastNudgeSent: v.optional(v.number()),
+    lastNudgeReceived: v.optional(v.number()),
+    nudgeCount: v.number(),
+    // Bonus tracking
+    bothActiveStreak: v.number(),
+    totalBothActiveDays: v.number(),
+  })
+    .index("by_userId", ["userId"])
+    .index("by_partnerId", ["partnerId"])
+    .index("by_inviteCode", ["inviteCode"]),
+
+  // Variable rewards — mystery drops every 3rd task
+  variableRewards: defineTable({
+    userId: v.id("users"),
+    taskNumber: v.number(), // which task triggered it (every 3rd)
+    rewardType: v.union(
+      v.literal("bonus_xp"),
+      v.literal("streak_shield"),
+      v.literal("mystery_collectible"),
+      v.literal("mascot_treat")
+    ),
+    amount: v.number(),
+    earnedAt: v.number(),
+    claimed: v.boolean(),
+  }).index("by_userId", ["userId"]),
 });

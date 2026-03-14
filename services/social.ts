@@ -109,6 +109,12 @@ function mapChallenge(challenge: ConvexChallengeDoc | null): Challenge | null {
   };
 }
 
+function logHandledSocialError(message: string, error: unknown) {
+  if (__DEV__) {
+    console.info(message, error);
+  }
+}
+
 export async function createChallenge(
   type: ChallengeType,
   title: string,
@@ -129,7 +135,7 @@ export async function createChallenge(
     });
     return mapChallenge(challenge as ConvexChallengeDoc | null);
   } catch (error) {
-    console.error('Error creating challenge:', error);
+    logHandledSocialError('Error creating challenge:', error);
     return null;
   }
 }
@@ -144,7 +150,7 @@ export async function joinChallenge(inviteCode: string): Promise<Challenge | nul
     });
     return mapChallenge(challenge as ConvexChallengeDoc | null);
   } catch (error) {
-    console.error('Error joining challenge:', error);
+    logHandledSocialError('Error joining challenge:', error);
     return null;
   }
 }
@@ -161,7 +167,7 @@ export async function updateChallengeProgress(
     });
     return true;
   } catch (error) {
-    console.error('Error updating challenge progress:', error);
+    logHandledSocialError('Error updating challenge progress:', error);
     return false;
   }
 }
@@ -175,7 +181,7 @@ export async function getChallengeById(
     });
     return mapChallenge(challenge as ConvexChallengeDoc | null);
   } catch (error) {
-    console.error('Error loading challenge:', error);
+    logHandledSocialError('Error loading challenge:', error);
     return null;
   }
 }
@@ -187,7 +193,7 @@ export async function getMyChallenges(): Promise<Challenge[]> {
       mapChallenge(challenge)
     ).filter(Boolean) as Challenge[];
   } catch (error) {
-    console.error('Error loading challenges:', error);
+    logHandledSocialError('Error loading challenges:', error);
     return [];
   }
 }
@@ -199,7 +205,7 @@ export async function addConnection(targetUserId: string): Promise<boolean> {
     });
     return true;
   } catch (error) {
-    console.error('Error adding connection:', error);
+    logHandledSocialError('Error adding connection:', error);
     return false;
   }
 }
@@ -221,7 +227,7 @@ export async function getConnections(): Promise<Connection[]> {
       };
     });
   } catch (error) {
-    console.error('Error loading connections:', error);
+    logHandledSocialError('Error loading connections:', error);
     return [];
   }
 }

@@ -4,6 +4,7 @@
  */
 
 import { Colors } from '@/constants/Colors';
+import { useColorScheme } from '@/hooks/useColorScheme';
 import { SpringConfigs } from '@/theme/animations';
 import { BorderRadius, Spacing } from '@/theme/spacing';
 import * as Haptics from 'expo-haptics';
@@ -13,7 +14,6 @@ import {
     Dimensions,
     Pressable,
     StyleSheet,
-    useColorScheme,
     View,
 } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';

@@ -38,6 +38,9 @@ export const createChallenge = mutation({
     const inviteCode = generateInviteCode();
     const now = Date.now();
     const durationDays = args.durationDays ?? 7;
+    if (durationDays <= 0) {
+      throw new Error("durationDays must be a positive number");
+    }
     const startDate = args.startDate ?? now;
     const endDate =
       args.endDate ?? startDate + durationDays * 24 * 60 * 60 * 1000;
@@ -57,7 +60,7 @@ export const createChallenge = mutation({
       isActive: true,
       participants: [
         {
-          userId: userId as string,
+          userId: userId,
           displayName: creatorName,
           progress: 0,
           joined: now,
@@ -83,7 +86,7 @@ export const joinChallenge = mutation({
     if (!challenge.isActive) throw new Error("Challenge is no longer active");
 
     const participants = challenge.participants ?? [];
-    if (participants.some((participant) => participant.userId === (userId as string))) {
+    if (participants.some((participant) => participant.userId === userId)) {
       return challenge._id;
     }
 
@@ -94,7 +97,7 @@ export const joinChallenge = mutation({
       participants: [
         ...participants,
         {
-          userId: userId as string,
+          userId: userId,
           displayName,
           progress: 0,
           joined: Date.now(),
@@ -120,7 +123,7 @@ export const getChallenge = query({
     const participants = challenge.participants ?? [];
     if (
       challenge.creatorId !== userId &&
-      !participants.some((participant) => participant.userId === (userId as string))
+      !participants.some((participant) => participant.userId === userId)
     ) {
       return null;
     }
@@ -143,7 +146,7 @@ export const updateChallengeProgress = mutation({
     if (!challenge) throw new Error("Challenge not found");
 
     const nextParticipants = (challenge.participants ?? []).map((participant) => {
-      if (participant.userId !== (userId as string)) {
+      if (participant.userId !== userId) {
         return participant;
       }
 
@@ -182,7 +185,7 @@ export const listChallenges = query({
       (c) =>
         c.creatorId !== userId &&
         (c.participants ?? []).some(
-          (participant) => participant.userId === (userId as string)
+          (participant) => participant.userId === userId
         )
     );
 

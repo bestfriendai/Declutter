@@ -4,6 +4,7 @@
  */
 
 import { Colors, InteractiveStates } from '@/constants/Colors';
+import { useColorScheme } from '@/hooks/useColorScheme';
 import { ScaleValues, SpringConfigs } from '@/theme/animations';
 import { BorderRadius, Spacing, TouchTargets } from '@/theme/spacing';
 import { Typography } from '@/theme/typography';
@@ -13,7 +14,6 @@ import {
     Pressable,
     StyleSheet,
     Text,
-    useColorScheme,
     View,
 } from 'react-native';
 import Animated, {

@@ -4,12 +4,12 @@
  */
 
 import React, { useState, useRef, forwardRef, useImperativeHandle } from 'react';
+import { useColorScheme } from '@/hooks/useColorScheme';
 import {
   View,
   TextInput,
   TextInputProps,
   StyleSheet,
-  useColorScheme,
   Pressable,
   Text,
 } from 'react-native';

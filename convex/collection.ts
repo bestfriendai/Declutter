@@ -46,8 +46,8 @@ export const collect = mutation({
   args: {
     collectibleId: v.string(),
     rarity: v.string(),
-    roomId: v.optional(v.string()),
-    taskId: v.optional(v.string()),
+    roomId: v.optional(v.id("rooms")),
+    taskId: v.optional(v.id("tasks")),
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);

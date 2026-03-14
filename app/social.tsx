@@ -1,380 +1,298 @@
 /**
- * Social & Challenges Screen
- * Convex-backed challenge hub with quick challenge templates
- * Simplified create form: title + type (auto-fill defaults)
+ * Declutterly -- Social / Community Screen
+ * Matches Pencil design: "Community" title + people icon,
+ * weekly challenge card, your circle with avatars,
+ * circle activity feed, grow your circle CTA.
  */
 
-import { GlassButton } from '@/components/ui/GlassButton';
-import { GlassCard } from '@/components/ui/GlassCard';
 import { useAuth } from '@/context/AuthContext';
+import { AmbientBackdrop } from '@/components/ui/AmbientBackdrop';
+import { ExpressiveStateView } from '@/components/ui/ExpressiveStateView';
 import {
-    Challenge,
-    ChallengeType,
-    createChallenge,
-    getMyChallenges,
-    joinChallenge,
+  Challenge,
+  getMyChallenges,
 } from '@/services/social';
-import { useTheme } from '@/theme/ThemeProvider';
+import { useColorScheme } from '@/hooks/useColorScheme';
+import { useReducedMotion } from '@/hooks/useReducedMotion';
 import { Ionicons } from '@expo/vector-icons';
-import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
+import { router } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-    Alert,
-    KeyboardAvoidingView,
-    Modal,
-    Platform,
-    Pressable,
-    RefreshControl,
-    ScrollView,
-    Share,
-    StyleSheet,
-    Text,
-    TextInput,
-    View,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  Share,
+  StyleSheet,
+  Text,
+  View,
 } from 'react-native';
 import Animated, {
-    FadeInDown,
-    SlideInRight,
+  FadeInDown,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useReducedMotion } from '@/hooks/useReducedMotion';
 
-// Challenge type info
-const CHALLENGE_TYPES: Record<ChallengeType, { icon: string; label: string; unit: string }> = {
-  tasks_count: { icon: 'checkmark-done', label: 'Complete Tasks', unit: 'tasks' },
-  time_spent: { icon: 'time', label: 'Time Spent', unit: 'minutes' },
-  room_complete: { icon: 'home', label: 'Complete Room', unit: 'room' },
-  streak: { icon: 'flame', label: 'Maintain Streak', unit: 'days' },
-  collectibles: { icon: 'sparkles', label: 'Collect Items', unit: 'items' },
-};
-
-// Quick Challenge Templates
-const QUICK_CHALLENGES: Array<{
-  title: string;
-  type: ChallengeType;
-  target: number;
-  duration: number;
-  description: string;
-  icon: string;
-}> = [
-  {
-    title: '15-Minute Speed Clean',
-    type: 'time_spent',
-    target: 15,
-    duration: 1,
-    description: 'Spend 15 minutes cleaning as fast as you can!',
-    icon: 'flash',
-  },
-  {
-    title: 'Trash Bag Challenge',
-    type: 'tasks_count',
-    target: 5,
-    duration: 3,
-    description: 'Complete 5 tasks focused on clearing trash',
-    icon: 'trash',
-  },
-  {
-    title: 'Weekend Room Blitz',
-    type: 'room_complete',
-    target: 1,
-    duration: 2,
-    description: 'Fully clean one room over the weekend',
-    icon: 'home',
-  },
-  {
-    title: '7-Day Streak',
-    type: 'streak',
-    target: 7,
-    duration: 7,
-    description: 'Clean something every day for a week',
-    icon: 'flame',
-  },
+// ─────────────────────────────────────────────────────────────────────────────
+// Mock Circle Data (matching Pencil design)
+// ─────────────────────────────────────────────────────────────────────────────
+const CIRCLE_MEMBERS = [
+  { name: 'Sarah', initial: 'S', color: '#FFFFFF', dotColor: '#FFFFFF' },
+  { name: 'Jamie', initial: 'J', color: '#CCCCCC', dotColor: '#FFFFFF' },
+  { name: 'Alex', initial: 'A', color: '#999999', dotColor: '#707070' },
+  { name: 'Mia', initial: 'M', color: '#707070', dotColor: '#FFFFFF' },
 ];
 
-// Challenge card component
-function ChallengeCard({
-  challenge,
-  currentUserId,
-}: {
-  challenge: Challenge;
-  currentUserId?: string;
-}) {
-  const { colors } = useTheme();
-  const typeInfo = CHALLENGE_TYPES[challenge.type];
-  const myProgress = challenge.participants.find(p => p.userId === currentUserId);
-  const progressPercent = myProgress
-    ? Math.min((myProgress.progress / challenge.target) * 100, 100)
-    : 0;
+const ACTIVITY_FEED = [
+  { initial: 'J', color: '#CCCCCC', message: 'Jamie finished Kitchen Reset \u{1F389}', time: '2h ago' },
+  { initial: 'S', color: '#FFFFFF', message: 'You completed 3 tasks in Bedroom', time: '5h ago' },
+  { initial: 'A', color: '#999999', message: 'Alex started Living Room \u{1F9F9}', time: 'Yesterday' },
+];
 
-  const daysLeft = Math.max(
-    0,
-    Math.ceil((challenge.endDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24))
-  );
-
-  const handleShare = async () => {
-    try {
-      await Share.share({
-        message: `Join my Declutterly challenge: "${challenge.title}"! Use code: ${challenge.inviteCode}`,
-      });
-    } catch {
-      // User cancelled share
-    }
-  };
-
+// ─────────────────────────────────────────────────────────────────────────────
+// Weekly Challenge Card
+// ─────────────────────────────────────────────────────────────────────────────
+function WeeklyChallengeCard({ isDark }: { isDark: boolean }) {
   return (
-    <GlassCard style={styles.challengeCard}>
-      <View style={styles.challengeHeader}>
-        <View style={[styles.typeIcon, { backgroundColor: colors.accentMuted }]}>
-          <Ionicons name={typeInfo.icon as any} size={20} color={colors.primary} />
+    <LinearGradient
+      colors={isDark
+        ? ['#1A1A1A', '#151515', '#121212'] as const
+        : ['#F5F5F5', '#F0F0F0', '#EBEBEB'] as const
+      }
+      start={{ x: 0, y: 0 }}
+      end={{ x: 0.5, y: 1 }}
+      style={[styles.challengeCard, {
+        borderColor: isDark ? 'rgba(255,255,255,0.09)' : 'rgba(0,0,0,0.06)',
+      }]}
+    >
+      {/* Badge */}
+      <View style={[styles.challengeBadge, {
+        backgroundColor: isDark ? 'rgba(255,255,255,0.13)' : 'rgba(0,0,0,0.06)',
+      }]}>
+        <Text style={{ fontSize: 12 }}>{'\u{1F3C6}'}</Text>
+        <Text style={[styles.challengeBadgeText, {
+          color: isDark ? 'rgba(255,255,255,0.56)' : 'rgba(0,0,0,0.5)',
+        }]}>
+          WEEKLY CHALLENGE
+        </Text>
+      </View>
+
+      {/* Title */}
+      <Text style={[styles.challengeTitle, {
+        color: isDark ? '#FFFFFF' : '#1A1A1A',
+      }]}>
+        Clean 5 rooms this week
+      </Text>
+
+      {/* Progress bar + text */}
+      <View style={styles.challengeProgress}>
+        <View style={[styles.progressTrack, {
+          backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+        }]}>
+          <LinearGradient
+            colors={['#FFFFFF', '#888888'] as const}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={[styles.progressFill, { width: '60%' }]}
+          />
         </View>
-        <View style={styles.challengeInfo}>
-          <Text style={[styles.challengeTitle, { color: colors.text }]}>
-            {challenge.title}
-          </Text>
-          <Text style={[styles.challengeDesc, { color: colors.textSecondary }]}>
-            {challenge.description}
-          </Text>
-        </View>
+        <Text style={[styles.progressText, {
+          color: isDark ? 'rgba(255,255,255,0.38)' : 'rgba(0,0,0,0.4)',
+        }]}>
+          3 of 5 complete {'\u00B7'} 250 XP reward
+        </Text>
+      </View>
+    </LinearGradient>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Your Circle Section
+// ─────────────────────────────────────────────────────────────────────────────
+function YourCircle({ isDark, onManage }: { isDark: boolean; onManage: () => void }) {
+  return (
+    <View style={styles.circleSection}>
+      {/* Header */}
+      <View style={styles.circleSectionHeader}>
+        <Text style={[styles.circleSectionTitle, {
+          color: isDark ? '#FFFFFF' : '#1A1A1A',
+        }]}>
+          Your Circle
+        </Text>
         <Pressable
-          onPress={handleShare}
+          onPress={onManage}
           accessibilityRole="button"
-          accessibilityLabel="Share challenge"
-          hitSlop={8}
+          accessibilityLabel="Manage circle"
         >
-          <Ionicons name="share-outline" size={22} color={colors.textSecondary} />
+          <Text style={[styles.circleManage, {
+            color: isDark ? '#FFFFFF' : '#1A1A1A',
+          }]}>
+            Manage
+          </Text>
         </Pressable>
       </View>
 
-      <View style={styles.challengeProgress}>
-        <View style={[styles.progressBar, { backgroundColor: colors.border }]}>
-          <View
-            style={[
-              styles.progressFill,
-              {
-                width: `${progressPercent}%`,
-                backgroundColor: colors.primary,
-              },
-            ]}
-          />
-        </View>
-        <View style={styles.progressLabels}>
-          <Text style={[styles.progressText, { color: colors.textSecondary }]}>
-            {myProgress?.progress || 0} / {challenge.target} {typeInfo.unit}
-          </Text>
-          <Text style={[styles.daysLeft, { color: colors.warning }]}>
-            {daysLeft} days left
-          </Text>
-        </View>
-      </View>
-
-      <View style={styles.participantsRow}>
-        <View style={styles.avatarStack}>
-          {challenge.participants.slice(0, 3).map((p, i) => (
-            <View
-              key={p.userId}
-              style={[
-                styles.avatar,
-                { backgroundColor: colors.primary, borderColor: colors.avatarBorder, marginLeft: i > 0 ? -8 : 0 },
-              ]}
-            >
-              <Text style={[styles.avatarText, { color: colors.textOnPrimary }]}>
-                {p.displayName.charAt(0).toUpperCase()}
+      {/* Avatar row */}
+      <View style={styles.avatarRow}>
+        {CIRCLE_MEMBERS.map((member, idx) => (
+          <View key={idx} style={styles.avatarWrap}>
+            <View style={[styles.circleAvatar, { backgroundColor: member.color }]}>
+              <Text style={[styles.circleAvatarInitial, {
+                color: isDark ? '#1A1A1A' : '#FFFFFF',
+              }]}>
+                {member.initial}
               </Text>
             </View>
-          ))}
-        </View>
-        <Text style={[styles.participantCount, { color: colors.textSecondary }]}>
-          {challenge.participants.length} participant
-          {challenge.participants.length !== 1 ? 's' : ''}
-        </Text>
-      </View>
-
-      <View style={styles.inviteCodeRow}>
-        <Text style={[styles.inviteLabel, { color: colors.textSecondary }]}>
-          Invite code:
-        </Text>
-        <Text style={[styles.inviteCode, { color: colors.primary }]}>
-          {challenge.inviteCode}
-        </Text>
-      </View>
-    </GlassCard>
-  );
-}
-
-// Simplified Create Challenge Modal — just title + type
-function CreateChallengeModal({
-  visible,
-  onClose,
-  onCreate,
-}: {
-  visible: boolean;
-  onClose: () => void;
-  onCreate: (challenge: Omit<Challenge, 'id' | 'createdAt' | 'participants' | 'status' | 'inviteCode' | 'creatorId' | 'creatorName'>) => void;
-}) {
-  const { colors, isDark } = useTheme();
-  const insets = useSafeAreaInsets();
-
-  const [title, setTitle] = useState('');
-  const [type, setType] = useState<ChallengeType>('tasks_count');
-
-  // Default values based on type
-  const getDefaults = (t: ChallengeType) => {
-    switch (t) {
-      case 'tasks_count': return { target: 10, duration: 7, description: 'Complete tasks together!' };
-      case 'time_spent': return { target: 60, duration: 7, description: 'Spend time cleaning together!' };
-      case 'room_complete': return { target: 1, duration: 7, description: 'Finish a room together!' };
-      case 'streak': return { target: 7, duration: 7, description: 'Build a streak together!' };
-      case 'collectibles': return { target: 10, duration: 7, description: 'Collect items while cleaning!' };
-    }
-  };
-
-  const handleCreate = () => {
-    if (!title.trim()) {
-      Alert.alert('Error', 'Please enter a title');
-      return;
-    }
-
-    const defaults = getDefaults(type);
-
-    onCreate({
-      type,
-      title: title.trim(),
-      description: defaults.description,
-      target: defaults.target,
-      startDate: new Date(),
-      endDate: new Date(Date.now() + defaults.duration * 24 * 60 * 60 * 1000),
-    });
-
-    setTitle('');
-    setType('tasks_count');
-  };
-
-  return (
-    <Modal visible={visible} animationType="slide" transparent>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.modalOverlay}
-      >
-        <BlurView
-          intensity={isDark ? 40 : 80}
-          tint={isDark ? 'dark' : 'light'}
-          style={[styles.modalContent, { paddingTop: insets.top + 20 }]}
-        >
-          <View style={styles.modalHeader}>
-            <Text style={[styles.modalTitle, { color: colors.text }]}>
-              Create Challenge
-            </Text>
-            <Pressable
-              onPress={() => {
-                Haptics.selectionAsync();
-                onClose();
-              }}
-              accessibilityRole="button"
-              accessibilityLabel="Close modal"
-              hitSlop={8}
-              style={{ minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' }}
-            >
-              <Ionicons name="close" size={24} color={colors.text} />
-            </Pressable>
+            <View style={styles.avatarNameRow}>
+              <View style={[styles.avatarDot, { backgroundColor: member.dotColor }]} />
+              <Text style={[styles.avatarName, {
+                color: isDark ? '#FFFFFF' : '#1A1A1A',
+              }]}>
+                {member.name}
+              </Text>
+            </View>
           </View>
+        ))}
+      </View>
 
-          <ScrollView style={styles.modalScroll}>
-            <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>
-              Title
-            </Text>
-            <TextInput
-              style={[
-                styles.modalInput,
-                { color: colors.text, borderColor: colors.border },
-              ]}
-              placeholder="e.g., Weekend Cleaning Sprint"
-              placeholderTextColor={colors.textTertiary}
-              value={title}
-              onChangeText={setTitle}
-              accessibilityLabel="Challenge title"
-            />
-
-            <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>
-              Challenge Type
-            </Text>
-            <View style={styles.typeGrid}>
-              {(Object.keys(CHALLENGE_TYPES) as ChallengeType[]).map(t => (
-                <Pressable
-                  key={t}
-                  style={[
-                    styles.typeOption,
-                    {
-                      borderColor: type === t ? colors.primary : colors.border,
-                      backgroundColor: type === t ? colors.accentMuted : 'transparent',
-                    },
-                  ]}
-                  onPress={() => {
-                    Haptics.selectionAsync();
-                    setType(t);
-                  }}
-                  accessibilityRole="radio"
-                  accessibilityState={{ selected: type === t }}
-                  accessibilityLabel={CHALLENGE_TYPES[t].label}
-                >
-                  <Ionicons
-                    name={CHALLENGE_TYPES[t].icon as any}
-                    size={20}
-                    color={type === t ? colors.primary : colors.textSecondary}
-                  />
-                  <Text
-                    style={[
-                      styles.typeLabel,
-                      { color: type === t ? colors.primary : colors.textSecondary },
-                    ]}
-                  >
-                    {CHALLENGE_TYPES[t].label}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
-
-            {/* Auto-generated defaults info */}
-            <View style={[styles.defaultsInfo, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)' }]}>
-              <Text style={[styles.defaultsText, { color: colors.textSecondary }]}>
-                Target: {getDefaults(type).target} {CHALLENGE_TYPES[type].unit} in {getDefaults(type).duration} days
-              </Text>
-            </View>
-
-            <GlassButton
-              title="Create Challenge"
-              onPress={handleCreate}
-              variant="primary"
-              size="large"
-              style={styles.createButton}
-            />
-          </ScrollView>
-        </BlurView>
-      </KeyboardAvoidingView>
-    </Modal>
+      {/* Collective stats */}
+      <View style={[styles.collectiveStats, {
+        backgroundColor: isDark ? '#141414' : '#FFFFFF',
+        borderColor: isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)',
+      }]}>
+        <Text style={[styles.collectiveLabel, { color: '#707070' }]}>
+          Together this week
+        </Text>
+        <View style={styles.collectiveRow}>
+          <Text style={[styles.collectiveValue, { color: isDark ? '#FFFFFF' : '#1A1A1A' }]}>23</Text>
+          <Text style={[styles.collectiveUnit, { color: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)' }]}> tasks</Text>
+          <Text style={[styles.collectiveSep, { color: '#707070' }]}> {'\u00B7'} </Text>
+          <Text style={[styles.collectiveValue, { color: isDark ? '#FFFFFF' : '#1A1A1A' }]}>4</Text>
+          <Text style={[styles.collectiveUnit, { color: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)' }]}> rooms</Text>
+          <Text style={[styles.collectiveSep, { color: '#707070' }]}> {'\u00B7'} </Text>
+          <Text style={[styles.collectiveValue, { color: isDark ? '#FFFFFF' : '#1A1A1A' }]}>12</Text>
+          <Text style={[styles.collectiveUnit, { color: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)' }]}> hours</Text>
+        </View>
+      </View>
+    </View>
   );
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Circle Activity Feed
+// ─────────────────────────────────────────────────────────────────────────────
+function CircleActivity({ isDark }: { isDark: boolean }) {
+  return (
+    <View style={styles.activitySection}>
+      <Text style={[styles.activityTitle, {
+        color: isDark ? '#FFFFFF' : '#1A1A1A',
+      }]}>
+        Circle Activity
+      </Text>
+
+      {ACTIVITY_FEED.map((item, idx) => (
+        <React.Fragment key={idx}>
+          <View style={styles.feedItem}>
+            <View style={[styles.feedAvatar, { backgroundColor: item.color }]}>
+              <Text style={[styles.feedAvatarInitial, {
+                color: isDark ? '#1A1A1A' : '#FFFFFF',
+              }]}>
+                {item.initial}
+              </Text>
+            </View>
+            <View style={styles.feedContent}>
+              <Text style={[styles.feedMessage, {
+                color: isDark ? '#FFFFFF' : '#1A1A1A',
+              }]} numberOfLines={1}>
+                {item.message}
+              </Text>
+              <Text style={[styles.feedTime, { color: '#707070' }]}>
+                {item.time}
+              </Text>
+            </View>
+          </View>
+          {idx < ACTIVITY_FEED.length - 1 && (
+            <View style={[styles.feedDivider, {
+              backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
+            }]} />
+          )}
+        </React.Fragment>
+      ))}
+    </View>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Grow Your Circle CTA
+// ─────────────────────────────────────────────────────────────────────────────
+function GrowCircle({ isDark }: { isDark: boolean }) {
+  return (
+    <View style={[styles.inviteCard, {
+      backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : '#FFFFFF',
+      borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+    }]}>
+      <View style={styles.inviteLeft}>
+        <Text style={[styles.inviteTitle, {
+          color: isDark ? '#FFFFFF' : '#1A1A1A',
+        }]}>
+          Grow Your Circle
+        </Text>
+        <Text style={[styles.inviteDesc, {
+          color: isDark ? 'rgba(255,255,255,0.38)' : 'rgba(0,0,0,0.45)',
+        }]}>
+          Invite a friend to clean together. Both earn +200 XP.
+        </Text>
+      </View>
+
+      <Pressable
+        onPress={async () => {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+          try {
+            await Share.share({
+              message: 'Join me on Declutterly! We can clean together and earn XP. Download: https://declutterly.app/invite',
+            });
+          } catch {
+            // User cancelled share
+          }
+        }}
+        accessibilityRole="button"
+        accessibilityLabel="Invite friend"
+      >
+        <LinearGradient
+          colors={['#C4A87A', '#8A7A60'] as const}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.inviteBtn}
+        >
+          <Text style={styles.inviteBtnText}>Invite</Text>
+        </LinearGradient>
+      </Pressable>
+    </View>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Main Screen
+// ─────────────────────────────────────────────────────────────────────────────
 export default function SocialScreen() {
-  const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { colors } = useTheme();
-  const { isAuthenticated, user } = useAuth();
+  const rawScheme = useColorScheme();
+  const colorScheme = rawScheme === 'dark' ? 'dark' : 'light';
+  const isDark = colorScheme === 'dark';
+  const { isAuthenticated } = useAuth();
   const reducedMotion = useReducedMotion();
 
-  const [challenges, setChallenges] = useState<Challenge[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [_challenges, setChallenges] = useState<Challenge[]>([]);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [_isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [joinCode, setJoinCode] = useState('');
 
   const loadData = useCallback(async () => {
     try {
       setChallenges(await getMyChallenges());
     } catch {
-      // Failed to load challenges
+      // Failed to load
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
@@ -394,431 +312,340 @@ export default function SocialScreen() {
     loadData();
   };
 
-  const handleCreateChallenge = async (data: any) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-
-    const newChallenge = await createChallenge(
-      data.type,
-      data.title,
-      data.description,
-      data.target,
-      Math.ceil((data.endDate.getTime() - data.startDate.getTime()) / (1000 * 60 * 60 * 24))
-    );
-
-    if (newChallenge) {
-      setChallenges(prev => [newChallenge, ...prev]);
-      setShowCreateModal(false);
-      Alert.alert(
-        'Challenge Created!',
-        `Share code: ${newChallenge.inviteCode}`,
-        [{ text: 'OK' }]
-      );
-    }
-  };
-
-  const handleQuickChallenge = async (template: typeof QUICK_CHALLENGES[0]) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-
-    const newChallenge = await createChallenge(
-      template.type,
-      template.title,
-      template.description,
-      template.target,
-      template.duration
-    );
-
-    if (newChallenge) {
-      setChallenges(prev => [newChallenge, ...prev]);
-      Alert.alert(
-        'Challenge Created!',
-        `Share code: ${newChallenge.inviteCode}`,
-        [{ text: 'OK' }]
-      );
-    }
-  };
-
-  const handleJoinWithCode = async () => {
-    if (!joinCode.trim()) return;
-
+  const handleManageCircle = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    router.push('/accountability');
+  }, []);
 
-    const challenge = await joinChallenge(joinCode.trim());
-    if (challenge) {
-      setChallenges(prev => [challenge, ...prev]);
-      setJoinCode('');
-      Alert.alert('Success', `Joined challenge: ${challenge.title}`);
-      return;
-    }
+  const handleOpenAuth = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    router.push('/auth/login');
+  }, []);
 
-    Alert.alert('Error', 'Invalid code or challenge not found');
-  };
+  const enterAnim = (delay: number) =>
+    reducedMotion ? undefined : FadeInDown.delay(delay).springify();
 
   if (!isAuthenticated) {
     return (
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <View style={[styles.container, { backgroundColor: isDark ? '#0A0A0A' : '#FAFAFA' }]}>
+        <AmbientBackdrop isDark={isDark} variant="profile" />
         <LinearGradient
-          colors={colors.backgroundGradient}
+          colors={isDark ? ['rgba(10,10,10,0.78)', 'rgba(20,20,20,0.96)'] as const : ['rgba(250,250,250,0.42)', 'rgba(245,245,245,0.92)'] as const}
           style={StyleSheet.absoluteFill}
         />
         <View style={[styles.emptyState, { paddingTop: insets.top + 80 }]}>
-          <Ionicons name="people" size={64} color={colors.textTertiary} />
-          <Text style={[styles.emptyTitle, { color: colors.text }]}>
-            Sign in to access social features
-          </Text>
-          <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-            Create and join challenges with other declutterers.
-          </Text>
-          <GlassButton
-            title="Sign In"
-            onPress={() => router.push('/auth/login')}
-            variant="primary"
-            style={styles.signInButton}
+          <ExpressiveStateView
+            isDark={isDark}
+            kicker="COMMUNITY"
+            emoji="👥"
+            title="Bring other people into the reset."
+            description="Create challenges, invite friends, and make progress feel shared instead of lonely."
+            primaryLabel="Sign In"
+            onPrimary={handleOpenAuth}
+            accentColors={isDark ? ['#D8D0FF', '#8B82FF', '#5B6DFF'] as const : ['#D5CEFF', '#9387FF', '#6572FF'] as const}
+            style={styles.expressiveEmptyState}
           />
-        </View>
-      </View>
-    );
-  }
-
-  if (isLoading) {
-    return (
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <LinearGradient
-          colors={colors.backgroundGradient}
-          style={StyleSheet.absoluteFill}
-        />
-        <View style={[styles.emptyState, { paddingTop: insets.top + 80 }]}>
-          <Ionicons name="hourglass-outline" size={48} color={colors.textTertiary} />
-          <Text style={[styles.emptyTitle, { color: colors.text }]}>
-            Loading...
-          </Text>
         </View>
       </View>
     );
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <View style={[styles.container, { backgroundColor: isDark ? '#0A0A0A' : '#FAFAFA' }]}>
       <LinearGradient
-        colors={colors.backgroundGradient}
+        colors={isDark ? ['#0A0A0A', '#141414'] as const : ['#FAFAFA', '#F5F5F5'] as const}
         style={StyleSheet.absoluteFill}
       />
 
-      {/* Header */}
-      <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
-        <Pressable
-          style={styles.backButton}
-          onPress={() => {
-            Haptics.selectionAsync();
-            router.back();
-          }}
-          accessibilityRole="button"
-          accessibilityLabel="Go back"
-        >
-          <Ionicons name="chevron-back" size={24} color={colors.text} />
-        </Pressable>
-        <Text style={[styles.headerTitle, { color: colors.text }]}>
-          Social
-        </Text>
-        <Pressable
-          style={styles.addButton}
-          onPress={() => {
-            Haptics.selectionAsync();
-            setShowCreateModal(true);
-          }}
-          accessibilityRole="button"
-          accessibilityLabel="Create custom challenge"
-        >
-          <Ionicons name="add" size={24} color={colors.primary} />
-        </Pressable>
-      </View>
-
-      {/* Quick Challenge Templates */}
-      <Animated.View
-        entering={reducedMotion ? undefined : FadeInDown.delay(50).springify()}
-        style={styles.quickSection}
-      >
-        <Text style={[styles.quickTitle, { color: colors.text }]}>Quick Challenges</Text>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.quickRow}
-        >
-          {QUICK_CHALLENGES.map((template, index) => (
-            <Pressable
-              key={template.title}
-              onPress={() => handleQuickChallenge(template)}
-              style={({ pressed }) => [
-                styles.quickCard,
-                {
-                  backgroundColor: colors.accentMuted,
-                  borderColor: colors.accent,
-                  opacity: pressed ? 0.8 : 1,
-                },
-              ]}
-              accessibilityRole="button"
-              accessibilityLabel={`Start ${template.title} challenge`}
-              accessibilityHint={template.description}
-            >
-              <Ionicons name={template.icon as any} size={24} color={colors.accent} />
-              <Text style={[styles.quickCardTitle, { color: colors.text }]} numberOfLines={1}>
-                {template.title}
-              </Text>
-              <Text style={[styles.quickCardDesc, { color: colors.textSecondary }]} numberOfLines={2}>
-                {template.description}
-              </Text>
-            </Pressable>
-          ))}
-        </ScrollView>
-      </Animated.View>
-
-      {/* Join Code Input */}
-      <Animated.View
-        entering={reducedMotion ? undefined : FadeInDown.delay(100).springify()}
-        style={styles.joinSection}
-      >
-        <View style={[styles.joinInput, { borderColor: colors.border }]}>
-          <TextInput
-            style={[styles.codeInput, { color: colors.text }]}
-            placeholder="Enter invite code"
-            placeholderTextColor={colors.textTertiary}
-            value={joinCode}
-            onChangeText={setJoinCode}
-            autoCapitalize="characters"
-            maxLength={8}
-            accessibilityLabel="Invite code"
-            accessibilityHint="Enter a code to join an existing challenge"
-          />
-          <Pressable
-            style={[styles.joinButton, { backgroundColor: colors.primary }]}
-            onPress={handleJoinWithCode}
-            accessibilityRole="button"
-            accessibilityLabel="Join with invite code"
-            accessibilityHint="Join a challenge using the entered code"
-          >
-            <Text style={[styles.joinButtonText, { color: colors.textOnPrimary }]}>Join</Text>
-          </Pressable>
-        </View>
-      </Animated.View>
-
-      {/* Content */}
       <ScrollView
-        contentContainerStyle={[
-          styles.scrollContent,
-          { paddingBottom: insets.bottom + 20 },
-        ]}
-        contentInsetAdjustmentBehavior="automatic"
+        style={styles.scrollView}
+        contentContainerStyle={[styles.scrollContent, {
+          paddingTop: insets.top + 16,
+          paddingBottom: insets.bottom + 100,
+        }]}
+        showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} />
         }
       >
-        {challenges.length === 0 ? (
-          <View style={styles.emptyTabState}>
-            <Ionicons name="trophy-outline" size={48} color={colors.textTertiary} />
-            <Text style={[styles.emptyTabText, { color: colors.textSecondary }]}>
-              No challenges yet. Tap a quick challenge above to get started!
-            </Text>
-          </View>
-        ) : (
-          challenges.map((challenge, index) => (
-            <Animated.View
-              key={challenge.id}
-              entering={reducedMotion ? undefined : SlideInRight.delay(index * 100).springify()}
-            >
-              <ChallengeCard
-                challenge={challenge}
-                currentUserId={user?.uid}
-              />
-            </Animated.View>
-          ))
-        )}
-      </ScrollView>
+        {/* Header: Community + people icon */}
+        <Animated.View entering={enterAnim(0)} style={styles.header}>
+          <Text style={[styles.headerTitle, { color: isDark ? '#FFFFFF' : '#1A1A1A' }]}>
+            Community
+          </Text>
+          <Pressable
+            onPress={handleManageCircle}
+            style={[styles.headerIcon, {
+              backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)',
+            }]}
+            accessibilityRole="button"
+            accessibilityLabel="People"
+          >
+            <Ionicons
+              name="people-outline"
+              size={20}
+              color={isDark ? '#FFFFFF' : '#1A1A1A'}
+            />
+          </Pressable>
+        </Animated.View>
 
-      {/* Create Challenge Modal */}
-      <CreateChallengeModal
-        visible={showCreateModal}
-        onClose={() => setShowCreateModal(false)}
-        onCreate={handleCreateChallenge}
-      />
+        {/* Weekly Challenge */}
+        <Animated.View entering={enterAnim(60)} style={styles.section}>
+          <WeeklyChallengeCard isDark={isDark} />
+        </Animated.View>
+
+        {/* Your Circle */}
+        <Animated.View entering={enterAnim(120)} style={styles.section}>
+          <YourCircle isDark={isDark} onManage={handleManageCircle} />
+        </Animated.View>
+
+        {/* Circle Activity */}
+        <Animated.View entering={enterAnim(180)} style={styles.section}>
+          <CircleActivity isDark={isDark} />
+        </Animated.View>
+
+        {/* Grow Your Circle */}
+        <Animated.View entering={enterAnim(240)} style={styles.section}>
+          <GrowCircle isDark={isDark} />
+        </Animated.View>
+      </ScrollView>
     </View>
   );
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Styles
+// ─────────────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
+  container: { flex: 1 },
+  scrollView: { flex: 1 },
+  scrollContent: { paddingHorizontal: 20 },
+  section: { marginBottom: 24 },
+
+  // ── Header ──
   header: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingBottom: 12,
-  },
-  backButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
+    marginBottom: 24,
   },
   headerTitle: {
-    flex: 1,
-    fontSize: 20,
+    fontSize: 34,
     fontWeight: '700',
-    textAlign: 'center',
+    letterSpacing: -0.4,
   },
-  addButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  // Quick Challenge Templates
-  quickSection: {
-    paddingHorizontal: 16,
-    marginBottom: 12,
-  },
-  quickTitle: {
-    fontSize: 15,
-    fontWeight: '600',
-    marginBottom: 8,
-  },
-  quickRow: {
-    gap: 10,
-  },
-  quickCard: {
-    width: 150,
-    padding: 14,
-    borderRadius: 14,
-    borderWidth: 1,
-    gap: 6,
-  },
-  quickCardTitle: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  quickCardDesc: {
-    fontSize: 11,
-    lineHeight: 15,
-  },
-  joinSection: {
-    paddingHorizontal: 16,
-    marginBottom: 12,
-  },
-  joinInput: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: 12,
-    borderWidth: 1,
-    overflow: 'hidden',
-  },
-  codeInput: {
-    flex: 1,
-    padding: 12,
-    fontSize: 16,
-    letterSpacing: 2,
-  },
-  joinButton: {
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 0,
-    borderTopRightRadius: 11,
-    borderBottomRightRadius: 11,
-  },
-  joinButtonText: {
-    fontWeight: '600',
-  },
-  scrollContent: {
-    paddingHorizontal: 16,
-    gap: 12,
-  },
-  challengeCard: {
-    padding: 16,
-  },
-  challengeHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 12,
-    marginBottom: 12,
-  },
-  typeIcon: {
+  headerIcon: {
     width: 40,
     height: 40,
     borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  challengeInfo: {
-    flex: 1,
+
+  // ── Challenge Card ──
+  challengeCard: {
+    borderRadius: 24,
+    padding: 20,
+    borderWidth: 1,
+    gap: 14,
+  },
+  challengeBadge: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 12,
+  },
+  challengeBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 0.5,
   },
   challengeTitle: {
-    fontSize: 16,
+    fontSize: 20,
     fontWeight: '600',
-    marginBottom: 4,
-  },
-  challengeDesc: {
-    fontSize: 13,
   },
   challengeProgress: {
-    marginBottom: 12,
+    gap: 8,
   },
-  progressBar: {
-    height: 8,
-    borderRadius: 4,
-    marginBottom: 6,
+  progressTrack: {
+    height: 6,
+    borderRadius: 3,
+    overflow: 'hidden',
   },
   progressFill: {
     height: '100%',
-    borderRadius: 4,
-  },
-  progressLabels: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    borderRadius: 3,
   },
   progressText: {
     fontSize: 12,
+    fontWeight: '400',
   },
-  daysLeft: {
-    fontSize: 12,
+
+  // ── Your Circle ──
+  circleSection: {
+    gap: 16,
+  },
+  circleSectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  circleSectionTitle: {
+    fontSize: 17,
+    fontWeight: '500',
+    letterSpacing: -0.3,
+  },
+  circleManage: {
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  avatarRow: {
+    flexDirection: 'row',
+    gap: 20,
+  },
+  avatarWrap: {
+    alignItems: 'center',
+    width: 48,
+    gap: 4,
+  },
+  circleAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  circleAvatarInitial: {
+    fontSize: 18,
     fontWeight: '600',
   },
-  participantsRow: {
+  avatarNameRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 4,
+  },
+  avatarDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  avatarName: {
+    fontSize: 11,
+    fontWeight: '400',
+  },
+
+  // ── Collective Stats ──
+  collectiveStats: {
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
     gap: 8,
-    marginBottom: 12,
   },
-  avatarStack: {
+  collectiveLabel: {
+    fontSize: 12,
+    fontWeight: '500',
+    letterSpacing: 0.3,
+  },
+  collectiveRow: {
     flexDirection: 'row',
+    alignItems: 'center',
   },
-  avatar: {
+  collectiveValue: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  collectiveUnit: {
+    fontSize: 14,
+    fontWeight: '400',
+  },
+  collectiveSep: {
+    fontSize: 16,
+  },
+
+  // ── Activity Feed ──
+  activitySection: {
+    gap: 12,
+  },
+  activityTitle: {
+    fontSize: 15,
+    fontWeight: '500',
+    letterSpacing: -0.3,
+  },
+  feedItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  feedAvatar: {
     width: 28,
     height: 28,
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 2,
   },
-  avatarText: {
+  feedAvatarInitial: {
+    fontSize: 12,
     fontWeight: '600',
-    fontSize: 12,
   },
-  participantCount: {
-    fontSize: 12,
+  feedContent: {
+    flex: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
-  inviteCodeRow: {
+  feedMessage: {
+    fontSize: 13,
+    fontWeight: '400',
+    flex: 1,
+  },
+  feedTime: {
+    fontSize: 11,
+    fontWeight: '400',
+    marginLeft: 8,
+  },
+  feedDivider: {
+    height: 1,
+  },
+
+  // ── Invite Card ──
+  inviteCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    borderRadius: 20,
+    padding: 18,
+    borderWidth: 1,
+    gap: 14,
   },
-  inviteLabel: {
+  inviteLeft: {
+    flex: 1,
+    gap: 4,
+  },
+  inviteTitle: {
+    fontSize: 15,
+    fontWeight: '500',
+    letterSpacing: -0.3,
+  },
+  inviteDesc: {
     fontSize: 12,
+    fontWeight: '400',
   },
-  inviteCode: {
-    fontSize: 14,
-    fontWeight: '700',
-    letterSpacing: 2,
+  inviteBtn: {
+    paddingVertical: 10,
+    paddingHorizontal: 18,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
+  inviteBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+
+  // ── Empty State ──
   emptyState: {
     flex: 1,
     alignItems: 'center',
@@ -828,90 +655,28 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: 20,
     fontWeight: '600',
-    marginTop: 16,
     marginBottom: 8,
+    textAlign: 'center',
   },
   emptyText: {
     fontSize: 14,
     textAlign: 'center',
     lineHeight: 20,
-    marginBottom: 24,
   },
-  signInButton: {
-    minWidth: 150,
-  },
-  emptyTabState: {
+  emptyButton: {
+    marginTop: 20,
+    height: 48,
+    minWidth: 148,
+    borderRadius: 24,
     alignItems: 'center',
-    paddingVertical: 60,
+    justifyContent: 'center',
+    paddingHorizontal: 24,
   },
-  emptyTabText: {
-    fontSize: 14,
-    textAlign: 'center',
-    marginTop: 12,
-    paddingHorizontal: 20,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-  },
-  modalContent: {
-    flex: 1,
-    paddingHorizontal: 20,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 24,
-  },
-  modalTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-  },
-  modalScroll: {
-    flex: 1,
-  },
-  inputLabel: {
-    fontSize: 13,
+  emptyButtonText: {
+    fontSize: 15,
     fontWeight: '600',
-    marginBottom: 8,
-    marginTop: 16,
   },
-  modalInput: {
-    borderWidth: 1,
-    borderRadius: 12,
-    padding: 14,
-    fontSize: 16,
-  },
-  typeGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  typeOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    borderRadius: 10,
-    borderWidth: 1,
-  },
-  typeLabel: {
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  defaultsInfo: {
-    marginTop: 16,
-    padding: 12,
-    borderRadius: 10,
-  },
-  defaultsText: {
-    fontSize: 13,
-    textAlign: 'center',
-  },
-  createButton: {
-    marginTop: 24,
-    marginBottom: 40,
+  expressiveEmptyState: {
+    width: '100%',
   },
 });

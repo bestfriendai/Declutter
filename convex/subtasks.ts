@@ -13,7 +13,7 @@ export const listByTask = query({
 
     return await ctx.db
       .query("subtasks")
-      .filter((q) => q.eq(q.field("taskId"), args.taskId))
+      .withIndex("by_taskId", (q) => q.eq("taskId", args.taskId))
       .collect();
   },
 });
@@ -22,6 +22,9 @@ export const create = mutation({
   args: {
     taskId: v.id("tasks"),
     title: v.string(),
+    estimatedSeconds: v.optional(v.number()),
+    estimatedMinutes: v.optional(v.number()),
+    isCheckpoint: v.optional(v.boolean()),
     order: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
@@ -37,6 +40,9 @@ export const create = mutation({
       title: args.title,
       order: args.order ?? 0,
       completed: false,
+      ...(args.estimatedSeconds !== undefined ? { estimatedSeconds: args.estimatedSeconds } : {}),
+      ...(args.estimatedMinutes !== undefined ? { estimatedMinutes: args.estimatedMinutes } : {}),
+      ...(args.isCheckpoint !== undefined ? { isCheckpoint: args.isCheckpoint } : {}),
     });
   },
 });
@@ -47,6 +53,9 @@ export const createMany = mutation({
     subtasks: v.array(
       v.object({
         title: v.string(),
+        estimatedSeconds: v.optional(v.number()),
+        estimatedMinutes: v.optional(v.number()),
+        isCheckpoint: v.optional(v.boolean()),
         order: v.optional(v.number()),
       })
     ),
@@ -67,6 +76,9 @@ export const createMany = mutation({
         title: subtask.title,
         order: subtask.order ?? i,
         completed: false,
+        ...(subtask.estimatedSeconds !== undefined ? { estimatedSeconds: subtask.estimatedSeconds } : {}),
+        ...(subtask.estimatedMinutes !== undefined ? { estimatedMinutes: subtask.estimatedMinutes } : {}),
+        ...(subtask.isCheckpoint !== undefined ? { isCheckpoint: subtask.isCheckpoint } : {}),
       });
       ids.push(id);
     }

@@ -4,6 +4,8 @@
  */
 
 import { Colors, ColorTokens } from '@/constants/Colors';
+import { AmbientBackdrop } from '@/components/ui/AmbientBackdrop';
+import { ExpressiveStateView } from '@/components/ui/ExpressiveStateView';
 import { useDeclutter } from '@/context/DeclutterContext';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { MASCOT_PERSONALITIES } from '@/types/declutter';
@@ -35,6 +37,7 @@ export default function MascotScreen() {
   if (!mascot) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <AmbientBackdrop isDark={isDark} variant="profile" />
         <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
           <Pressable
             onPress={() => router.back()}
@@ -46,13 +49,17 @@ export default function MascotScreen() {
           </Pressable>
         </View>
         <View style={styles.emptyState}>
-          <RNText style={styles.emptyEmoji} accessibilityElementsHidden>🥺</RNText>
-          <RNText style={[styles.emptyTitle, { color: colors.text }]} accessibilityRole="header">
-            No Buddy Yet
-          </RNText>
-          <RNText style={[styles.emptyText, { color: colors.textSecondary }]}>
-            Complete the onboarding to choose your cleaning companion!
-          </RNText>
+          <ExpressiveStateView
+            isDark={isDark}
+            kicker="CLEANING BUDDY"
+            emoji="🥺"
+            title="No buddy yet"
+            description="Finish onboarding to choose the guide who matches your energy, tone, and cleaning style."
+            primaryLabel="Choose Your Buddy"
+            onPrimary={() => router.push('/onboarding')}
+            accentColors={['#FFD9A1', '#FFB547', '#FF8C63'] as const}
+            style={styles.emptyCard}
+          />
         </View>
       </View>
     );
@@ -465,5 +472,21 @@ const styles = StyleSheet.create({
     ...Typography.subheadline,
     textAlign: 'center',
     marginTop: Spacing.xs,
+  },
+  emptyButton: {
+    marginTop: Spacing.lg,
+    minHeight: 48,
+    minWidth: 180,
+    borderRadius: BorderRadius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.lg,
+  },
+  emptyButtonText: {
+    ...Typography.callout,
+    fontWeight: '600',
+  },
+  emptyCard: {
+    width: '100%',
   },
 });

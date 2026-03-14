@@ -40,7 +40,7 @@ export function useRooms() {
 export function useRoom(roomId: string | undefined) {
   return useQuery(
     api.rooms.get,
-    roomId ? { id: roomId as any } : "skip"
+    roomId ? { id: roomId as any } : "skip" // `as any` needed: string → Id<"rooms"> coercion
   );
 }
 
@@ -63,7 +63,7 @@ export function useDeleteRoom() {
 export function useTasks(roomId: string | undefined) {
   return useQuery(
     api.tasks.listByRoom,
-    roomId ? { roomId: roomId as any } : "skip"
+    roomId ? { roomId: roomId as any } : "skip" // `as any` needed: string → Id<"rooms"> coercion
   );
 }
 
@@ -94,7 +94,7 @@ export function useDeleteTask() {
 export function usePhotos(roomId: string | undefined) {
   return useQuery(
     api.photos.listByRoom,
-    roomId ? { roomId: roomId as any } : "skip"
+    roomId ? { roomId: roomId as any } : "skip" // `as any` needed: string → Id<"rooms"> coercion
   );
 }
 
@@ -249,3 +249,144 @@ export function useAnalyzeProgress() {
 export function useGetMotivation() {
   return useAction(api.gemini.getMotivation);
 }
+
+// ==================
+// STREAK / COMEBACK HOOKS
+// ==================
+
+export function useCheckComebackStatus() {
+  return useQuery(api.stats.checkComebackStatus);
+}
+
+export function useRecordActivity() {
+  return useMutation(api.stats.recordActivity);
+}
+
+export function useStreakInfo() {
+  return useQuery(api.stats.getStreakInfo);
+}
+
+export function useStreakFreeze() {
+  return useMutation(api.stats.useStreakFreeze);
+}
+
+export function useGrantStreakFreezes() {
+  return useMutation(api.stats.grantStreakFreezes);
+}
+
+// ==================
+// ACCOUNTABILITY HOOKS
+// ==================
+
+export function useMyPartner() {
+  return useQuery(api.accountability.getMyPartner);
+}
+
+export function useInviteCode() {
+  return useQuery(api.accountability.getInviteCode);
+}
+
+export function useBothActiveBonus() {
+  return useQuery(api.accountability.getBothActiveBonus);
+}
+
+export function useCreatePair() {
+  return useMutation(api.accountability.createPair);
+}
+
+export function useJoinPair() {
+  return useMutation(api.accountability.joinPair);
+}
+
+export function useSendNudge() {
+  return useMutation(api.accountability.sendNudge);
+}
+
+export function useEndPartnership() {
+  return useMutation(api.accountability.endPartnership);
+}
+
+export function useUpdateActivity() {
+  return useMutation(api.accountability.updateActivity);
+}
+
+// ==================
+// ACTIVITY LOG HOOKS
+// ==================
+
+export function useCalendarData() {
+  return useQuery(api.activityLog.getCalendarData);
+}
+
+export function useWeeklyActivity() {
+  return useQuery(api.activityLog.getWeeklyActivity);
+}
+
+export function useRecordDailyActivity() {
+  return useMutation(api.activityLog.recordDailyActivity);
+}
+
+// ==================
+// LEADERBOARD HOOKS
+// ==================
+
+export function useWeeklyLeaderboard() {
+  return useQuery(api.leaderboard.getWeeklyLeaderboard);
+}
+
+export function useUserLeague() {
+  return useQuery(api.leaderboard.getUserLeague);
+}
+
+export function useUpdateWeeklyXP() {
+  return useMutation(api.leaderboard.updateWeeklyXP);
+}
+
+// ==================
+// NOTIFICATION HOOKS
+// ==================
+
+export function useSavePushToken() {
+  return useMutation(api.notifications.savePushToken);
+}
+
+export function useRemovePushToken() {
+  return useMutation(api.notifications.removePushToken);
+}
+
+export function useSendPushNotification() {
+  return useAction(api.notifications.sendPushNotification);
+}
+
+// ==================
+// VARIABLE REWARDS HOOKS
+// ==================
+
+export function useUnclaimedRewards() {
+  return useQuery(api.variableRewards.getUnclaimedRewards);
+}
+
+export function useCheckForReward() {
+  return useMutation(api.variableRewards.checkForReward);
+}
+
+export function useClaimReward() {
+  return useMutation(api.variableRewards.claimReward);
+}
+
+// ==================
+// TASK REORDER HOOKS
+// ==================
+
+export function useReorderTasks() {
+  return useMutation(api.tasks.reorder);
+}
+
+// ==================
+// STATS RESET HOOKS
+// ==================
+
+export function useResetStats() {
+  return useMutation(api.stats.reset);
+}
+

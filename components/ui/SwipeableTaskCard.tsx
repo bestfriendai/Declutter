@@ -5,11 +5,11 @@
  */
 
 import React, { useCallback, useState } from 'react';
+import { useColorScheme } from '@/hooks/useColorScheme';
 import {
   View,
   Text,
   StyleSheet,
-  useColorScheme,
   Pressable,
   Dimensions,
 } from 'react-native';

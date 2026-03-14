@@ -14,7 +14,6 @@ import {
   Alert,
   RefreshControl,
   Share,
-  ActivityIndicator,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -29,6 +28,8 @@ import { Typography } from '@/theme/typography';
 import { Spacing, BorderRadius } from '@/theme/spacing';
 import { GlassCard } from '@/components/ui/GlassCard';
 import { GlassButton } from '@/components/ui/GlassButton';
+import { AmbientBackdrop } from '@/components/ui/AmbientBackdrop';
+import { ExpressiveStateView } from '@/components/ui/ExpressiveStateView';
 import {
   Challenge,
   ChallengeType,
@@ -48,7 +49,7 @@ const CHALLENGE_TYPES: Record<ChallengeType, { icon: string; label: string; unit
 export default function ChallengeDetailScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const { isAuthenticated, user } = useAuth();
   const { id } = useLocalSearchParams<{ id: string }>();
 
@@ -75,7 +76,9 @@ export default function ChallengeDetailScreen() {
         setError('Challenge not found');
       }
     } catch (err) {
-      console.error('Error loading challenge:', err);
+      if (__DEV__) {
+        console.info('Error loading challenge:', err);
+      }
       setError('Failed to load challenge');
     } finally {
       setIsLoading(false);
@@ -142,15 +145,21 @@ export default function ChallengeDetailScreen() {
   if (isLoading) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <AmbientBackdrop isDark={isDark} variant="profile" />
         <LinearGradient
           colors={colors.backgroundGradient}
           style={StyleSheet.absoluteFill}
         />
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
-            Loading challenge...
-          </Text>
+        <View style={[styles.stateContainer, { paddingTop: insets.top + 32 }]}>
+          <ExpressiveStateView
+            isDark={isDark}
+            kicker="CHALLENGE"
+            icon="sparkles-outline"
+            title="Loading challenge"
+            description="Pulling in the latest progress, invite code, and leaderboard so this challenge opens with context."
+            accentColors={isDark ? ['#D8D0FF', '#8B82FF', '#5B6DFF'] as const : ['#D5CEFF', '#9387FF', '#6572FF'] as const}
+            style={styles.stateCard}
+          />
         </View>
       </View>
     );
@@ -160,35 +169,24 @@ export default function ChallengeDetailScreen() {
   if (error || !challenge) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <AmbientBackdrop isDark={isDark} variant="profile" />
         <LinearGradient
           colors={colors.backgroundGradient}
           style={StyleSheet.absoluteFill}
         />
-        <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => {
-              Haptics.selectionAsync();
-              router.back();
-            }}
-            accessibilityRole="button"
-            accessibilityLabel="Go back"
-          >
-            <Ionicons name="chevron-back" size={24} color={colors.text} />
-          </TouchableOpacity>
-          <Text style={[styles.headerTitle, { color: colors.text }]}>Challenge</Text>
-          <View style={styles.placeholder} />
-        </View>
-        <View style={styles.errorContainer}>
-          <Ionicons name="alert-circle-outline" size={64} color={colors.error} />
-          <Text style={[styles.errorText, { color: colors.text }]}>
-            {error || 'Challenge not found'}
-          </Text>
-          <GlassButton
-            title="Go Back"
-            onPress={() => router.back()}
-            variant="secondary"
-            style={styles.errorButton}
+        <View style={[styles.stateContainer, { paddingTop: insets.top + 32 }]}>
+          <ExpressiveStateView
+            isDark={isDark}
+            kicker="CHALLENGE"
+            icon="alert-circle-outline"
+            title="Challenge unavailable"
+            description={error || 'This challenge could not be loaded right now.'}
+            primaryLabel="Go Back"
+            onPrimary={() => router.back()}
+            secondaryLabel="Open Community"
+            onSecondary={() => router.replace('/social')}
+            accentColors={isDark ? ['#FFD5C5', '#FF9A7A', '#FF746A'] as const : ['#FFD4C7', '#FFA07D', '#FF7A70'] as const}
+            style={styles.stateCard}
           />
         </View>
       </View>
@@ -199,38 +197,24 @@ export default function ChallengeDetailScreen() {
   if (!isAuthenticated) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <AmbientBackdrop isDark={isDark} variant="profile" />
         <LinearGradient
           colors={colors.backgroundGradient}
           style={StyleSheet.absoluteFill}
         />
-        <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => {
-              Haptics.selectionAsync();
-              router.back();
-            }}
-            accessibilityRole="button"
-            accessibilityLabel="Go back"
-          >
-            <Ionicons name="chevron-back" size={24} color={colors.text} />
-          </TouchableOpacity>
-          <Text style={[styles.headerTitle, { color: colors.text }]}>Challenge</Text>
-          <View style={styles.placeholder} />
-        </View>
-        <View style={styles.authContainer}>
-          <Ionicons name="lock-closed" size={64} color={colors.textTertiary} />
-          <Text style={[styles.authTitle, { color: colors.text }]}>
-            Sign in to join challenges
-          </Text>
-          <Text style={[styles.authText, { color: colors.textSecondary }]}>
-            Create an account or sign in to participate in &quot;{challenge.title}&quot;
-          </Text>
-          <GlassButton
-            title="Sign In"
-            onPress={() => router.push('/auth/login')}
-            variant="primary"
-            style={styles.authButton}
+        <View style={[styles.stateContainer, { paddingTop: insets.top + 32 }]}>
+          <ExpressiveStateView
+            isDark={isDark}
+            kicker="CHALLENGE"
+            icon="lock-closed-outline"
+            title="Sign in to join"
+            description={`Create an account or sign in to participate in "${challenge.title}" and see the live leaderboard.`}
+            primaryLabel="Sign In"
+            onPrimary={() => router.push('/auth/login')}
+            secondaryLabel="Go Back"
+            onSecondary={() => router.back()}
+            accentColors={isDark ? ['#D8D0FF', '#8B82FF', '#5B6DFF'] as const : ['#D5CEFF', '#9387FF', '#6572FF'] as const}
+            style={styles.stateCard}
           />
         </View>
       </View>
@@ -486,48 +470,14 @@ const styles = StyleSheet.create({
   placeholder: {
     width: 44,
   },
-  loadingContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  loadingText: {
-    ...Typography.body,
-    marginTop: Spacing.md,
-  },
-  errorContainer: {
+  stateContainer: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 32,
   },
-  errorText: {
-    ...Typography.headline,
-    marginTop: Spacing.md,
-    marginBottom: Spacing.lg,
-    textAlign: 'center',
-  },
-  errorButton: {
-    minWidth: 150,
-  },
-  authContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 32,
-  },
-  authTitle: {
-    ...Typography.title3,
-    marginTop: Spacing.md,
-    marginBottom: Spacing.xs,
-  },
-  authText: {
-    ...Typography.subheadline,
-    textAlign: 'center',
-    marginBottom: Spacing.lg,
-  },
-  authButton: {
-    minWidth: 150,
+  stateCard: {
+    width: '100%',
   },
   scrollContent: {
     paddingHorizontal: 16,

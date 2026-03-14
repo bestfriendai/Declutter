@@ -116,7 +116,7 @@ export const feed = mutation({
       .first();
     if (!mascot) throw new Error("Mascot not found");
 
-    const newHunger = Math.min(100, (mascot.hunger ?? 0) + 20);
+    const newHunger = Math.max(0, (mascot.hunger ?? 100) - 20);
     const newHappiness = Math.min(100, (mascot.happiness ?? 0) + 10);
     const newXp = (mascot.xp ?? 0) + 5;
     const newLevel = Math.floor(newXp / 100) + 1;

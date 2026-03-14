@@ -4,9 +4,10 @@
  */
 
 import { Colors, ColorTokens, Elevation, Shadows } from '@/constants/Colors';
+import { getForcedColorScheme, useColorScheme as useAppColorScheme } from '@/hooks/useColorScheme';
 import { Typography } from '@/theme/typography';
 import React, { createContext, useCallback, useContext, useMemo } from 'react';
-import { Appearance, ColorSchemeName, useColorScheme } from 'react-native';
+import { Appearance, ColorSchemeName } from 'react-native';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Theme Context Types
@@ -40,7 +41,7 @@ const ThemeContext = createContext<ThemeContextValue | null>(null);
 // Provider
 // ─────────────────────────────────────────────────────────────────────────────
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const rawScheme = useColorScheme();
+  const rawScheme = useAppColorScheme();
   const colorScheme: ColorScheme = rawScheme === 'dark' ? 'dark' : 'light';
   const isDark = colorScheme === 'dark';
   const isLight = !isDark;
@@ -126,7 +127,7 @@ export function useTheme(): ThemeContextValue {
   const ctx = useContext(ThemeContext);
   if (!ctx) {
     // Fallback for components outside ThemeProvider
-    const scheme = Appearance.getColorScheme() ?? 'dark';
+    const scheme = getForcedColorScheme() ?? Appearance.getColorScheme() ?? 'dark';
     const colorScheme: ColorScheme = scheme === 'dark' ? 'dark' : 'light';
     const isDark = colorScheme === 'dark';
     return {

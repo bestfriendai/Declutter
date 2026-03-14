@@ -5,13 +5,13 @@
  */
 
 import React, { useRef, useState, useEffect, useCallback } from 'react';
+import { useColorScheme } from '@/hooks/useColorScheme';
 import {
   View,
   Text,
   StyleSheet,
   Dimensions,
   Pressable,
-  useColorScheme,
   Alert,
   ScrollView,
   Linking,
@@ -47,6 +47,8 @@ import { useDeclutter } from '@/context/DeclutterContext';
 import { ROOM_TYPE_INFO, RoomType } from '@/types/declutter';
 import { useCardPress } from '@/hooks/useAnimatedPress';
 import { ScreenErrorBoundary } from '@/components/ErrorBoundary';
+import { AmbientBackdrop } from '@/components/ui/AmbientBackdrop';
+import { ExpressiveStateView } from '@/components/ui/ExpressiveStateView';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -212,14 +214,16 @@ function CameraScreenContent() {
   // Handle permission states
   if (!permission) {
     return (
-      <View style={[styles.container, styles.permissionContainer]}>
-        <BlurView intensity={60} tint="dark" style={StyleSheet.absoluteFill} />
-        <Animated.View entering={reducedMotion ? undefined : ZoomIn.springify()} style={styles.permissionContent}>
-          <Text style={styles.permissionEmoji} accessibilityLabel="Camera">C</Text>
-          <Text style={[Typography.title2, { color: '#FFFFFF', marginTop: 16 }]}>
-            Loading Camera...
-          </Text>
-        </Animated.View>
+      <View style={[styles.container, styles.permissionContainer, { paddingHorizontal: 20 }]}>
+        <AmbientBackdrop isDark={colorScheme === 'dark'} variant="progress" />
+        <ExpressiveStateView
+          isDark={colorScheme === 'dark'}
+          kicker="CAMERA"
+          icon="camera-outline"
+          title="Loading camera"
+          description="Getting the capture flow ready so you can scan a room and turn it into a guided reset."
+          style={styles.permissionStateCard}
+        />
       </View>
     );
   }
@@ -237,69 +241,25 @@ function CameraScreenContent() {
     };
 
     return (
-      <View style={[styles.container, styles.permissionContainer]}>
-        <LinearGradient
-          colors={['#1a1a2e', '#16213e', '#0f3460']}
-          style={StyleSheet.absoluteFill}
+      <View style={[styles.container, styles.permissionContainer, { paddingHorizontal: 20 }]}>
+        <AmbientBackdrop isDark={colorScheme === 'dark'} variant="progress" />
+        <ExpressiveStateView
+          isDark={colorScheme === 'dark'}
+          kicker="CAMERA ACCESS"
+          icon="camera-outline"
+          title="Camera access needed"
+          description={
+            isPermanentlyDenied
+              ? 'Camera access was denied. Enable it in Settings so Declutterly can capture photos for room analysis.'
+              : 'Declutterly needs camera access to capture room photos and turn them into guided tasks.'
+          }
+          primaryLabel={isPermanentlyDenied ? 'Open Settings' : 'Grant Permission'}
+          onPrimary={isPermanentlyDenied ? openSettings : requestPermission}
+          secondaryLabel="Go Back"
+          onSecondary={() => router.back()}
+          accentColors={['#C9DCFF', '#6AA1FF', '#4E78FF'] as const}
+          style={styles.permissionStateCard}
         />
-        <Animated.View entering={reducedMotion ? undefined : FadeInDown.springify()} style={styles.permissionContent}>
-          <Text style={styles.permissionEmoji} accessibilityLabel="Camera">C</Text>
-          <Text style={[Typography.title1, { color: '#FFFFFF', marginTop: 20 }]} accessibilityRole="header">
-            Camera Access Needed
-          </Text>
-          <Text style={[Typography.body, { color: 'rgba(255,255,255,0.7)', textAlign: 'center', marginTop: 12, maxWidth: 280 }]}>
-            {isPermanentlyDenied
-              ? 'Camera access was denied. Please enable it in your device settings to capture photos.'
-              : 'We need camera access to capture photos of your spaces for AI analysis.'}
-          </Text>
-
-          <View style={styles.permissionButtons}>
-            {isPermanentlyDenied ? (
-              <Pressable
-                onPress={openSettings}
-                style={({ pressed }) => [styles.primaryButton, { opacity: pressed ? 0.8 : 1 }]}
-                accessibilityRole="button"
-                accessibilityLabel="Open device settings"
-                accessibilityHint="Opens settings to enable camera permission"
-              >
-                <LinearGradient
-                  colors={[...colors.gradientPrimary]}
-                  style={StyleSheet.absoluteFill}
-                />
-                <Text style={[Typography.headline, { color: '#FFFFFF' }]}>
-                  Open Settings
-                </Text>
-              </Pressable>
-            ) : (
-              <Pressable
-                onPress={requestPermission}
-                style={({ pressed }) => [styles.primaryButton, { opacity: pressed ? 0.8 : 1 }]}
-                accessibilityRole="button"
-                accessibilityLabel="Grant camera permission"
-                accessibilityHint="Opens system dialog to allow camera access"
-              >
-                <LinearGradient
-                  colors={[...colors.gradientPrimary]}
-                  style={StyleSheet.absoluteFill}
-                />
-                <Text style={[Typography.headline, { color: '#FFFFFF' }]}>
-                  Grant Permission
-                </Text>
-              </Pressable>
-            )}
-
-            <Pressable
-              onPress={() => router.back()}
-              style={({ pressed }) => [styles.secondaryButton, { opacity: pressed ? 0.8 : 1 }]}
-              accessibilityRole="button"
-              accessibilityLabel="Go back"
-            >
-              <Text style={[Typography.body, { color: 'rgba(255,255,255,0.7)' }]}>
-                Go Back
-              </Text>
-            </Pressable>
-          </View>
-        </Animated.View>
       </View>
     );
   }
@@ -859,6 +819,9 @@ const styles = StyleSheet.create({
   permissionContainer: {
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  permissionStateCard: {
+    width: '100%',
   },
   permissionContent: {
     alignItems: 'center',
