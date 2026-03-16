@@ -17,6 +17,9 @@ export default defineSchema({
     avatar: v.optional(v.string()),
     createdAt: v.optional(v.number()),
     onboardingComplete: v.optional(v.boolean()),
+    // AI rate limiting — per-user analysis quota
+    aiAnalysisCount: v.optional(v.number()),      // analyses in current window
+    aiAnalysisWindowStart: v.optional(v.number()), // timestamp when window started
     // Onboarding preferences
     livingSituation: v.optional(v.union(
       v.literal("studio"),

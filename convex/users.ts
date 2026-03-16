@@ -1,6 +1,14 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { internalQuery, mutation, query } from "./_generated/server";
+
+// Internal query for server-side use (e.g. from actions) — skips auth check
+export const _getById = internalQuery({
+  args: { id: v.id("users") },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.id);
+  },
+});
 
 export const get = query({
   args: {},

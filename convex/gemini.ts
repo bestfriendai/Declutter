@@ -1,5 +1,14 @@
+import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
-import { action, query } from "./_generated/server";
+import { action, internalMutation, query } from "./_generated/server";
+import { internal } from "./_generated/api";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Rate limiting constants
+// ─────────────────────────────────────────────────────────────────────────────
+const RATE_LIMIT_WINDOW_MS = 24 * 60 * 60 * 1000; // 24 hours
+const FREE_ANALYSIS_LIMIT = 10;
+const PREMIUM_ANALYSIS_LIMIT = 50;
 
 const GEMINI_MODEL = "gemini-2.5-flash";
 const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
@@ -400,6 +409,21 @@ export const isConfigured = query({
   },
 });
 
+// Internal mutation to update rate limit counters atomically
+export const _updateRateLimitCounter = internalMutation({
+  args: {
+    userId: v.id("users"),
+    newCount: v.number(),
+    windowStart: v.number(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.userId, {
+      aiAnalysisCount: args.newCount,
+      aiAnalysisWindowStart: args.windowStart,
+    });
+  },
+});
+
 // Analyze a room image using Gemini
 export const analyzeRoom = action({
   args: {
@@ -415,7 +439,38 @@ export const analyzeRoom = action({
     roomType: v.optional(v.string()),
     mascotPersonality: v.optional(v.string()),
   },
-  handler: async (_ctx, args) => {
+  handler: async (ctx, args) => {
+    // ── Authentication ──────────────────────────────────────────────────────
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      throw new Error("Unauthenticated");
+    }
+
+    // ── Rate limiting ───────────────────────────────────────────────────────
+    const user = await ctx.runQuery(internal.users._getById, { id: userId });
+    if (user) {
+      const isPremium = user.subscriptionStatus === "active" || user.subscriptionStatus === "trial";
+      const limit = isPremium ? PREMIUM_ANALYSIS_LIMIT : FREE_ANALYSIS_LIMIT;
+      const now = Date.now();
+      const windowStart = user.aiAnalysisWindowStart ?? 0;
+      const count = user.aiAnalysisCount ?? 0;
+      const windowExpired = now - windowStart >= RATE_LIMIT_WINDOW_MS;
+      const currentCount = windowExpired ? 0 : count;
+
+      if (currentCount >= limit) {
+        const resetAt = windowStart + RATE_LIMIT_WINDOW_MS;
+        throw new Error(`RATE_LIMITED:${resetAt}:${limit}`);
+      }
+
+      // Update counter
+      await ctx.runMutation(internal.gemini._updateRateLimitCounter, {
+        userId,
+        newCount: currentCount + 1,
+        windowStart: windowExpired ? now : windowStart,
+      });
+    }
+
+    // ── API key ─────────────────────────────────────────────────────────────
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
       throw new Error("Gemini API key not configured on server.");
@@ -521,7 +576,12 @@ export const analyzeProgress = action({
     completedPhase: v.optional(v.number()),
     mascotPersonality: v.optional(v.string()),
   },
-  handler: async (_ctx, args) => {
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      throw new Error("Unauthenticated");
+    }
+
     const apiKey = process.env.GEMINI_API_KEY;
     
     const defaultResponse = {
@@ -638,7 +698,12 @@ export const getMotivation = action({
     currentStreak: v.optional(v.number()),
     mascotPersonality: v.optional(v.string()),
   },
-  handler: async (_ctx, args) => {
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      throw new Error("Unauthenticated");
+    }
+
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
       const personality = args.mascotPersonality ?? "dusty";

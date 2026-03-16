@@ -23,7 +23,9 @@ export async function persistPhotoLocally(
   const photosPath = await ensurePhotosDirectory();
 
   if (!photosPath) {
-    console.warn('Document directory not available, using original URI');
+    if (__DEV__) {
+      console.warn('Document directory not available, using original URI');
+    }
     return tempUri;
   }
 
@@ -33,7 +35,9 @@ export async function persistPhotoLocally(
   try {
     const fileInfo = await FileSystem.getInfoAsync(tempUri);
     if (!fileInfo.exists) {
-      console.warn('Source file does not exist:', tempUri);
+      if (__DEV__) {
+        console.warn('Source file does not exist:', tempUri);
+      }
       return tempUri;
     }
 

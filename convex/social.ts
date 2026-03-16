@@ -3,12 +3,9 @@ import { mutation, query } from "./_generated/server";
 import { getAuthUserId } from "@convex-dev/auth/server";
 
 function generateInviteCode(): string {
-  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  let code = "";
-  for (let i = 0; i < 8; i++) {
-    code += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return code;
+  // Use crypto.randomUUID() for cryptographically secure randomness.
+  // Strip hyphens and take first 8 chars, uppercased.
+  return crypto.randomUUID().replace(/-/g, "").substring(0, 8).toUpperCase();
 }
 
 export const createChallenge = mutation({
@@ -35,7 +32,20 @@ export const createChallenge = mutation({
 
     const user = await ctx.db.get(userId);
     const creatorName = user?.name?.trim() || "Declutterer";
-    const inviteCode = generateInviteCode();
+
+    // Generate a unique invite code — retry if collision (extremely unlikely with UUID)
+    let inviteCode = generateInviteCode();
+    let codeAttempts = 0;
+    while (codeAttempts < 5) {
+      const existing = await ctx.db
+        .query("challenges")
+        .withIndex("by_inviteCode", (q) => q.eq("inviteCode", inviteCode))
+        .first();
+      if (!existing) break;
+      inviteCode = generateInviteCode();
+      codeAttempts++;
+    }
+
     const now = Date.now();
     const durationDays = args.durationDays ?? 7;
     if (durationDays <= 0) {

@@ -29,12 +29,9 @@ const BOTH_ACTIVE_XP_BONUS = 0.20; // 20 %
 // ─────────────────────────────────────────────────────────────────────────────
 
 function generateInviteCode(): string {
-  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no 0/O/1/I to avoid confusion
-  let code = "";
-  for (let i = 0; i < INVITE_CODE_LENGTH; i++) {
-    code += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return code;
+  // Use crypto.randomUUID() for cryptographically secure randomness.
+  // Take first INVITE_CODE_LENGTH chars (uppercase hex-ish, no ambiguous chars).
+  return crypto.randomUUID().replace(/-/g, "").substring(0, INVITE_CODE_LENGTH).toUpperCase();
 }
 
 function startOfDay(): number {

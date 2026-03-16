@@ -92,7 +92,9 @@ export async function playAmbientSound(type: FocusModeSettings['whiteNoiseType']
 
   const soundUrl = AMBIENT_SOUNDS[type];
   if (!soundUrl) {
-    console.warn(`No sound URL for type: ${type}`);
+    if (__DEV__) {
+      console.warn(`No sound URL for type: ${type}`);
+    }
     return;
   }
 
@@ -115,7 +117,9 @@ export async function playAmbientSound(type: FocusModeSettings['whiteNoiseType']
 
         // Handle playback errors and attempt recovery
         if ('error' in status && status.error) {
-          console.warn('Playback error detected:', status.error);
+          if (__DEV__) {
+            console.warn('Playback error detected:', status.error);
+          }
           // Attempt to recover by reloading the sound
           handlePlaybackError(type);
         }
@@ -138,7 +142,9 @@ async function handlePlaybackError(type: FocusModeSettings['whiteNoiseType']): P
 
   // Only attempt recovery if we still expect to be playing
   if (isPlaying) {
-    console.log('Attempting audio recovery...');
+    if (__DEV__) {
+      console.log('Attempting audio recovery...');
+    }
     try {
       await playAmbientSound(type);
     } catch (error) {

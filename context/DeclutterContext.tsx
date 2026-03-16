@@ -7,14 +7,7 @@ import { api } from '@/convex/_generated/api';
 import { convex } from '@/config/convex';
 import { SyncData, useAuth } from '@/context/AuthContext';
 import { setForcedColorScheme } from '@/hooks/useColorScheme';
-import { setGeminiApiKey } from '@/services/gemini';
 import { setHapticsEnabled } from '@/services/haptics';
-import {
-    deleteApiKeySecure,
-    isValidApiKeyFormat,
-    loadApiKeySecure,
-    saveApiKeySecure,
-} from '@/services/secureStorage';
 import { persistPhotoLocally } from '@/services/localPhotos';
 import {
     AppSettings,
@@ -448,15 +441,10 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
         setHapticsEnabled(mergedSettings.hapticFeedback);
       }
 
-      // Load API key from secure storage instead
-      const secureApiKey = await loadApiKeySecure();
-      if (secureApiKey) {
-        setGeminiApiKey(secureApiKey);
-      } else if (apiKey) {
-        // Migrate from old storage to secure storage
-        await saveApiKeySecure(apiKey);
+      // API key is now server-side in Convex env vars — nothing to load here.
+      // Clean up any old locally-stored key (migration step, runs once).
+      if (apiKey) {
         await AsyncStorage.removeItem(STORAGE_KEYS.API_KEY);
-        setGeminiApiKey(apiKey);
       }
 
       if (mascotStr) {
@@ -1354,41 +1342,21 @@ export function useDeclutter() {
   return context;
 }
 
-// Save API key (using secure storage)
-export async function saveApiKey(apiKey: string): Promise<void> {
-  try {
-    // Validate format first
-    if (!isValidApiKeyFormat(apiKey)) {
-      throw new Error('Invalid API key format');
-    }
-    await saveApiKeySecure(apiKey);
-    setGeminiApiKey(apiKey);
-  } catch (error) {
-    console.error('Error saving API key:', error);
-    throw error;
-  }
+// API key management — key now lives in Convex server env vars (GEMINI_API_KEY).
+// These stubs are kept so existing call sites don't break.
+// Run: npx convex env set GEMINI_API_KEY your_key_here
+
+/** @deprecated — API key is server-side only; this is a no-op */
+export async function saveApiKey(_apiKey: string): Promise<void> {
+  // no-op — set key in Convex env vars instead
 }
 
-// Load API key (from secure storage)
+/** @deprecated — API key is server-side only */
 export async function loadApiKey(): Promise<string | null> {
-  try {
-    const key = await loadApiKeySecure();
-    if (key) {
-      setGeminiApiKey(key);
-    }
-    return key;
-  } catch (error) {
-    console.error('Error loading API key:', error);
-    return null;
-  }
+  return null;
 }
 
-// Delete API key (from secure storage)
+/** @deprecated — API key is server-side only; this is a no-op */
 export async function deleteApiKey(): Promise<void> {
-  try {
-    await deleteApiKeySecure();
-    setGeminiApiKey('');
-  } catch (error) {
-    console.error('Error deleting API key:', error);
-  }
+  // no-op
 }

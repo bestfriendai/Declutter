@@ -116,26 +116,33 @@ function sanitizeErrorMessage(error: unknown): string {
   return 'An unexpected error occurred.';
 }
 
-// API Key from environment variable (preferred) or runtime override
-const ENV_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY || '';
-let runtimeApiKey = '';
+// NOTE: The Gemini API key is managed server-side in Convex env vars.
+// Client-side functions below are kept for legacy compatibility but
+// analyzeRoomImage/analyzeProgress now delegate to Convex actions where
+// the key never leaves the server.
+// DO NOT add EXPO_PUBLIC_GEMINI_API_KEY back — it would expose the key in the bundle.
 
-export function setGeminiApiKey(key: string) {
-  runtimeApiKey = key;
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+let _unusedLegacyKey = '';
+
+/** @deprecated — key is server-side only; this is a no-op kept for compatibility */
+export function setGeminiApiKey(_key: string) {
+  // intentionally empty — key lives in Convex env, not the client
 }
 
+/** @deprecated — key is server-side only */
 export function getGeminiApiKey(): string {
-  return runtimeApiKey || ENV_API_KEY;
+  return '';
 }
 
-// Check if API key is configured
+// Check if AI is configured — delegates to Convex
 export function isApiKeyConfigured(): boolean {
-  return !!(runtimeApiKey || ENV_API_KEY);
+  return true; // Convex action will fail with a clear error if not configured
 }
 
-// Get the active API key (prefers runtime override, then env)
+// No client-side key needed
 function getActiveApiKey(): string {
-  return runtimeApiKey || ENV_API_KEY;
+  return '';
 }
 
 const DECLUTTER_SYSTEM_PROMPT = `You are a friendly, expert cleaning coach helping people declutter and clean their spaces. You specialize in helping people with ADHD, anxiety, and those who feel overwhelmed by cleaning tasks.
@@ -614,102 +621,24 @@ function getDefaultTasks(): CleaningTask[] {
   ];
 }
 
-// Main analysis function - analyzes an image of a room
+// Main analysis function
+// SECURITY: Client-side direct API calls are disabled. All AI calls go through
+// the Convex action (services/ai.ts → convex.action(api.gemini.analyzeRoom))
+// where the API key stays on the server and never reaches the client bundle.
 export async function analyzeRoomImage(
-  base64Image: string,
-  additionalContext?: string
+  _base64Image: string,
+  _additionalContext?: string
 ): Promise<AIAnalysisResult> {
-  // Check network connectivity first
-  const online = await isOnline();
-  if (!online) {
-    throw new Error('No internet connection. Please check your network and try again.');
-  }
-
-  const apiKey = getActiveApiKey();
-  if (!apiKey) {
-    throw new Error('Gemini API key not configured. Please add your API key in Settings.');
-  }
-
-  if (__DEV__) {
-    console.log('Gemini API key configured:', apiKey.length, 'chars, starts with:', apiKey.substring(0, 6));
-  }
-
-  // Check rate limit
-  if (!apiRateLimiter.canMakeRequest()) {
-    const waitTime = Math.ceil(apiRateLimiter.getTimeUntilReset() / 1000);
-    throw new Error(`Too many requests. Please wait ${waitTime} seconds before trying again.`);
-  }
-
-  // Sanitize additional context to prevent injection
-  const sanitizedContext = additionalContext
-    ? additionalContext.slice(0, 500).replace(/[<>{}]/g, '')
-    : undefined;
-
-  const userPrompt = sanitizedContext
-    ? `Analyze this room and create a decluttering plan. Additional context: ${sanitizedContext}`
-    : 'Analyze this room and create a decluttering plan. Be encouraging and break tasks into small, manageable steps.';
-
-  // Optimize image before sending to API
-  const optimizedImage = await optimizeImage(base64Image);
-
-  const requestBody = {
-    contents: [
-      {
-        parts: [
-          { text: DECLUTTER_SYSTEM_PROMPT },
-          { text: userPrompt },
-          createImagePart(optimizedImage),
-        ],
-      },
-    ],
-    generationConfig: {
-      temperature: 0.7,
-      topP: 0.95,
-      maxOutputTokens: 16384,
-    },
-  };
-
-  try {
-    const response = await fetch(GEMINI_API_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-goog-api-key': apiKey,
-      },
-      body: JSON.stringify(requestBody),
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      const rawMessage = errorData.error?.message || `API request failed with status ${response.status}`;
-      if (__DEV__) {
-        console.error('Gemini API raw error:', response.status, rawMessage);
-      }
-      throw new Error(sanitizeErrorMessage(new Error(rawMessage)));
-    }
-
-    const data = await response.json();
-    const responseText = data.candidates?.[0]?.content?.parts?.[0]?.text;
-
-    if (!responseText) {
-      throw new Error('No response from AI. Please try again.');
-    }
-
-    return parseAIResponse(responseText);
-  } catch (error) {
-    // Log sanitized error in dev only
-    if (__DEV__) {
-      console.error('Gemini API error:', sanitizeErrorMessage(error));
-    }
-    // Re-throw with sanitized message
-    throw new Error(sanitizeErrorMessage(error));
-  }
+  throw new Error(
+    'Direct client-side Gemini calls are disabled for security. Use services/ai.ts instead.'
+  );
 }
 
 // Analyze progress between two photos
+// SECURITY: Client-side direct API calls are disabled. Use services/ai.ts instead.
 export async function analyzeProgress(
-  beforeImage: string,
-  afterImage: string
+  _beforeImage: string,
+  _afterImage: string
 ): Promise<{
   progressPercentage: number;
   percentImproved: number;
@@ -720,193 +649,16 @@ export async function analyzeProgress(
   encouragement: string;
   encouragingMessage: string;
 }> {
-  const defaultResult = {
-    progressPercentage: 0,
-    percentImproved: 0,
-    completedTasks: [] as string[],
-    areasImproved: [] as string[],
-    remainingTasks: ['Unable to analyze'] as string[],
-    areasRemaining: ['Unable to analyze'] as string[],
-    encouragement: '',
-    encouragingMessage: '',
-  };
-
-  // Check network connectivity first
-  const online = await isOnline();
-  if (!online) {
-    return {
-      ...defaultResult,
-      remainingTasks: ['Unable to analyze - no internet connection'],
-      areasRemaining: ['Unable to analyze - no internet connection'],
-      encouragement: "We couldn't check your progress without internet. Keep up the great work!",
-      encouragingMessage: "We couldn't check your progress without internet. Keep up the great work!",
-    };
-  }
-
-  const apiKey = getActiveApiKey();
-  if (!apiKey) {
-    throw new Error('Gemini API key not configured. Please add your API key in Settings.');
-  }
-
-  // Check rate limit
-  if (!apiRateLimiter.canMakeRequest()) {
-    return {
-      progressPercentage: 50,
-      percentImproved: 50,
-      completedTasks: ['Made visible progress'],
-      areasImproved: ['Made visible progress'],
-      remainingTasks: ['Continue with remaining tasks'],
-      areasRemaining: ['Continue with remaining tasks'],
-      encouragement: "You're doing great! Every bit of progress counts!",
-      encouragingMessage: "You're doing great! Every bit of progress counts!",
-    };
-  }
-
-  const progressPrompt = `Compare these two images of the same room. The first image is "before" and the second is "after" cleaning.
-
-Analyze the progress made and respond with JSON:
-{
-  "progressPercentage": <0-100>,
-  "percentImproved": <0-100>,
-  "completedTasks": ["<what was cleaned/organized>"],
-  "areasImproved": ["<specific areas that look better>"],
-  "remainingTasks": ["<what still needs work>"],
-  "areasRemaining": ["<specific areas still needing attention>"],
-  "encouragement": "<celebrate their progress!>",
-  "encouragingMessage": "<warm, specific message about what they accomplished>"
-}
-
-Be very encouraging! Focus on what WAS accomplished, not what wasn't. Name specific objects and areas that improved.`;
-
-  // Optimize both images before sending to API
-  const [optimizedBefore, optimizedAfter] = await Promise.all([
-    optimizeImage(beforeImage),
-    optimizeImage(afterImage),
-  ]);
-
-  const requestBody = {
-    contents: [
-      {
-        parts: [
-          { text: progressPrompt },
-          { text: 'Before image:' },
-          createImagePart(optimizedBefore),
-          { text: 'After image:' },
-          createImagePart(optimizedAfter),
-        ],
-      },
-    ],
-    generationConfig: {
-      temperature: 0.7,
-      maxOutputTokens: 2048,
-    },
-  };
-
-  try {
-    const response = await fetch(GEMINI_API_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-goog-api-key': apiKey,
-      },
-      body: JSON.stringify(requestBody),
-    });
-
-    if (!response.ok) {
-      throw new Error(sanitizeErrorMessage(new Error(`API request failed with status ${response.status}`)));
-    }
-
-    const data = await response.json();
-    const responseText = data.candidates?.[0]?.content?.parts?.[0]?.text;
-
-    const jsonStr = extractJsonFromResponse(responseText);
-    let rawParsed: any;
-    try {
-      rawParsed = JSON.parse(jsonStr);
-    } catch {
-      const repairedJson = repairTruncatedJson(jsonStr);
-      rawParsed = JSON.parse(repairedJson);
-    }
-
-    const validationResult = ProgressAnalysisResponseSchema.safeParse(rawParsed);
-    const validated = validationResult.success ? validationResult.data : rawParsed;
-
-    const progressPct = validated.progressPercentage || validated.percentImproved || 50;
-    const completed = validated.completedTasks || [];
-    const remaining = validated.remainingTasks || [];
-    const msg = validated.encouragement || validated.encouragingMessage || 'Great progress! Keep going!';
-
-    return {
-      progressPercentage: progressPct,
-      percentImproved: validated.percentImproved || progressPct,
-      completedTasks: completed,
-      areasImproved: validated.areasImproved || completed,
-      remainingTasks: remaining,
-      areasRemaining: validated.areasRemaining || remaining,
-      encouragement: msg,
-      encouragingMessage: validated.encouragingMessage || msg,
-    };
-  } catch (error) {
-    if (__DEV__) {
-      console.error('Progress analysis error:', sanitizeErrorMessage(error));
-    }
-    return {
-      progressPercentage: 50,
-      percentImproved: 50,
-      completedTasks: ['Made visible progress'],
-      areasImproved: ['Made visible progress'],
-      remainingTasks: ['Continue with remaining tasks'],
-      areasRemaining: ['Continue with remaining tasks'],
-      encouragement: "You're doing great! Every bit of progress counts!",
-      encouragingMessage: "You're doing great! Every bit of progress counts!",
-    };
-  }
+  throw new Error(
+    'Direct client-side Gemini calls are disabled for security. Use services/ai.ts instead.'
+  );
 }
 
 // Get a motivational message
-export async function getMotivation(context: string): Promise<string> {
-  const apiKey = getActiveApiKey();
-  if (!apiKey) {
-    return getRandomMotivation();
-  }
-
-  // Check rate limit - use fallback if limited
-  if (!apiRateLimiter.canMakeRequest()) {
-    return getRandomMotivation();
-  }
-
-  // Sanitize context to prevent injection
-  const sanitizedContext = context.slice(0, 200).replace(/[<>{}]/g, '');
-
-  try {
-    const requestBody = {
-      contents: [
-        {
-          parts: [
-            { text: `You are a supportive friend helping someone clean their space. They might be feeling overwhelmed or unmotivated. Give them a short (1-2 sentences), warm, encouraging message. Context: ${sanitizedContext}. Be genuine, not cheesy.` },
-          ],
-        },
-      ],
-      generationConfig: {
-        temperature: 0.9,
-        maxOutputTokens: 100,
-      },
-    };
-
-    const response = await fetch(GEMINI_API_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-goog-api-key': apiKey,
-      },
-      body: JSON.stringify(requestBody),
-    });
-
-    const data = await response.json();
-    return data.candidates?.[0]?.content?.parts?.[0]?.text || getRandomMotivation();
-  } catch {
-    return getRandomMotivation();
-  }
+// Client-side: returns local fallback only. Real AI motivation uses
+// convex.action(api.gemini.getMotivation) via services/ai.ts.
+export async function getMotivation(_context: string): Promise<string> {
+  return getRandomMotivation();
 }
 
 // Fallback motivational messages
