@@ -1,27 +1,25 @@
 import { setGeminiApiKey, getGeminiApiKey, isApiKeyConfigured } from '../services/gemini';
 
 describe('Gemini Service', () => {
-  describe('API Key Management', () => {
-    beforeEach(() => {
-      setGeminiApiKey('');
-    });
+  describe('API Key Management (server-side architecture)', () => {
+    // The Gemini API key is now managed server-side in Convex env vars.
+    // Client-side key management functions are deprecated no-ops.
 
-    it('should return empty string when no key is set', () => {
+    it('should return empty string (key is server-side only)', () => {
       expect(getGeminiApiKey()).toBe('');
     });
 
-    it('should store and retrieve API key', () => {
-      const testKey = 'test-api-key-123';
-      setGeminiApiKey(testKey);
-      expect(getGeminiApiKey()).toBe(testKey);
+    it('setGeminiApiKey is a no-op — key stays empty', () => {
+      setGeminiApiKey('test-api-key-123');
+      expect(getGeminiApiKey()).toBe('');
     });
 
-    it('should report API key not configured when empty', () => {
-      expect(isApiKeyConfigured()).toBe(false);
+    it('isApiKeyConfigured always returns true (Convex action handles auth)', () => {
+      expect(isApiKeyConfigured()).toBe(true);
     });
 
-    it('should report API key configured when set', () => {
-      setGeminiApiKey('valid-key');
+    it('isApiKeyConfigured stays true even after setGeminiApiKey no-op', () => {
+      setGeminiApiKey('');
       expect(isApiKeyConfigured()).toBe(true);
     });
   });

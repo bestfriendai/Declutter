@@ -394,7 +394,7 @@ function RoomCompleteOverlay({ roomName, onDone }: { roomName: string; onDone: (
 
       {/* "Room Complete!" banner */}
       <Animated.View style={[styles.bannerContainer, bannerStyle]}>
-        <Animated.Text style={styles.bannerEmoji}>{'\u2728'}</Animated.Text>
+        <Animated.Text style={styles.bannerEmoji}>{'\u{1F3E0}'}</Animated.Text>
         <Animated.Text style={styles.bannerTitle}>Room Complete!</Animated.Text>
         <Animated.Text style={styles.bannerSubtitle}>{roomName}</Animated.Text>
       </Animated.View>

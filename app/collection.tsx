@@ -79,7 +79,7 @@ export default function CollectionScreen() {
 
   const categories: { key: FilterType; label: string; emoji: string }[] = [
     { key: 'all', label: 'All', emoji: '📦' },
-    { key: 'sparkles', label: 'Sparkles', emoji: '✨' },
+    { key: 'sparkles', label: 'Sparkles', emoji: '💎' },
     { key: 'tools', label: 'Tools', emoji: '🧹' },
     { key: 'creatures', label: 'Creatures', emoji: '🐰' },
     { key: 'treasures', label: 'Treasures', emoji: '💎' },
@@ -107,7 +107,7 @@ export default function CollectionScreen() {
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Header */}
       <Animated.View
-        entering={FadeInDown.delay(50).springify()}
+        entering={FadeInDown.delay(50).duration(350)}
         style={[styles.header, { paddingTop: insets.top + Spacing.sm }]}
       >
         <Pressable
@@ -127,8 +127,11 @@ export default function CollectionScreen() {
       </Animated.View>
 
       {/* Stats Overview */}
-      <Animated.View entering={FadeInDown.delay(100).springify()}>
-        <View style={[styles.statsCard, { backgroundColor: colors.card }]}>
+      <Animated.View entering={FadeInDown.delay(100).duration(350)}>
+        <View style={[styles.statsCard, {
+          backgroundColor: colors.card,
+          borderColor: rawColorScheme === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+        }]}>
           <View style={styles.statsRow} accessibilityRole="summary" accessibilityLabel={`${collectionStats.totalCollected} total collected, ${uniqueOwned} of ${totalCollectibles} unique, ${completionPercent}% complete`}>
             <View style={styles.statItem}>
               <RNText style={[Typography.title1, { color: colors.text }]}>
@@ -217,20 +220,20 @@ export default function CollectionScreen() {
             <View style={styles.emptyStateIllustration}>
               <RNText style={styles.emptyStateMainEmoji}>🎁</RNText>
               <View style={styles.emptyStateFloatingEmojis}>
-                <RNText style={styles.floatingEmoji1}>✨</RNText>
-                <RNText style={styles.floatingEmoji2}>⭐</RNText>
-                <RNText style={styles.floatingEmoji3}>💫</RNText>
+                <RNText style={styles.floatingEmoji1}>🎁</RNText>
+                <RNText style={styles.floatingEmoji2}>🧹</RNText>
+                <RNText style={styles.floatingEmoji3}>🏆</RNText>
               </View>
             </View>
             <RNText style={[styles.emptyStateTitle, { color: colors.text }]}>
-              Start Your Collection!
+              Your Collection Awaits
             </RNText>
             <RNText style={[styles.emptyStateSubtitle, { color: colors.textSecondary }]}>
-              Complete cleaning tasks to discover rare collectibles. Each task has a chance to spawn magical items!
+              Every cleaning task has a chance to spawn a collectible. Rarer items appear as you build your streak. How many can you find?
             </RNText>
             <View style={[styles.emptyStateTip, { backgroundColor: colors.primary + '15' }]}>
               <RNText style={[styles.emptyStateTipText, { color: colors.primary }]}>
-                💡 Complete your first task to unlock collectible spawns
+                Tip: Complete your first task to start spawning collectibles. Streaks boost rare spawn rates!
               </RNText>
             </View>
             <Pressable
@@ -258,8 +261,8 @@ export default function CollectionScreen() {
             return (
               <AnimatedPressable
                 onPress={() => handleItemPress(item)}
-                layout={LinearTransition.springify()}
-                entering={ZoomIn.delay(50).springify()}
+                layout={LinearTransition.duration(350)}
+                entering={ZoomIn.delay(50).duration(350)}
                 style={[
                   styles.gridItem,
                   {
@@ -313,7 +316,7 @@ export default function CollectionScreen() {
             accessibilityLabel="Close details"
           >
             <AnimatedPressable
-              entering={SlideInDown.springify().damping(15)}
+              entering={SlideInDown.duration(350).damping(15)}
               exiting={ZoomOut.duration(200)}
               style={[styles.modalContent, { backgroundColor: colors.card, width: width * 0.85 }]}
               onPress={(e) => e.stopPropagation()}
@@ -425,6 +428,12 @@ const styles = StyleSheet.create({
     padding: Spacing.md,
     borderRadius: BorderRadius.card,
     marginBottom: Spacing.md,
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 2,
   },
   statsRow: {
     flexDirection: 'row',
@@ -477,6 +486,7 @@ const styles = StyleSheet.create({
   gridContent: {
     paddingHorizontal: 16,
     paddingBottom: 100,
+    paddingTop: 4,
   },
   grid: {
     flexDirection: 'row',
@@ -488,6 +498,7 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     alignItems: 'center',
     justifyContent: 'center',
+    margin: 4,
   },
   itemEmoji: {
     fontSize: 28,
@@ -655,10 +666,10 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   emptyStateCTA: {
-    paddingHorizontal: Spacing.xl,
-    paddingVertical: 14,
-    borderRadius: BorderRadius.button,
-    minHeight: 44,
+    width: '100%',
+    paddingVertical: 16,
+    borderRadius: 28,
+    height: 54,
     justifyContent: 'center',
     alignItems: 'center',
   },

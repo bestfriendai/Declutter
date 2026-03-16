@@ -101,7 +101,7 @@ function Sparkle({
         animatedStyle,
       ]}
     >
-      {'\u2728'}
+      {'\u2022'}
     </Animated.Text>
   );
 }
@@ -154,7 +154,7 @@ export function XPPopup({
 
   const enterAnimation = reducedMotion
     ? undefined
-    : ZoomIn.springify().damping(10).stiffness(200);
+    : ZoomIn.duration(350).damping(10).stiffness(200);
 
   const exitAnimation = reducedMotion ? undefined : FadeOut.duration(300);
 
@@ -185,14 +185,14 @@ export function XPPopup({
         {/* Combo indicator */}
         {isCombo && comboCount && comboCount > 1 && (
           <Text style={styles.comboText}>
-            x{comboCount} COMBO!
+            x{comboCount} COMBO{comboCount >= 5 ? ' FIRE!' : '!'}
           </Text>
         )}
 
         {/* Bonus multiplier */}
         {bonusMultiplier && bonusMultiplier > 1 && !isCombo && (
           <Text style={styles.bonusText}>
-            ({bonusMultiplier}x Comeback Bonus!)
+            {bonusMultiplier}x Welcome Back Bonus!
           </Text>
         )}
       </View>

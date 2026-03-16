@@ -65,7 +65,7 @@ export function ContextualGreeting({
         return {
           title: `Hey ${firstName}!`,
           subtitle: "Ready to pick up where you left off?",
-          emoji: '✨',
+          emoji: '🌿',
         };
       }
     }
@@ -171,7 +171,7 @@ export function ContextualGreeting({
 
   return (
     <Animated.View
-      entering={FadeInDown.delay(100).springify()}
+      entering={FadeInDown.delay(100).duration(350)}
       style={[styles.container, style]}
     >
       <View style={styles.greetingRow}>

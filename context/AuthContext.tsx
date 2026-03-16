@@ -67,6 +67,11 @@ interface AuthContextValue extends AuthState {
   ) => Promise<AuthResult>;
   signOut: () => Promise<void>;
   continueAsGuest: () => Promise<AuthResult>;
+  upgradeFromGuest: (
+    email: string,
+    password: string,
+    displayName?: string
+  ) => Promise<AuthResult>;
   updateProfile: (updates: {
     displayName?: string;
     photoURL?: string;
@@ -156,7 +161,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           await convex.mutation(api.notifications.savePushToken, { token });
         }
       } catch (pushError) {
-        console.error('Failed to sync push token after auth:', pushError);
+        if (__DEV__) console.error('Failed to sync push token after auth:', pushError);
       }
     })();
   }, [isAuthenticated, user]);
@@ -235,6 +240,75 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const continueAsGuest = useCallback(
     async (): Promise<AuthResult> => runAuthFlow('anonymous'),
     [runAuthFlow]
+  );
+
+  const upgradeFromGuest = useCallback(
+    async (
+      email: string,
+      password: string,
+      displayName?: string
+    ): Promise<AuthResult> => {
+      if (!user?.isAnonymous) {
+        return { success: false, error: 'Current user is not a guest account.' };
+      }
+
+      setPendingAuthAction(true);
+      setError(null);
+
+      try {
+        // 1. Snapshot current user data from the cloud before switching accounts
+        let existingData: any = null;
+        try {
+          existingData = await convex.query(api.sync.getUserState, {});
+        } catch {
+          // Best-effort: if snapshot fails we still proceed with upgrade
+        }
+
+        // 2. Sign out the anonymous session
+        await authSignOut();
+
+        // 3. Create the new account with email + password
+        const signUpResult = await authSignIn('password', {
+          flow: 'signUp',
+          email: normalizeEmail(email),
+          password,
+          name: displayName?.trim() || '',
+        });
+
+        if (!signUpResult.signingIn) {
+          throw new Error('Failed to create account during upgrade.');
+        }
+
+        // 4. Migrate the guest data to the new account
+        // TODO: Backend needs a `sync.migrateFromGuest` mutation that accepts
+        // the snapshotted data and merges it into the newly created user.
+        // For now, re-upload via replaceUserState if we have data.
+        if (existingData) {
+          try {
+            await convex.mutation(api.sync.replaceUserState, {
+              profile: existingData.profile,
+              rooms: existingData.rooms,
+              stats: existingData.stats,
+              settings: existingData.settings,
+              mascot: existingData.mascot,
+              collection: existingData.collection,
+              collectionStats: existingData.collectionStats,
+            });
+          } catch {
+            // Best-effort migration; user can re-sync later
+          }
+        }
+
+        return { success: true };
+      } catch (upgradeError) {
+        const message = getErrorMessage(upgradeError);
+        setError(message);
+        return { success: false, error: message };
+      } finally {
+        setPendingAuthAction(false);
+      }
+    },
+    [authSignIn, authSignOut, user]
   );
 
   const updateProfile = useCallback(
@@ -318,7 +392,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }, 1000);
     } catch (syncError) {
       const message = getErrorMessage(syncError);
-      console.error('Convex sync failed:', syncError);
+      if (__DEV__) console.error('Convex sync failed:', syncError);
       setError(message);
       setSyncStatus('error');
 
@@ -346,6 +420,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signUp,
       signOut,
       continueAsGuest,
+      upgradeFromGuest,
       updateProfile,
       deleteAccount,
       clearError,
@@ -372,6 +447,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       syncStatus,
       syncToCloud,
       updateProfile,
+      upgradeFromGuest,
       user,
     ]
   );

@@ -39,13 +39,13 @@ export default function Index() {
             {'🧹'}
           </Text>
           <ActivityIndicator
-            size="large"
-            color={colors.accent}
+            size="small"
+            color={isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.25)'}
             style={styles.spinner}
             accessibilityLabel="Loading"
           />
-          <Text style={[Typography.subheadline, { color: colors.textSecondary }]}>
-            Loading your spaces...
+          <Text style={[Typography.subheadline, { color: colors.textSecondary, textAlign: 'center' }]}>
+            Getting your calm space ready...
           </Text>
         </Animated.View>
       </View>

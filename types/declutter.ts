@@ -485,6 +485,8 @@ export interface AppSettings {
   reminderTime?: string; // Time for daily reminders
   theme: 'light' | 'dark' | 'auto';
   hapticFeedback: boolean;
+  soundFX: boolean;
+  reducedMotion: boolean;
   encouragementLevel: 'minimal' | 'moderate' | 'maximum'; // How much positive reinforcement
   taskBreakdownLevel: 'normal' | 'detailed' | 'ultra'; // How small to break tasks
   // Focus mode settings

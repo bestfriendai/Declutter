@@ -1,15 +1,20 @@
 /**
  * Declutterly - useReducedMotion Hook
- * Respects user's reduced motion accessibility preferences
+ * Respects user's reduced motion accessibility preferences.
+ *
+ * Sources (OR'd together):
+ * 1. React Native Reanimated's built-in hook (reads OS setting on the UI thread)
+ * 2. System AccessibilityInfo listener (fallback / change detection)
+ * 3. App-level user preference from settings (allows overriding in-app)
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { AccessibilityInfo } from 'react-native';
 import { useReducedMotion as useReanimatedReducedMotion } from 'react-native-reanimated';
 
 /**
- * Hook to detect if user prefers reduced motion
- * Uses React Native Reanimated's implementation with fallback
+ * Hook to detect if user prefers reduced motion.
+ * Returns `true` if the OS accessibility setting OR the in-app setting is enabled.
  */
 export function useReducedMotion(): boolean {
   // Use Reanimated's built-in hook as primary source
@@ -18,13 +23,13 @@ export function useReducedMotion(): boolean {
 
   useEffect(() => {
     // Get initial value from system
+    let mounted = true;
     const checkReducedMotion = async () => {
       try {
         const isReducedMotionEnabled = await AccessibilityInfo.isReduceMotionEnabled();
-        setSystemReducedMotion(isReducedMotionEnabled);
+        if (mounted) setSystemReducedMotion(isReducedMotionEnabled);
       } catch {
         // Fallback to false if check fails
-        setSystemReducedMotion(false);
       }
     };
 
@@ -34,17 +39,21 @@ export function useReducedMotion(): boolean {
     const subscription = AccessibilityInfo.addEventListener(
       'reduceMotionChanged',
       (isEnabled) => {
-        setSystemReducedMotion(isEnabled);
+        if (mounted) setSystemReducedMotion(isEnabled);
       }
     );
 
     return () => {
+      mounted = false;
       subscription.remove();
     };
   }, []);
 
-  // Return true if either source indicates reduced motion
-  return reanimatedReducedMotion || systemReducedMotion;
+  // Memoize the combined result to avoid unnecessary child re-renders
+  return useMemo(
+    () => reanimatedReducedMotion || systemReducedMotion,
+    [reanimatedReducedMotion, systemReducedMotion]
+  );
 }
 
 /**

@@ -139,7 +139,7 @@ export function SessionCheckIn({ visible, onComplete, onSkip }: SessionCheckInPr
   const getStepTitle = () => {
     switch (step) {
       case 'energy':
-        return 'How are you feeling?';
+        return 'How is your energy right now?';
       case 'time':
         return 'How much time do you have?';
       case 'mood':
@@ -150,11 +150,11 @@ export function SessionCheckIn({ visible, onComplete, onSkip }: SessionCheckInPr
   const getStepSubtitle = () => {
     switch (step) {
       case 'energy':
-        return "We'll match tasks to your energy level";
+        return "No wrong answer -- we will size tasks to match";
       case 'time':
-        return "We'll prioritize what fits";
+        return "Even 5 minutes counts";
       case 'mood':
-        return "We'll adjust our approach";
+        return "This changes how we cheer you on";
     }
   };
 
@@ -253,7 +253,7 @@ export function SessionCheckIn({ visible, onComplete, onSkip }: SessionCheckInPr
           style={StyleSheet.absoluteFill}
         />
         <Animated.View
-          entering={SlideInUp.springify().damping(20)}
+          entering={SlideInUp.duration(350).damping(20)}
           exiting={SlideOutDown.duration(200)}
           style={styles.content}
         >

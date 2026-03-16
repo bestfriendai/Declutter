@@ -373,7 +373,7 @@ export function CollectibleSpawn({ spawn, onCollect, onDismiss }: CollectibleSpa
       {/* Collection celebration */}
       {collected && (
         <Animated.View
-          entering={ZoomIn.springify().damping(12)}
+          entering={ZoomIn.duration(350).damping(12)}
           style={[styles.celebration, { left: posX - 100, top: posY - 80 }]}
         >
           <RNText style={[styles.celebrationXP, { color: rarityColor }]}>

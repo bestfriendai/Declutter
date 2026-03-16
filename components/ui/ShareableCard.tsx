@@ -130,7 +130,7 @@ export function ShareableCard({
         {/* Background tap to dismiss */}
         <Pressable style={StyleSheet.absoluteFill} onPress={handleDismiss} />
 
-        <Animated.View entering={ZoomIn.springify().damping(15)} style={styles.cardWrapper}>
+        <Animated.View entering={ZoomIn.duration(350).damping(15)} style={styles.cardWrapper}>
           {/* The actual shareable card */}
           <View ref={cardRef} style={styles.cardContainer} collapsable={false}>
             <LinearGradient

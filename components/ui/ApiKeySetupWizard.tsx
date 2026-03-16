@@ -13,6 +13,8 @@ import {
   Pressable,
   Linking,
   ActivityIndicator,
+  Keyboard,
+  TouchableWithoutFeedback,
 } from 'react-native';
 import Animated, {
   FadeIn,
@@ -176,8 +178,8 @@ export function ApiKeySetupWizard({
   // Step 1: Provider Selection
   const renderProviderSelection = () => (
     <Animated.View
-      entering={SlideInRight.springify()}
-      exiting={SlideOutLeft.springify()}
+      entering={SlideInRight.duration(350)}
+      exiting={SlideOutLeft.duration(350)}
       style={styles.stepContent}
     >
       <Text style={[Typography.title3, styles.stepTitle, { color: colors.text }]}>
@@ -227,8 +229,8 @@ export function ApiKeySetupWizard({
   // Step 2: API Key Entry
   const renderApiKeyEntry = () => (
     <Animated.View
-      entering={SlideInRight.springify()}
-      exiting={SlideOutLeft.springify()}
+      entering={SlideInRight.duration(350)}
+      exiting={SlideOutLeft.duration(350)}
       style={styles.stepContent}
     >
       <Text style={[Typography.title3, styles.stepTitle, { color: colors.text }]}>
@@ -299,8 +301,8 @@ export function ApiKeySetupWizard({
   // Step 3: Test & Confirm
   const renderTestStep = () => (
     <Animated.View
-      entering={SlideInRight.springify()}
-      exiting={SlideOutLeft.springify()}
+      entering={SlideInRight.duration(350)}
+      exiting={SlideOutLeft.duration(350)}
       style={styles.stepContent}
     >
       <Text style={[Typography.title3, styles.stepTitle, { color: colors.text }]}>
@@ -348,7 +350,7 @@ export function ApiKeySetupWizard({
       )}
 
       {validationSuccess && (
-        <Animated.View entering={FadeIn.springify()}>
+        <Animated.View entering={FadeIn.duration(350)}>
           <Banner
             type="success"
             title="Connection successful!"
@@ -361,10 +363,25 @@ export function ApiKeySetupWizard({
       {validationError && (
         <Banner type="error" message={validationError} dismissible={false} />
       )}
+
+      {/* Skip test option for users who want to move fast */}
+      {!validationSuccess && !isValidating && (
+        <Pressable
+          onPress={() => {
+            setValidationSuccess(true);
+          }}
+          style={styles.skipTestLink}
+        >
+          <Text style={[Typography.caption1, { color: colors.textTertiary }]}>
+            Skip test and save anyway
+          </Text>
+        </Pressable>
+      )}
     </Animated.View>
   );
 
   return (
+    <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Progress Steps */}
       <View style={styles.progressContainer}>
@@ -428,6 +445,7 @@ export function ApiKeySetupWizard({
         )}
       </View>
     </View>
+    </TouchableWithoutFeedback>
   );
 }
 
@@ -528,6 +546,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: Spacing.xl,
     gap: Spacing.sm,
+  },
+  skipTestLink: {
+    alignItems: 'center',
+    paddingVertical: Spacing.md,
+    marginTop: Spacing.sm,
   },
   buttonContainer: {
     flexDirection: 'row',

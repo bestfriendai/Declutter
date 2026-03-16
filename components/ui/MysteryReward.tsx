@@ -63,28 +63,28 @@ const REWARD_CONFIG: Record<
   bonus_xp: {
     emoji: '\uD83C\uDF1F',
     title: '2x XP Bonus!',
-    subtitle: 'Double XP on your next task',
+    subtitle: 'Your next task earns double. Make it count!',
     gradient: ['#FFD700', '#FF8C00'] as const,
     glowColor: '#FFD700',
   },
   streak_shield: {
     emoji: '\u2744\uFE0F',
-    title: 'Streak Freeze Earned!',
-    subtitle: 'Skip a day without losing your streak',
+    title: 'Streak Shield!',
+    subtitle: 'Miss a day and your streak stays safe. Breathe easy.',
     gradient: ['#00BFFF', '#1E90FF'] as const,
     glowColor: '#00BFFF',
   },
   mystery_collectible: {
     emoji: '\uD83C\uDFB0',
     title: 'Rare Find!',
-    subtitle: 'A unique collectible for your collection',
+    subtitle: 'A unique collectible just dropped into your collection!',
     gradient: ['#BF5AF2', '#6E6CF0'] as const,
     glowColor: '#BF5AF2',
   },
   mascot_treat: {
     emoji: '\uD83E\uDDF9',
-    title: 'Dusty is thrilled!',
-    subtitle: 'Your mascot appreciates the help',
+    title: 'Your Buddy Loves This!',
+    subtitle: '+20 happiness for your cleaning companion',
     gradient: ['#FF375F', '#FF6B6B'] as const,
     glowColor: '#FF375F',
   },
@@ -205,13 +205,12 @@ export function MysteryReward({
           {!revealed ? (
             // Gift box state
             <Animated.View
-              entering={reducedMotion ? undefined : ZoomIn.springify().damping(10)}
+              entering={reducedMotion ? undefined : ZoomIn.duration(350).damping(10)}
               style={styles.giftBoxSection}
             >
               <Text style={styles.mysteryTitle}>Mystery Reward!</Text>
               <Text style={styles.mysterySubtitle}>Tap to open</Text>
               <BouncingGiftBox onTap={handleReveal} reducedMotion={reducedMotion} />
-              <Text style={styles.sparkleDecor}>{'\u2728\u2728\u2728'}</Text>
             </Animated.View>
           ) : (
             // Revealed state
@@ -312,11 +311,6 @@ const styles = StyleSheet.create({
   },
   giftBoxEmoji: {
     fontSize: 80,
-  },
-  sparkleDecor: {
-    fontSize: 24,
-    marginTop: 16,
-    letterSpacing: 8,
   },
   rewardCard: {
     width: '100%',

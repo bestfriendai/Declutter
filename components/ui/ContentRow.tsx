@@ -86,7 +86,7 @@ export function ContentRow({
         {childArray.map((child, index) => (
           <Animated.View
             key={index}
-            entering={FadeInRight.delay(index * 50).springify()}
+            entering={FadeInRight.delay(index * 50).duration(350)}
             style={[
               styles.itemWrapper,
               {

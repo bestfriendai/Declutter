@@ -35,11 +35,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 // Features
 // ─────────────────────────────────────────────────────────────────────────────
 const FEATURES = [
-  'Feel proud of your clean space',
-  'See your progress & stay motivated',
-  'Never lose your cleaning streak',
-  'Your personal cleaning cheerleader',
-  'Routines that fit your ADHD brain',
+  'AI breaks big messes into tiny, doable tasks',
+  'Streak shields so one bad day doesn\'t erase progress',
+  'Unlimited room scans with smart priority ordering',
+  'Your personal cleaning buddy who gets ADHD',
+  'Focus timer + celebration moments that keep you going',
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -48,7 +48,7 @@ const FEATURES = [
 function FeatureRow({ text, isDark, delay }: { text: string; isDark: boolean; delay: number }) {
   return (
     <Animated.View
-      entering={FadeInDown.delay(delay).springify()}
+      entering={FadeInDown.delay(delay).duration(350)}
       style={styles.featureRow}
     >
       <View style={[styles.featureCheck, {
@@ -199,7 +199,7 @@ export default function PaywallScreen() {
         showsVerticalScrollIndicator={false}
       >
         {/* Close button */}
-        <Animated.View entering={FadeIn.delay(100)}>
+        <Animated.View entering={FadeIn.delay(100).duration(350)}>
           <Pressable
             onPress={handleClose}
             style={[styles.closeButton, {
@@ -215,7 +215,7 @@ export default function PaywallScreen() {
         </Animated.View>
 
         {/* DECLUTTER PRO badge */}
-        <Animated.View entering={FadeInDown.delay(150).springify()} style={styles.proBadgeContainer}>
+        <Animated.View entering={FadeInDown.delay(150).duration(350)} style={styles.proBadgeContainer}>
           <LinearGradient
             colors={isDark
               ? ['#C4A87A', '#8A7A60'] as const
@@ -230,30 +230,30 @@ export default function PaywallScreen() {
         </Animated.View>
 
         {/* Hero heading */}
-        <Animated.View entering={FadeInDown.delay(200).springify()}>
+        <Animated.View entering={FadeInDown.delay(200).duration(350)}>
           <Text style={[styles.heroHeading, { color: isDark ? '#FFFFFF' : '#1A1A1A' }]}>
-            A Clearer Space{'\n'}Starts Here.
+            Finally Finish{'\n'}What You Start.
           </Text>
         </Animated.View>
 
         {/* Subtitle */}
-        <Animated.View entering={FadeInDown.delay(250).springify()}>
-          <Text style={[styles.heroSubtitle, { color: isDark ? '#808080' : '#707070' }]}>
-            Unlock your full cleaning potential
+        <Animated.View entering={FadeInDown.delay(250).duration(350)}>
+          <Text style={[styles.heroSubtitle, { color: isDark ? 'rgba(255,255,255,0.55)' : '#606060' }]}>
+            Built for ADHD brains. AI breaks the overwhelm{'\n'}into small wins that actually stick.
           </Text>
         </Animated.View>
 
         {/* Editor's Choice badge */}
-        <Animated.View entering={FadeInDown.delay(280).springify()} style={styles.editorBadgeContainer}>
+        <Animated.View entering={FadeInDown.delay(280).duration(350)} style={styles.editorBadgeContainer}>
           <View style={[styles.editorBadge, {
             backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
             borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
           }]}>
-            <Text style={{ fontSize: 12 }}>{'\u2728'}</Text>
+            <Text style={{ fontSize: 12 }}>{'\u{1F9E0}'}</Text>
             <Text style={[styles.editorBadgeText, {
               color: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)',
             }]}>
-              Editor{'\u2019'}s Choice {'\u00B7'} App Store Featured
+              Built for ADHD brains
             </Text>
           </View>
         </Animated.View>
@@ -271,14 +271,14 @@ export default function PaywallScreen() {
         </View>
 
         {/* Star rating + quote */}
-        <Animated.View entering={FadeInDown.delay(600).springify()} style={styles.socialProofSection}>
+        <Animated.View entering={FadeInDown.delay(600).duration(350)} style={styles.socialProofSection}>
           {/* Stars */}
           <View style={styles.starsRow}>
             {[1, 2, 3, 4, 5].map((i) => (
               <Text key={i} style={styles.star}>{'\u2605'}</Text>
             ))}
             <Text style={[styles.ratingText, { color: isDark ? '#FFFFFF' : '#1A1A1A' }]}>
-              4.9 {'\u00B7'} 165K+ ratings
+              Loved by ADHD community
             </Text>
           </View>
 
@@ -286,39 +286,47 @@ export default function PaywallScreen() {
           <Text style={[styles.quoteText, {
             color: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)',
           }]}>
-            {'\u201C'}Finally an app that gets how my ADHD brain works with cleaning!{'\u201D'} -- App Store Review
+            {'\u201C'}I went from paralyzed by mess to actually enjoying cleaning. The small tasks thing is genius for ADHD.{'\u201D'}
+          </Text>
+          <Text style={[styles.quoteAuthor, {
+            color: isDark ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.35)',
+          }]}>
+            -- Verified Pro subscriber
           </Text>
         </Animated.View>
 
         {/* Pricing toggle */}
-        <Animated.View entering={FadeInDown.delay(650).springify()} style={styles.pricingSection}>
-          <View style={styles.pricingRow}>
+        <Animated.View entering={FadeInDown.delay(650).duration(350)} style={styles.pricingSection}>
+          <View style={[styles.pricingToggleTrack, {
+            backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+            borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+          }]}>
             {/* Monthly */}
             <Pressable
               onPress={() => {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 setSelectedTier('monthly');
               }}
-              style={[styles.pricePill, {
-                backgroundColor: selectedTier === 'monthly'
-                  ? (isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)')
-                  : 'transparent',
-                borderColor: selectedTier === 'monthly'
-                  ? (isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.1)')
-                  : 'transparent',
-              }]}
+              style={[styles.pricePill, selectedTier === 'monthly' && [
+                styles.pricePillSelected,
+                { backgroundColor: isDark ? 'rgba(255,255,255,0.12)' : '#FFFFFF' },
+              ]]}
               accessibilityRole="radio"
               accessibilityState={{ checked: selectedTier === 'monthly' }}
             >
               <Text style={[styles.pricePillLabel, {
-                color: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)',
+                color: selectedTier === 'monthly'
+                  ? (isDark ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.5)')
+                  : (isDark ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.35)'),
               }]}>
                 Monthly
               </Text>
               <Text style={[styles.pricePillPrice, {
-                color: isDark ? '#FFFFFF' : '#1A1A1A',
+                color: selectedTier === 'monthly'
+                  ? (isDark ? '#FFFFFF' : '#1A1A1A')
+                  : (isDark ? 'rgba(255,255,255,0.45)' : 'rgba(0,0,0,0.45)'),
               }]}>
-                {monthlyPlan?.price ?? '$4.99/month'}
+                {monthlyPlan?.price ?? '$4.99/mo'}
               </Text>
             </Pressable>
 
@@ -328,14 +336,10 @@ export default function PaywallScreen() {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 setSelectedTier('annual');
               }}
-              style={[styles.pricePill, styles.pricePillAnnual, {
-                backgroundColor: selectedTier === 'annual'
-                  ? '#D4A843'
-                  : 'transparent',
-                borderColor: selectedTier === 'annual'
-                  ? '#D4A843'
-                  : (isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'),
-              }]}
+              style={[styles.pricePill, styles.pricePillAnnual, selectedTier === 'annual' && [
+                styles.pricePillSelected,
+                { backgroundColor: '#D4A843' },
+              ]]}
               accessibilityRole="radio"
               accessibilityState={{ checked: selectedTier === 'annual' }}
             >
@@ -345,17 +349,24 @@ export default function PaywallScreen() {
                 Annual {'\u00B7'} Save 33%
               </Text>
               <Text style={[styles.pricePillPrice, {
-                color: selectedTier === 'annual' ? '#1A1A1A' : (isDark ? '#FFFFFF' : '#1A1A1A'),
+                color: selectedTier === 'annual'
+                  ? '#1A1A1A'
+                  : (isDark ? 'rgba(255,255,255,0.45)' : 'rgba(0,0,0,0.45)'),
                 fontWeight: '700',
               }]}>
-                {annualPlan?.price ?? '$39.99/year'}
+                {annualPlan?.price ?? '$39.99/yr'}
               </Text>
             </Pressable>
           </View>
         </Animated.View>
 
         {/* CTA Button */}
-        <Animated.View entering={FadeInDown.delay(700).springify()}>
+        <Animated.View entering={FadeInDown.delay(700).duration(350)}>
+          <Text style={[styles.ctaPretext, {
+            color: isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)',
+          }]}>
+            No charge today. Cancel anytime in Settings.
+          </Text>
           <Pressable
             onPress={handlePurchase}
             disabled={isPurchasing || isLoading}
@@ -501,14 +512,15 @@ const styles = StyleSheet.create({
   // ── Hero ──
   heroHeading: {
     fontSize: 36,
-    fontWeight: '700',
-    letterSpacing: -0.8,
-    lineHeight: 42,
+    fontWeight: '800',
+    letterSpacing: -1,
+    lineHeight: 43,
     marginBottom: 10,
   },
   heroSubtitle: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '400',
+    lineHeight: 22,
     marginBottom: 12,
   },
 
@@ -583,23 +595,37 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     lineHeight: 19,
   },
+  quoteAuthor: {
+    fontSize: 12,
+    fontWeight: '500',
+    marginTop: 4,
+  },
 
   // ── Pricing ──
   pricingSection: {
     marginBottom: 20,
   },
-  pricingRow: {
+  pricingToggleTrack: {
     flexDirection: 'row',
-    gap: 12,
+    borderRadius: 20,
+    borderWidth: 1,
+    padding: 4,
+    gap: 4,
   },
   pricePill: {
     flex: 1,
     alignItems: 'center',
-    paddingVertical: 16,
-    paddingHorizontal: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 12,
     borderRadius: 16,
-    borderWidth: 1,
-    gap: 4,
+    gap: 3,
+  },
+  pricePillSelected: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    elevation: 3,
   },
   pricePillAnnual: {},
   pricePillLabel: {
@@ -607,7 +633,7 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   pricePillPrice: {
-    fontSize: 20,
+    fontSize: 19,
     fontWeight: '600',
     letterSpacing: -0.3,
   },
@@ -617,9 +643,15 @@ const styles = StyleSheet.create({
   },
 
   // ── CTA ──
+  ctaPretext: {
+    fontSize: 12,
+    fontWeight: '500',
+    textAlign: 'center',
+    marginBottom: 10,
+  },
   ctaButton: {
     width: '100%',
-    height: 56,
+    height: 58,
     borderRadius: 28,
     alignItems: 'center',
     justifyContent: 'center',
@@ -627,7 +659,8 @@ const styles = StyleSheet.create({
   },
   ctaText: {
     fontSize: 17,
-    fontWeight: '600',
+    fontWeight: '700',
+    letterSpacing: -0.2,
   },
 
   // ── Fine print ──

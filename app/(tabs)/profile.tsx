@@ -23,8 +23,8 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const XP_PER_LEVEL = 500;
-const BODY_FONT = Platform.OS === 'ios' ? 'DM Sans' : 'sans-serif';
-const DISPLAY_FONT = Platform.OS === 'ios' ? 'Bricolage Grotesque' : 'sans-serif';
+const BODY_FONT = 'DM Sans';
+const DISPLAY_FONT = 'Bricolage Grotesque';
 const DAY_LABELS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 
 function getLevelInfo(xp: number) {
@@ -38,10 +38,22 @@ function getLevelInfo(xp: number) {
 }
 
 function getMoodLine(streak: number, roomsDone: number) {
+  if (streak >= 14) return 'Two weeks strong. This is who you are now.';
   if (streak >= 7) return 'Your calm rhythm is getting real.';
   if (streak >= 3) return 'Consistency is starting to stick.';
+  if (roomsDone >= 5) return 'Five rooms down. You are unstoppable.';
   if (roomsDone > 0) return 'You already have proof that small resets work.';
-  return 'Organize your space, organize your mind.';
+  return 'One small reset is all it takes to start.';
+}
+
+function getLevelTitle(level: number) {
+  if (level >= 20) return 'Declutter Legend';
+  if (level >= 15) return 'Master Organizer';
+  if (level >= 10) return 'Space Transformer';
+  if (level >= 7) return 'Cleaning Pro';
+  if (level >= 5) return 'Tidy Champion';
+  if (level >= 3) return 'Rising Declutterer';
+  return 'Fresh Start';
 }
 
 function useCleanRate(weeklyActivity: Array<{ date: string; tasksCompleted: number }> | undefined) {
@@ -146,7 +158,7 @@ function ProfileSummaryCard({
 
         <View style={styles.summaryIdentity}>
           <Text style={[styles.summaryEyebrow, { color: isDark ? '#DAB58C' : '#8A5926' }]}>
-            LEVEL {level}
+            LEVEL {level} {'\u00B7'} {getLevelTitle(level).toUpperCase()}
           </Text>
           <Text style={[styles.summaryName, { color: isDark ? '#FFFFFF' : '#17171A' }]}>
             {name}
@@ -237,7 +249,15 @@ function ProfileSummaryCard({
             { color: isDark ? 'rgba(255,255,255,0.58)' : 'rgba(23,23,26,0.5)' },
           ]}
         >
-          {xpToNext} XP to your next level
+          {xpToNext} XP to Level {level + 1}
+        </Text>
+        <Text
+          style={[
+            styles.summaryProgressPercent,
+            { color: isDark ? '#DAB58C' : '#8A5926' },
+          ]}
+        >
+          {progressPercent}%
         </Text>
       </View>
     </LinearGradient>
@@ -418,7 +438,7 @@ function RecentBadges({
 
     return [
       ...sorted,
-      { id: 'fresh-start', emoji: '✨', name: 'Fresh Start', description: 'First room', type: 'rooms', requirement: 1 },
+      { id: 'fresh-start', emoji: '🌱', name: 'Fresh Start', description: 'First room', type: 'rooms', requirement: 1 },
       { id: 'quiet-fire', emoji: '🔥', name: 'On Fire', description: '7-day streak', type: 'streak', requirement: 7 },
       { id: 'top-ten', emoji: '🏆', name: 'Top 10%', description: 'Leaderboard', type: 'rooms', requirement: 10 },
     ].slice(0, 3) as Badge[];
@@ -499,18 +519,18 @@ function ConnectedSurfaces({ isDark }: { isDark: boolean }) {
         : (['rgba(221,227,255,0.92)', 'rgba(170,184,255,0.36)'] as const),
     },
     {
-      title: 'Accountability',
-      subtitle: 'Check-ins and nudges',
-      icon: 'checkmark-done-circle-outline' as const,
-      route: '/accountability' as const,
+      title: 'Insights',
+      subtitle: 'Trends and patterns',
+      icon: 'analytics-outline' as const,
+      route: '/insights' as const,
       colors: isDark
-        ? (['rgba(137,226,204,0.18)', 'rgba(137,226,204,0.08)'] as const)
-        : (['rgba(214,245,238,0.92)', 'rgba(134,223,205,0.36)'] as const),
+        ? (['rgba(255,196,138,0.18)', 'rgba(255,196,138,0.08)'] as const)
+        : (['rgba(255,238,214,0.92)', 'rgba(255,196,138,0.36)'] as const),
     },
   ];
 
   return (
-      <View style={styles.connectedRow}>
+    <View style={styles.connectedRow}>
       {items.map((item) => (
         <Pressable
           key={item.route}
@@ -579,7 +599,7 @@ function ProCard({ isDark, xpToNext }: { isDark: boolean; xpToNext: number }) {
         ]}
       >
         <View style={styles.proCardIcon}>
-          <Ionicons name="sparkles-outline" size={18} color={isDark ? '#FFF8F0' : '#5F3A12'} />
+          <Ionicons name="ribbon-outline" size={18} color={isDark ? '#FFF8F0' : '#5F3A12'} />
         </View>
 
         <View style={styles.proCardCopy}>
@@ -587,7 +607,7 @@ function ProCard({ isDark, xpToNext }: { isDark: boolean; xpToNext: number }) {
             DECLUTTER PRO
           </Text>
           <Text style={[styles.proCardTitle, { color: isDark ? '#FFF8F0' : '#3A240C' }]}>
-            Unlock deeper guidance and softer nudges.
+            Level up 2x faster with Pro.
           </Text>
           <Text
             style={[
@@ -595,7 +615,7 @@ function ProCard({ isDark, xpToNext }: { isDark: boolean; xpToNext: number }) {
               { color: isDark ? 'rgba(255,255,255,0.58)' : 'rgba(58,36,12,0.62)' },
             ]}
           >
-            You&apos;re {xpToNext} XP away from your next level.
+            AI coaching, unlimited rooms, streak shields. Try free for 7 days.
           </Text>
         </View>
 
@@ -852,6 +872,11 @@ const styles = StyleSheet.create({
     fontFamily: BODY_FONT,
     fontSize: 12,
     fontWeight: '600',
+  },
+  summaryProgressPercent: {
+    fontFamily: BODY_FONT,
+    fontSize: 12,
+    fontWeight: '800',
   },
   levelChipValue: {
     fontFamily: BODY_FONT,

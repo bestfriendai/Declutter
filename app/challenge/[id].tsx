@@ -43,7 +43,7 @@ const CHALLENGE_TYPES: Record<ChallengeType, { icon: string; label: string; unit
   time_spent: { icon: 'time', label: 'Time Spent', unit: 'minutes' },
   room_complete: { icon: 'home', label: 'Complete Room', unit: 'room' },
   streak: { icon: 'flame', label: 'Maintain Streak', unit: 'days' },
-  collectibles: { icon: 'sparkles', label: 'Collect Items', unit: 'items' },
+  collectibles: { icon: 'diamond', label: 'Collect Items', unit: 'items' },
 };
 
 export default function ChallengeDetailScreen() {
@@ -124,7 +124,7 @@ export default function ChallengeDetailScreen() {
         message: `Join my Declutterly challenge: "${challenge.title}"! Use code: ${challenge.inviteCode}\n\nOr open this link: https://declutterly.app/challenge/${challenge.id}`,
       });
     } catch (err) {
-      console.error('Share error:', err);
+      if (__DEV__) console.info('Share error:', err);
     }
   };
 
@@ -154,7 +154,7 @@ export default function ChallengeDetailScreen() {
           <ExpressiveStateView
             isDark={isDark}
             kicker="CHALLENGE"
-            icon="sparkles-outline"
+            icon="trophy-outline"
             title="Loading challenge"
             description="Pulling in the latest progress, invite code, and leaderboard so this challenge opens with context."
             accentColors={isDark ? ['#D8D0FF', '#8B82FF', '#5B6DFF'] as const : ['#D5CEFF', '#9387FF', '#6572FF'] as const}
@@ -260,7 +260,7 @@ export default function ChallengeDetailScreen() {
         }
       >
         {/* Challenge Header Card */}
-        <Animated.View entering={FadeInDown.delay(100).springify()}>
+        <Animated.View entering={FadeInDown.delay(100).duration(350)}>
           <GlassCard style={styles.challengeCard}>
             <View style={styles.challengeHeader}>
               <View style={[styles.typeIcon, { backgroundColor: colors.primary + '20' }]}>
@@ -292,7 +292,7 @@ export default function ChallengeDetailScreen() {
               <View style={styles.metaItem}>
                 <Ionicons name="time" size={16} color={daysLeft <= 3 ? colors.warning : colors.textSecondary} />
                 <Text style={[styles.metaText, { color: daysLeft <= 3 ? colors.warning : colors.textSecondary }]}>
-                  {daysLeft} days left
+                  {daysLeft === 0 ? 'Last day!' : daysLeft === 1 ? '1 day left!' : `${daysLeft} days left`}
                 </Text>
               </View>
               <View style={styles.metaItem}>
@@ -324,7 +324,15 @@ export default function ChallengeDetailScreen() {
                   <View style={styles.completedBadge}>
                     <Ionicons name="checkmark-circle" size={16} color={colors.success} />
                     <Text style={[styles.completedText, { color: colors.success }]}>
-                      Completed!
+                      Challenge Complete! You did it!
+                    </Text>
+                  </View>
+                )}
+                {!myProgress?.completed && progressPercent >= 50 && (
+                  <View style={styles.completedBadge}>
+                    <Ionicons name="trending-up" size={16} color={colors.warning} />
+                    <Text style={[styles.completedText, { color: colors.warning }]}>
+                      Over halfway! Keep pushing!
                     </Text>
                   </View>
                 )}
@@ -347,7 +355,7 @@ export default function ChallengeDetailScreen() {
         </Animated.View>
 
         {/* Invite Code */}
-        <Animated.View entering={FadeInDown.delay(200).springify()}>
+        <Animated.View entering={FadeInDown.delay(200).duration(350)}>
           <GlassCard style={styles.inviteCard}>
             <Text style={[styles.inviteLabel, { color: colors.textSecondary }]}>
               Invite Code
@@ -368,14 +376,14 @@ export default function ChallengeDetailScreen() {
         </Animated.View>
 
         {/* Leaderboard */}
-        <Animated.View entering={FadeInDown.delay(300).springify()}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>Leaderboard</Text>
+        <Animated.View entering={FadeInDown.delay(300).duration(350)}>
+          <Text style={styles.sectionTitle}>LEADERBOARD</Text>
           {challenge.participants
             .sort((a, b) => b.progress - a.progress)
             .map((participant, index) => (
               <Animated.View
                 key={participant.userId}
-                entering={SlideInRight.delay(index * 50).springify()}
+                entering={SlideInRight.delay(index * 50).duration(350)}
               >
                 <GlassCard style={styles.participantCard}>
                   <View style={styles.rankBadge}>
@@ -421,7 +429,7 @@ export default function ChallengeDetailScreen() {
         </Animated.View>
 
         {/* Challenge Info */}
-        <Animated.View entering={FadeInDown.delay(400).springify()}>
+        <Animated.View entering={FadeInDown.delay(400).duration(350)}>
           <GlassCard style={styles.infoCard}>
             <Text style={[styles.infoLabel, { color: colors.textSecondary }]}>Created by</Text>
             <Text style={[styles.infoValue, { color: colors.text }]}>{challenge.creatorName}</Text>
@@ -454,6 +462,7 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: 'rgba(128,128,128,0.12)',
   },
   headerTitle: {
     flex: 1,
@@ -466,6 +475,7 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: 'rgba(128,128,128,0.12)',
   },
   placeholder: {
     width: 44,
@@ -481,6 +491,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: 16,
+    paddingTop: 8,
     gap: 16,
   },
   challengeCard: {
@@ -590,7 +601,11 @@ const styles = StyleSheet.create({
     ...Typography.subheadlineMedium,
   },
   sectionTitle: {
-    ...Typography.title3,
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 1.5,
+    textTransform: 'uppercase',
+    color: '#808080',
     marginBottom: Spacing.sm,
     marginTop: Spacing.xs,
   },

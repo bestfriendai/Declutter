@@ -20,8 +20,8 @@ import {
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-const BODY_FONT = Platform.OS === 'ios' ? 'DM Sans' : 'sans-serif';
-const DISPLAY_FONT = Platform.OS === 'ios' ? 'Bricolage Grotesque' : 'sans-serif';
+const BODY_FONT = 'DM Sans';
+const DISPLAY_FONT = 'Bricolage Grotesque';
 
 const ROOM_ICON_MAP: Record<string, keyof typeof Ionicons.glyphMap> = {
   bedroom: 'bed-outline',

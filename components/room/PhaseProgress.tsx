@@ -185,7 +185,7 @@ function PhaseNode({
       )}
 
       <Animated.View
-        entering={animated ? SlideInLeft.delay(index * 150).springify() : undefined}
+        entering={animated ? SlideInLeft.delay(index * 150).duration(350) : undefined}
         style={[styles.phaseNode, nodeStyle]}
       >
         <Pressable

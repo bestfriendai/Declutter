@@ -126,6 +126,8 @@ export function mapConvexSettingsToAppSettings(
     reminderTime: settings?.reminderTime,
     theme: settings?.theme ?? 'auto',
     hapticFeedback: settings?.hapticFeedback ?? true,
+    soundFX: (settings as any)?.soundFX ?? true,
+    reducedMotion: (settings as any)?.reducedMotion ?? false,
     encouragementLevel: settings?.encouragementLevel ?? 'moderate',
     taskBreakdownLevel: settings?.taskBreakdownLevel ?? 'detailed',
     focusMode: {

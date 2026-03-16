@@ -95,7 +95,7 @@ export function AnimatedListItem({
 
   return (
     <Animated.View
-      entering={FadeInDown.delay(index * 50).springify()}
+      entering={FadeInDown.delay(index * 50).duration(350)}
     >
       <AnimatedPressable
         onPress={handlePress}

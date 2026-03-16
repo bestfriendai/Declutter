@@ -64,6 +64,8 @@ const defaultSettings: AppSettings = {
   notifications: true,
   theme: 'auto',
   hapticFeedback: true,
+  soundFX: true,
+  reducedMotion: false,
   encouragementLevel: 'moderate',
   taskBreakdownLevel: 'detailed',
   focusMode: DEFAULT_FOCUS_SETTINGS,
@@ -291,7 +293,7 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
           applyCloudData(cloudData);
         }
       } catch (error) {
-        console.error('Error loading cloud data from Convex:', error);
+        if (__DEV__) console.error('Error loading cloud data from Convex:', error);
         if (!cancelled) {
           setSyncError('Unable to load your latest synced data.');
         }
@@ -329,7 +331,7 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
       };
       
       syncToCloud(syncData).catch(error => {
-        console.error('Background sync failed:', error);
+        if (__DEV__) console.error('Background sync failed:', error);
         setSyncError('Unable to sync your data. Changes saved locally.');
       });
     }, 5000);
@@ -467,7 +469,7 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
         setCollectionStats(hydrateCollectionStatsData(JSON.parse(collectionStatsStr)));
       }
     } catch (error) {
-      console.error('Error loading data:', error);
+      if (__DEV__) console.error('Error loading data:', error);
     } finally {
       setIsLoaded(true);
     }
@@ -485,7 +487,7 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
         AsyncStorage.setItem(STORAGE_KEYS.COLLECTION_STATS, JSON.stringify(collectionStats)),
       ]);
     } catch (error) {
-      console.error('Error saving data:', error);
+      if (__DEV__) console.error('Error saving data:', error);
     }
   }
 
@@ -544,7 +546,7 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
           emoji: roomData.emoji,
         });
       } catch (error) {
-        console.error('Failed to create room in Convex:', error);
+        if (__DEV__) console.error('Failed to create room in Convex:', error);
       }
     }
 
@@ -639,7 +641,7 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
         );
       }
     } catch (error) {
-      console.error('Failed to upload photo to Convex storage:', error);
+      if (__DEV__) console.error('Failed to upload photo to Convex storage:', error);
     }
   }, [isAnonymous, isAuthenticated]);
 
@@ -654,7 +656,7 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
 
     if (isAuthenticated && !isAnonymous) {
       void convex.mutation(api.photos.remove, { id: photoId as any }).catch((error) => {
-        console.error('Failed to delete photo from Convex:', error);
+        if (__DEV__) console.error('Failed to delete photo from Convex:', error);
       });
     }
   }, [isAnonymous, isAuthenticated]);
@@ -1233,7 +1235,7 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
       setIsAnalyzing(false);
       setAnalysisError(null);
     } catch (error) {
-      console.error('Error clearing data:', error);
+      if (__DEV__) console.error('Error clearing data:', error);
       throw error;
     }
   }, []);
@@ -1320,6 +1322,8 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
     activeSpawn,
     isAnalyzing,
     analysisError,
+    syncError,
+    pendingCelebration,
   ]);
 
   if (!isLoaded) {

@@ -32,8 +32,8 @@ import {
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-const BODY_FONT = Platform.OS === 'ios' ? 'DM Sans' : 'sans-serif';
-const DISPLAY_FONT = Platform.OS === 'ios' ? 'Bricolage Grotesque' : 'sans-serif';
+const BODY_FONT = 'DM Sans';
+const DISPLAY_FONT = 'Bricolage Grotesque';
 
 export default function LoginScreen() {
   const rawScheme = useColorScheme();
@@ -158,7 +158,7 @@ export default function LoginScreen() {
         >
           {/* Header */}
           <Animated.View
-            entering={FadeInDown.delay(0).springify()}
+            entering={FadeInDown.delay(0).duration(350)}
             style={styles.headerSection}
           >
             <View style={styles.headerPillRow}>
@@ -180,7 +180,7 @@ export default function LoginScreen() {
                 ]}
               >
                 <Ionicons
-                  name="sparkles-outline"
+                  name="log-in-outline"
                   size={14}
                   color={isDark ? '#FEE9C8' : '#75532A'}
                 />
@@ -199,7 +199,7 @@ export default function LoginScreen() {
 
           {/* Form */}
           <Animated.View
-            entering={FadeInDown.delay(80).springify()}
+            entering={FadeInDown.delay(80).duration(350)}
             style={[
               styles.formSection,
               {
@@ -303,7 +303,7 @@ export default function LoginScreen() {
           </Animated.View>
 
           {/* Forgot password */}
-          <Animated.View entering={FadeInDown.delay(100).springify()}>
+          <Animated.View entering={FadeInDown.delay(100).duration(350)}>
             <Pressable
               onPress={() => {
                 Haptics.selectionAsync();
@@ -351,20 +351,23 @@ export default function LoginScreen() {
             </Pressable>
           </Animated.View>
 
-          {/* Error */}
+          {/* Error -- ADHD-friendly: clear, non-blaming, with action */}
           {error ? (
             <Animated.View
-              entering={FadeInDown.springify()}
+              entering={FadeInDown.duration(350)}
               style={styles.errorBanner}
               accessibilityRole="alert"
               accessibilityLiveRegion="assertive"
             >
-              <Text style={styles.errorText}>{error}</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Ionicons name="alert-circle-outline" size={16} color="#FF453A" />
+                <Text style={[styles.errorText, { flex: 1 }]}>{error}</Text>
+              </View>
             </Animated.View>
           ) : null}
 
           {/* Sign In button */}
-          <Animated.View entering={FadeInDown.delay(160).springify()}>
+          <Animated.View entering={FadeInDown.delay(160).duration(350)}>
             <Pressable
               onPress={handleLogin}
               disabled={loading}
@@ -401,7 +404,7 @@ export default function LoginScreen() {
 
           {/* Divider */}
           <Animated.View
-            entering={FadeInDown.delay(200).springify()}
+            entering={FadeInDown.delay(200).duration(350)}
             style={styles.dividerRow}
           >
             <View
@@ -417,14 +420,14 @@ export default function LoginScreen() {
 
           {/* Alternate entry buttons */}
           <Animated.View
-            entering={FadeInDown.delay(240).springify()}
+            entering={FadeInDown.delay(240).duration(350)}
             style={styles.socialSection}
           >
             {/* Continue as Guest */}
             <Pressable
               onPress={handleContinueAsGuest}
               accessibilityRole="button"
-              accessibilityLabel="Continue as guest"
+              accessibilityLabel="Continue as guest - try the app without an account"
               style={({ pressed }) => [
                 styles.socialButton,
                 {
@@ -440,11 +443,13 @@ export default function LoginScreen() {
                 size={16}
                 color={isDark ? 'rgba(128,128,128,0.5)' : '#1A1A1A'}
               />
-              <Text
-                style={[styles.socialButtonText, { color: socialTextColor }]}
-              >
-                Continue as Guest
-              </Text>
+              <View style={{ alignItems: 'center' }}>
+                <Text
+                  style={[styles.socialButtonText, { color: socialTextColor }]}
+                >
+                  Just let me try it first
+                </Text>
+              </View>
             </Pressable>
 
             {/* Create account */}
@@ -474,7 +479,7 @@ export default function LoginScreen() {
 
           {/* Sign Up link */}
           <Animated.View
-            entering={FadeInDown.delay(280).springify()}
+            entering={FadeInDown.delay(280).duration(350)}
             style={styles.linkRow}
           >
             <Text style={[styles.linkText, { color: linkColor }]}>

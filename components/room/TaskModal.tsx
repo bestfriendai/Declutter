@@ -135,8 +135,8 @@ export function TaskModal({ visible, task, colors, onClose, onSave }: TaskModalP
           style={styles.keyboardView}
         >
           <Animated.View
-            entering={SlideInDown.springify().damping(20)}
-            exiting={SlideOutDown.springify()}
+            entering={SlideInDown.duration(350).damping(20)}
+            exiting={SlideOutDown.duration(350)}
             style={styles.modalContainer}
           >
             <BlurView intensity={80} tint="dark" style={styles.modalBlur}>

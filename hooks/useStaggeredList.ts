@@ -1,6 +1,7 @@
 /**
  * Declutterly - Staggered List Animation Hook
- * Creates beautiful entrance animations for list items
+ * Creates beautiful entrance animations for list items.
+ * Respects reduced-motion accessibility setting.
  */
 
 import { useCallback, useEffect } from 'react';
@@ -13,6 +14,7 @@ import {
   interpolate,
   Extrapolation,
   WithSpringConfig,
+  useReducedMotion,
 } from 'react-native-reanimated';
 
 interface StaggeredListConfig {
@@ -40,15 +42,21 @@ export function useStaggeredItem(
     translateY = 30,
   } = config;
 
-  const progress = useSharedValue(0);
+  const reducedMotion = useReducedMotion();
+  const progress = useSharedValue(reducedMotion ? 1 : 0);
 
   useEffect(() => {
+    if (reducedMotion) {
+      // Skip animation — show instantly
+      progress.value = 1;
+      return;
+    }
     const delay = initialDelay + index * delayPerItem;
     progress.value = withDelay(
       delay,
       withSpring(1, springConfig)
     );
-  }, [index, initialDelay, delayPerItem]);
+  }, [index, initialDelay, delayPerItem, reducedMotion]);
 
   const animatedStyle = useAnimatedStyle(() => {
     const opacity = interpolate(

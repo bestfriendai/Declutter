@@ -141,7 +141,7 @@ function ChangeItem({
 
   return (
     <Animated.View
-      entering={SlideInRight.delay(800 + index * 150).springify()}
+      entering={SlideInRight.delay(800 + index * 150).duration(350)}
       style={styles.changeItem}
     >
       <View style={[styles.changeCheckmark, { backgroundColor: colors.successMuted }]}>
@@ -261,7 +261,7 @@ export function ProgressComparison({
         <Animated.View entering={FadeInDown.delay(600)}>
           <GlassCard style={styles.changesCard}>
             <Text style={[Typography.title3, { color: colors.text, marginBottom: Spacing.md }]}>
-              ✨ Changes Detected
+              Changes Detected
             </Text>
             {changesDetected.map((change, index) => (
               <ChangeItem key={index} text={change} index={index} />

@@ -101,7 +101,7 @@ export function MascotProvider({ children }: { children: ReactNode }) {
         setMascot(mascotData);
       }
     } catch (error) {
-      console.error('Error loading mascot:', error);
+      if (__DEV__) console.error('Error loading mascot:', error);
     } finally {
       setIsLoaded(true);
     }
@@ -113,7 +113,7 @@ export function MascotProvider({ children }: { children: ReactNode }) {
         await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(mascot));
       }
     } catch (error) {
-      console.error('Error saving mascot:', error);
+      if (__DEV__) console.error('Error saving mascot:', error);
     }
   };
 

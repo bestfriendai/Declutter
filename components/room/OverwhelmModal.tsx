@@ -100,12 +100,12 @@ export function OverwhelmModal({
       >
         <BlurView intensity={90} tint="dark" style={StyleSheet.absoluteFill} />
         <Animated.View
-          entering={ZoomIn.springify()}
+          entering={ZoomIn.duration(350)}
           style={styles.content}
         >
-          <Text style={styles.title}>It&apos;s okay. Let&apos;s pause.</Text>
+          <Text style={styles.title}>Hey. You are safe.</Text>
           <Text style={styles.subtitle}>
-            Take 3 deep breaths with me:
+            Feeling overwhelmed is normal -- your brain is just overloaded. Let&apos;s reset together. Take 3 breaths:
           </Text>
 
           {/* Breathing Circle */}

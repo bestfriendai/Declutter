@@ -12,6 +12,7 @@ import { Platform } from 'react-native';
 export const SECURE_KEYS = {
   API_KEY: 'declutterly_api_key',
   AUTH_TOKEN: 'declutterly_auth_token',
+  REFRESH_TOKEN: 'declutterly_refresh_token',
 } as const;
 
 // Check if SecureStore is available
@@ -104,6 +105,75 @@ export async function deleteApiKeySecure(): Promise<void> {
 }
 
 /**
+ * Save auth token securely
+ */
+export async function saveAuthToken(token: string): Promise<void> {
+  try {
+    const secureAvailable = await isSecureStoreAvailable();
+    if (secureAvailable) {
+      await SecureStore.setItemAsync(SECURE_KEYS.AUTH_TOKEN, token, {
+        keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+      });
+    } else {
+      await AsyncStorage.setItem(SECURE_KEYS.AUTH_TOKEN, token);
+    }
+  } catch (error) {
+    console.error('Failed to save auth token');
+    throw new Error('Failed to save auth token');
+  }
+}
+
+/**
+ * Load auth token from secure storage
+ */
+export async function loadAuthToken(): Promise<string | null> {
+  try {
+    const secureAvailable = await isSecureStoreAvailable();
+    if (secureAvailable) {
+      return await SecureStore.getItemAsync(SECURE_KEYS.AUTH_TOKEN);
+    }
+    return await AsyncStorage.getItem(SECURE_KEYS.AUTH_TOKEN);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Delete auth token from secure storage
+ */
+export async function deleteAuthToken(): Promise<void> {
+  try {
+    const secureAvailable = await isSecureStoreAvailable();
+    if (secureAvailable) {
+      await SecureStore.deleteItemAsync(SECURE_KEYS.AUTH_TOKEN);
+    } else {
+      await AsyncStorage.removeItem(SECURE_KEYS.AUTH_TOKEN);
+    }
+  } catch {
+    console.error('Failed to delete auth token');
+  }
+}
+
+/**
+ * Clear all secure storage (for sign-out / account deletion)
+ */
+export async function clearAllSecureStorage(): Promise<void> {
+  const keys = Object.values(SECURE_KEYS);
+  for (const key of keys) {
+    try {
+      const secureAvailable = await isSecureStoreAvailable();
+      if (secureAvailable) {
+        await SecureStore.deleteItemAsync(key);
+      } else {
+        await AsyncStorage.removeItem(key);
+      }
+    } catch {
+      // Best-effort cleanup
+    }
+  }
+}
+
+/**
  * Rate limiter for API calls
  * Prevents abuse and helps stay within API quotas
  */
@@ -117,29 +187,49 @@ class RateLimiter {
     this.windowMs = windowMs;
   }
 
-  canMakeRequest(): boolean {
+  /** Prune expired timestamps before any check */
+  private prune(): void {
     const now = Date.now();
-    // Remove expired requests
     this.requests = this.requests.filter(time => now - time < this.windowMs);
+  }
+
+  canMakeRequest(): boolean {
+    this.prune();
 
     if (this.requests.length >= this.maxRequests) {
       return false;
     }
 
-    this.requests.push(now);
+    this.requests.push(Date.now());
     return true;
   }
 
   getTimeUntilReset(): number {
+    this.prune();
     if (this.requests.length === 0) return 0;
     const oldestRequest = Math.min(...this.requests);
     return Math.max(0, this.windowMs - (Date.now() - oldestRequest));
   }
 
   getRemainingRequests(): number {
-    const now = Date.now();
-    this.requests = this.requests.filter(time => now - time < this.windowMs);
+    this.prune();
     return Math.max(0, this.maxRequests - this.requests.length);
+  }
+
+  /**
+   * Wait until a request slot is available (useful for queuing)
+   * Returns immediately if a slot is open.
+   */
+  async waitForSlot(): Promise<void> {
+    if (this.canMakeRequest()) return;
+    const waitMs = this.getTimeUntilReset();
+    if (waitMs > 0) {
+      await new Promise(resolve => setTimeout(resolve, waitMs + 50));
+    }
+    // Re-record the request
+    if (!this.canMakeRequest()) {
+      throw new Error('Rate limit exceeded. Please wait a moment and try again.');
+    }
   }
 }
 

@@ -14,6 +14,7 @@ import {
   Dimensions,
   Modal,
   Share,
+  Platform,
 } from 'react-native';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import Animated, {
@@ -29,15 +30,17 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import * as Haptics from 'expo-haptics';
-
+import { AmbientBackdrop } from '@/components/ui/AmbientBackdrop';
 import { Colors } from '@/constants/Colors';
-import { Typography } from '@/theme/typography';
-import { Spacing, BorderRadius } from '@/theme/spacing';
 import { useDeclutter } from '@/context/DeclutterContext';
+import { Ionicons } from '@expo/vector-icons';
+import { Spacing, BorderRadius } from '@/theme/spacing';
+import { Typography } from '@/theme/typography';
 import { BADGES, Badge } from '@/types/declutter';
 
+const DISPLAY_FONT = 'Bricolage Grotesque';
+
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 // Badge display data for the design-matched grid
 const DISPLAY_BADGES = [
@@ -151,7 +154,7 @@ export default function AchievementsScreen() {
   const level = Math.floor(currentXp / XP_PER_LEVEL) + 1;
   const xpInLevel = currentXp % XP_PER_LEVEL;
   const xpForNextLevel = XP_PER_LEVEL - xpInLevel;
-  const xpProgressWidth = (xpInLevel / XP_PER_LEVEL) * 185;
+  const xpProgressPercent = Math.min(100, Math.round((xpInLevel / XP_PER_LEVEL) * 100));
 
   // Streak data
   const currentStreak = stats?.currentStreak ?? 0;
@@ -205,6 +208,7 @@ export default function AchievementsScreen() {
     <View style={[s.container, {
       backgroundColor: isDark ? '#0A0A0A' : '#F8F8F8',
     }]}>
+      <AmbientBackdrop isDark={isDark} variant="progress" />
       <ScrollView
         style={s.scrollView}
         contentContainerStyle={[
@@ -215,9 +219,24 @@ export default function AchievementsScreen() {
       >
         {/* Header */}
         <Animated.View
-          entering={FadeInDown.delay(50).springify()}
+          entering={FadeInDown.delay(50).duration(350)}
           style={s.header}
         >
+          <Pressable
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              router.back();
+            }}
+            style={[s.backBtn, {
+              backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.84)',
+              borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+            }]}
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
+          >
+            <Ionicons name="chevron-back" size={18} color={isDark ? '#FFFFFF' : '#17171A'} />
+          </Pressable>
+
           <Text
             style={[s.pageTitle, { color: isDark ? '#FFFFFF' : '#1A1A1A' }]}
             accessibilityRole="header"
@@ -236,22 +255,20 @@ export default function AchievementsScreen() {
               }
             }}
             style={[s.headerIconBtn, {
-              backgroundColor: isDark ? '#141414' : '#F0F0F0',
-              borderColor: isDark ? 'rgba(255,255,255,0.08)' : '#E0E0E0',
-              borderWidth: isDark ? 0 : 1,
+              backgroundColor: isDark ? '#141414' : 'rgba(255,255,255,0.84)',
+              borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+              borderWidth: 1,
             }]}
             accessibilityLabel="Share achievements"
             accessibilityRole="button"
           >
-            <Text style={{ color: '#888888', fontSize: 16 }}>
-              {'\u{1F4E4}'}
-            </Text>
+            <Ionicons name="share-outline" size={18} color={isDark ? '#FFFFFF' : '#17171A'} />
           </Pressable>
         </Animated.View>
 
         {/* XP Level Card */}
         <Animated.View
-          entering={FadeInDown.delay(100).springify()}
+          entering={FadeInDown.delay(100).duration(350)}
           style={s.cardWrapper}
         >
           <View style={[s.lvlCard, {
@@ -284,7 +301,7 @@ export default function AchievementsScreen() {
             {/* Level Info */}
             <View style={s.lvlRight}>
               <Text style={[s.lvlTitle, { color: isDark ? '#AAAAAA' : '#555555' }]}>
-                Cleaning Pro
+                {level >= 10 ? 'Master Organizer' : level >= 5 ? 'Cleaning Pro' : level >= 3 ? 'Rising Declutterer' : 'Getting Started'}
               </Text>
               <Text style={[s.xpText, { color: isDark ? '#FFFFFF' : '#1A1A1A' }]}>
                 {currentXp.toLocaleString()} XP
@@ -298,7 +315,7 @@ export default function AchievementsScreen() {
               }]}>
                 <View style={[s.xpFill, {
                   backgroundColor: isDark ? '#FFFFFF' : '#1A1A1A',
-                  width: xpProgressWidth,
+                  width: `${Math.max(xpProgressPercent, 6)}%`,
                 }]} />
               </View>
             </View>
@@ -307,7 +324,7 @@ export default function AchievementsScreen() {
 
         {/* Streak Card */}
         <Animated.View
-          entering={FadeInDown.delay(150).springify()}
+          entering={FadeInDown.delay(150).duration(350)}
           style={s.cardWrapper}
         >
           <View style={[s.streakCard, {
@@ -345,7 +362,9 @@ export default function AchievementsScreen() {
                 {isDark ? '\u{1F3C6}  ' : ''}Record: {longestStreak} days
               </Text>
               <Text style={[s.streakMilestone, { color: isDark ? '#AAAAAA' : '#555555' }]}>
-                Next milestone: {nextMilestone} days
+                {nextMilestone - currentStreak <= 2
+                  ? `Almost there! ${nextMilestone - currentStreak} day${nextMilestone - currentStreak === 1 ? '' : 's'} to ${nextMilestone}-day milestone`
+                  : `Next milestone: ${nextMilestone} days`}
               </Text>
             </View>
           </View>
@@ -353,7 +372,7 @@ export default function AchievementsScreen() {
 
         {/* EARNED BADGES Label */}
         <Animated.View
-          entering={FadeInDown.delay(200).springify()}
+          entering={FadeInDown.delay(200).duration(350)}
           style={s.badgesLabelWrapper}
         >
           <Text style={[s.badgesLabel, {
@@ -365,13 +384,13 @@ export default function AchievementsScreen() {
 
         {/* Badge Grid (2 columns, 3 rows) */}
         <Animated.View
-          entering={FadeInDown.delay(250).springify()}
+          entering={FadeInDown.delay(250).duration(350)}
           style={s.badgeGrid}
         >
           {displayBadgeData.map((badge, index) => (
             <Animated.View
               key={`badge-${index}`}
-              entering={FadeInUp.delay(300 + index * 60).springify()}
+              entering={FadeInUp.delay(300 + index * 60).duration(350)}
             >
               <Pressable
                 onPress={() => {
@@ -429,36 +448,6 @@ export default function AchievementsScreen() {
         </Animated.View>
       </ScrollView>
 
-      {/* Back Button */}
-      <Animated.View
-        entering={FadeInDown.delay(50)}
-        style={[s.backButton, { top: insets.top + 12 }]}
-      >
-        <AnimatedPressable
-          onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            router.back();
-          }}
-          style={({ pressed }) => [
-            s.backButtonInner,
-            {
-              backgroundColor: isDark
-                ? 'rgba(255, 255, 255, 0.1)'
-                : 'rgba(0, 0, 0, 0.05)',
-              transform: [{ scale: pressed ? 0.95 : 1 }],
-            },
-          ]}
-          accessibilityRole="button"
-          accessibilityLabel="Go back"
-        >
-          <BlurView
-            intensity={60}
-            tint={isDark ? 'dark' : 'light'}
-            style={StyleSheet.absoluteFill}
-          />
-          <Text style={[Typography.body, { color: colors.text }]}>{'\u{2190}'} Back</Text>
-        </AnimatedPressable>
-      </Animated.View>
 
       {/* Badge Detail Modal */}
       <BadgeModal
@@ -519,7 +508,7 @@ function BadgeModal({
         </Pressable>
 
         <Animated.View
-          entering={SlideInUp.springify().damping(20)}
+          entering={SlideInUp.duration(350).damping(20)}
           exiting={SlideOutDown.duration(200)}
           style={s.modalContent}
         >
@@ -609,8 +598,15 @@ function BadgeModal({
                     Keep going!
                   </Text>
                   <Text style={[Typography.body, { color: colors.textTertiary, marginTop: 8, textAlign: 'center' }]}>
-                    {badge.requirement} {badge.type} needed
+                    {_progress.current > 0
+                      ? `${_progress.current}/${badge.requirement} ${badge.type} done (${_progress.percentage}%)`
+                      : `${badge.requirement} ${badge.type} needed`}
                   </Text>
+                  {_progress.current > 0 && (
+                    <View style={{ width: '80%', height: 6, borderRadius: 3, backgroundColor: 'rgba(128,128,128,0.2)', marginTop: 12, overflow: 'hidden' }}>
+                      <View style={{ height: '100%', borderRadius: 3, backgroundColor: categoryColor, width: `${Math.min(_progress.percentage, 100)}%` }} />
+                    </View>
+                  )}
                 </View>
               )}
             </View>
@@ -663,15 +659,24 @@ const s = StyleSheet.create({
     paddingHorizontal: 20,
     height: 60,
   },
+  backBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   pageTitle: {
-    fontSize: 28,
+    fontFamily: DISPLAY_FONT,
+    fontSize: 24,
     fontWeight: '700',
     letterSpacing: -0.5,
   },
   headerIconBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -729,13 +734,14 @@ const s = StyleSheet.create({
     fontWeight: '400',
   },
   xpTrack: {
-    height: 8,
+    height: 7,
     borderRadius: 4,
     overflow: 'hidden',
   },
   xpFill: {
-    height: 8,
+    height: 7,
     borderRadius: 4,
+    maxWidth: '100%',
   },
 
   // Streak Card
@@ -823,21 +829,6 @@ const s = StyleSheet.create({
   badgeStars: {
     fontSize: 12,
     fontWeight: '400',
-  },
-
-  // Back Button
-  backButton: {
-    position: 'absolute',
-    left: 16,
-    zIndex: 100,
-  },
-  backButtonInner: {
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.card,
-    overflow: 'hidden',
-    minHeight: 44,
-    justifyContent: 'center',
   },
 
   // Modal styles

@@ -50,6 +50,7 @@ import { ScreenErrorBoundary } from '@/components/ErrorBoundary';
 import { AmbientBackdrop } from '@/components/ui/AmbientBackdrop';
 import { ExpressiveStateView } from '@/components/ui/ExpressiveStateView';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
+import { useSubscription, FREE_ROOM_LIMIT } from '@/hooks/useSubscription';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -61,12 +62,14 @@ function CameraScreenContent() {
   const { activeRoomId, rooms, addRoom, addPhotoToRoom, setActiveRoom } = useDeclutter();
   const cameraRef = useRef<CameraView>(null);
   const reducedMotion = useReducedMotion();
+  const { isPro, roomLimit } = useSubscription();
 
   const [permission, requestPermission] = useCameraPermissions();
   const [capturedMedia, setCapturedMedia] = useState<{ uri: string; type: 'photo' | 'video' } | null>(null);
   const [isCapturing, setIsCapturing] = useState(false);
   const [selectedRoomType, setSelectedRoomType] = useState<RoomType | null>(null);
   const [flashEnabled, setFlashEnabled] = useState(false);
+  const [quickCaptureEnabled, setQuickCaptureEnabled] = useState(true);
   const [countdownActive, setCountdownActive] = useState(false);
   const [countdownValue, setCountdownValue] = useState(0);
   const [photoQualityHint, setPhotoQualityHint] = useState<string | null>(null);
@@ -317,7 +320,7 @@ function CameraScreenContent() {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       }
     } catch (error) {
-      console.error('Error taking picture:', error);
+      if (__DEV__) console.error('Error taking picture:', error);
       Alert.alert('Error', 'Failed to take photo. Please try again.');
     } finally {
       setIsCapturing(false);
@@ -325,7 +328,11 @@ function CameraScreenContent() {
   };
 
   const takePicture = async () => {
-    startCountdown();
+    if (quickCaptureEnabled) {
+      takePictureNow();
+    } else {
+      startCountdown();
+    }
   };
 
   const pickMedia = async () => {
@@ -348,7 +355,7 @@ function CameraScreenContent() {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       }
     } catch (error) {
-      console.error('Error picking media:', error);
+      if (__DEV__) console.error('Error picking media:', error);
       Alert.alert('Error', 'Failed to select media. Please try again.');
     }
   };
@@ -366,6 +373,19 @@ function CameraScreenContent() {
 
     let roomId = activeRoomId;
     const effectiveRoomType = roomTypeOverride ?? selectedRoomType;
+
+    // Check free tier room limit when creating a new room
+    if (!roomId && !isPro && (rooms ?? []).length >= roomLimit) {
+      Alert.alert(
+        'Room limit reached',
+        `Free accounts can scan up to ${FREE_ROOM_LIMIT} rooms. Upgrade to Pro for unlimited room scans.`,
+        [
+          { text: 'Not now', style: 'cancel' },
+          { text: 'Upgrade to Pro', onPress: () => router.push('/paywall') },
+        ]
+      );
+      return;
+    }
 
     if (!roomId) {
       if (!effectiveRoomType) {
@@ -476,17 +496,17 @@ function CameraScreenContent() {
 
         {/* Bottom controls — combined preview + room selection */}
         <Animated.View
-          entering={reducedMotion ? undefined : SlideInUp.delay(200).springify()}
+          entering={reducedMotion ? undefined : SlideInUp.delay(200).duration(350)}
           style={[styles.previewControls, { paddingBottom: insets.bottom + 20 }]}
         >
           <BlurView intensity={80} tint="dark" style={StyleSheet.absoluteFill} />
 
           <View style={styles.previewContent}>
             <Text style={[Typography.title2, { color: '#FFFFFF', marginTop: 8 }]}>
-              {capturedMedia.type === 'video' ? 'Video Ready' : 'Photo Ready'}
+              {capturedMedia.type === 'video' ? 'Video Ready' : 'Looks good!'}
             </Text>
             <Text style={[Typography.subheadline, { color: 'rgba(255,255,255,0.7)', textAlign: 'center', marginTop: 4 }]}>
-              AI will analyze this for cleaning tasks
+              AI will turn this into bite-sized tasks
             </Text>
 
             {activeRoom && (
@@ -630,7 +650,7 @@ function CameraScreenContent() {
 
         {/* Header */}
         <Animated.View
-          entering={reducedMotion ? undefined : FadeInDown.delay(100)}
+          entering={reducedMotion ? undefined : FadeInDown.delay(100).duration(350)}
           style={[styles.header, { paddingTop: insets.top + 8 }]}
         >
           <Pressable
@@ -644,23 +664,50 @@ function CameraScreenContent() {
             accessibilityHint="Go back to previous screen"
           >
             <BlurView intensity={60} tint="dark" style={StyleSheet.absoluteFill} />
-            <Text style={{ color: '#FFFFFF', fontSize: 18 }} accessibilityElementsHidden>X</Text>
+            <Text style={styles.headerButtonIcon} accessibilityElementsHidden>✕</Text>
           </Pressable>
 
-          {activeRoom && (
-            <Animated.View entering={reducedMotion ? undefined : FadeIn.delay(200)} style={styles.roomBadge}>
-              <BlurView intensity={60} tint="dark" style={StyleSheet.absoluteFill} />
-              <Text style={[Typography.caption1Medium, { color: '#FFFFFF' }]}>
-                {activeRoom.emoji} {activeRoom.name}
-              </Text>
-            </Animated.View>
-          )}
+          <View style={styles.headerCenter}>
+            {activeRoom ? (
+              <Animated.View entering={reducedMotion ? undefined : FadeIn.delay(200).duration(350)} style={styles.roomBadge}>
+                <BlurView intensity={60} tint="dark" style={StyleSheet.absoluteFill} />
+                <Text style={[Typography.caption1Medium, { color: '#FFFFFF' }]}>
+                  {activeRoom.emoji} {activeRoom.name}
+                </Text>
+              </Animated.View>
+            ) : (
+              <Text style={styles.headerTitle}>Scan Room</Text>
+            )}
+          </View>
 
-          <View style={{ width: 44 }} />
+          <Pressable
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            }}
+            style={styles.glassButton}
+            accessibilityRole="button"
+            accessibilityLabel="Camera tips"
+            accessibilityHint="Show tips for best photo results"
+          >
+            <BlurView intensity={60} tint="dark" style={StyleSheet.absoluteFill} />
+            <Text style={styles.headerButtonIcon} accessibilityElementsHidden>ℹ</Text>
+          </Pressable>
         </Animated.View>
 
         {/* Guide overlay */}
         <View style={styles.guideOverlay}>
+          {/* AI Active Pill */}
+          {!countdownActive && (
+            <Animated.View
+              entering={reducedMotion ? undefined : FadeIn.delay(300).duration(350)}
+              style={styles.aiPill}
+            >
+              <BlurView intensity={60} tint="dark" style={StyleSheet.absoluteFill} />
+              <View style={styles.aiPillDot} />
+              <Text style={styles.aiPillText}>AI Active</Text>
+            </Animated.View>
+          )}
+
           <Animated.View style={[styles.corners, cornerSteady ? undefined : cornerAnimatedStyle]}>
             <View style={[styles.corner, styles.cornerTL]} />
             <View style={[styles.corner, styles.cornerTR]} />
@@ -671,7 +718,7 @@ function CameraScreenContent() {
           {/* Countdown overlay */}
           {countdownActive && countdownValue > 0 && (
             <Animated.View
-              entering={reducedMotion ? undefined : ZoomIn.springify()}
+              entering={reducedMotion ? undefined : ZoomIn.duration(350)}
               style={styles.countdownOverlay}
               accessibilityLiveRegion="polite"
               accessibilityLabel={`Taking photo in ${countdownValue}`}
@@ -682,7 +729,7 @@ function CameraScreenContent() {
           )}
 
           {!countdownActive && (
-            <Animated.View entering={reducedMotion ? undefined : FadeIn.delay(400)} style={styles.guideBadge}>
+            <Animated.View entering={reducedMotion ? undefined : FadeIn.delay(400).duration(350)} style={styles.guideBadge}>
               <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFill} />
               <Text style={[Typography.caption1, { color: 'rgba(255,255,255,0.9)' }]}>
                 Position the room in frame
@@ -691,30 +738,60 @@ function CameraScreenContent() {
           )}
         </View>
 
-        {/* Bottom gradient */}
+        {/* Bottom gradient — deeper and more atmospheric */}
         <LinearGradient
-          colors={['transparent', 'rgba(0,0,0,0.7)']}
+          colors={['transparent', 'rgba(0,0,0,0.55)', 'rgba(0,0,0,0.88)']}
+          locations={[0, 0.4, 1]}
           style={styles.bottomGradient}
         />
 
         {/* Controls */}
         <Animated.View
-          entering={reducedMotion ? undefined : FadeInUp.delay(200).springify()}
+          entering={reducedMotion ? undefined : FadeInUp.delay(200).duration(350)}
           style={[styles.controls, { paddingBottom: insets.bottom + 20 }]}
         >
-          {/* Tip */}
+          {/* Tip -- more specific and helpful */}
           <View style={styles.tipContainer}>
-            <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFill} />
-            <Text style={[Typography.caption1, { color: 'rgba(255,255,255,0.9)' }]}
-              accessibilityLabel="Tip: Capture the whole area for best results"
+            <BlurView intensity={50} tint="dark" style={StyleSheet.absoluteFill} />
+            <Text style={[Typography.caption1, { color: 'rgba(255,255,255,0.92)' }]}
+              accessibilityLabel="Tip: Stand back and capture the whole mess"
             >
-              Capture the whole area for best results
+              Stand back a bit -- get the whole area in frame
             </Text>
+          </View>
+
+          {/* Quick capture toggle */}
+          <View style={styles.quickCaptureRow}>
+            <Pressable
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setQuickCaptureEnabled(prev => !prev);
+              }}
+              style={[
+                styles.quickCaptureToggle,
+                quickCaptureEnabled && styles.quickCaptureToggleActive,
+              ]}
+              accessibilityRole="switch"
+              accessibilityLabel={`Quick capture ${quickCaptureEnabled ? 'on' : 'off'}`}
+              accessibilityHint="Skip the 3-second countdown before taking a photo"
+              accessibilityState={{ checked: quickCaptureEnabled }}
+            >
+              <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFill} />
+              <Text style={[styles.quickCaptureIcon, quickCaptureEnabled && styles.quickCaptureIconActive]}>
+                {'\u26A1'}
+              </Text>
+              <Text style={[
+                styles.quickCaptureLabel,
+                quickCaptureEnabled && styles.quickCaptureLabelActive,
+              ]}>
+                Quick Capture {quickCaptureEnabled ? 'ON' : 'OFF'}
+              </Text>
+            </Pressable>
           </View>
 
           {/* Capture controls */}
           <View style={styles.captureRow}>
-            {/* Gallery button — increased touch target to 64x64 */}
+            {/* Gallery button */}
             <Pressable
               onPress={pickMedia}
               style={({ pressed }) => [
@@ -726,7 +803,8 @@ function CameraScreenContent() {
               accessibilityHint="Choose a photo from your gallery instead"
             >
               <BlurView intensity={60} tint="dark" style={StyleSheet.absoluteFill} />
-              <Text style={{ fontSize: 24 }} accessibilityElementsHidden>G</Text>
+              <Text style={styles.controlIcon} accessibilityElementsHidden>⊞</Text>
+              <Text style={styles.controlLabel}>Gallery</Text>
             </Pressable>
 
             {/* Capture button */}
@@ -760,7 +838,9 @@ function CameraScreenContent() {
               accessibilityHint="Toggle camera flash"
             >
               <BlurView intensity={60} tint="dark" style={StyleSheet.absoluteFill} />
-              <Text style={{ fontSize: 20 }} accessibilityElementsHidden>{flashEnabled ? 'F' : 'F'}</Text>
+              <Text style={[styles.controlIcon, flashEnabled && styles.flashIconEnabled]} accessibilityElementsHidden>
+                {'\u26A1'}
+              </Text>
               <Text style={[styles.flashLabel, flashEnabled && styles.flashLabelEnabled]}>{flashEnabled ? 'On' : 'Off'}</Text>
             </Pressable>
           </View>
@@ -795,7 +875,7 @@ function RoomTypeCard({
       accessibilityHint={`Double tap to create a ${info.label.toLowerCase()} room`}
     >
       <Animated.View
-        entering={FadeInDown.delay(delay).springify()}
+        entering={FadeInDown.delay(delay).duration(350)}
         style={styles.roomTypeCard}
       >
         <BlurView intensity={60} tint="dark" style={StyleSheet.absoluteFill} />
@@ -883,11 +963,52 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     overflow: 'hidden',
   },
+  headerButtonIcon: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  headerCenter: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginHorizontal: 8,
+  },
+  headerTitle: {
+    color: '#FFFFFF',
+    fontSize: 17,
+    fontWeight: '600',
+    letterSpacing: -0.3,
+  },
   roomBadge: {
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 20,
     overflow: 'hidden',
+  },
+  // AI active pill at top of viewfinder
+  aiPill: {
+    position: 'absolute',
+    top: -36,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 20,
+    overflow: 'hidden',
+  },
+  aiPillDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#30D158',
+  },
+  aiPillText: {
+    color: 'rgba(255,255,255,0.9)',
+    fontSize: 12,
+    fontWeight: '600',
+    letterSpacing: 0.2,
   },
   guideOverlay: {
     flex: 1,
@@ -904,37 +1025,37 @@ const styles = StyleSheet.create({
   },
   corner: {
     position: 'absolute',
-    width: 48,
-    height: 48,
-    borderColor: 'rgba(255,255,255,0.6)',
+    width: 32,
+    height: 32,
+    borderColor: 'rgba(255,255,255,0.85)',
   },
   cornerTL: {
     top: 0,
     left: 0,
-    borderTopWidth: 3,
-    borderLeftWidth: 3,
-    borderTopLeftRadius: 16,
+    borderTopWidth: 2.5,
+    borderLeftWidth: 2.5,
+    borderTopLeftRadius: 10,
   },
   cornerTR: {
     top: 0,
     right: 0,
-    borderTopWidth: 3,
-    borderRightWidth: 3,
-    borderTopRightRadius: 16,
+    borderTopWidth: 2.5,
+    borderRightWidth: 2.5,
+    borderTopRightRadius: 10,
   },
   cornerBL: {
     bottom: 0,
     left: 0,
-    borderBottomWidth: 3,
-    borderLeftWidth: 3,
-    borderBottomLeftRadius: 16,
+    borderBottomWidth: 2.5,
+    borderLeftWidth: 2.5,
+    borderBottomLeftRadius: 10,
   },
   cornerBR: {
     bottom: 0,
     right: 0,
-    borderBottomWidth: 3,
-    borderRightWidth: 3,
-    borderBottomRightRadius: 16,
+    borderBottomWidth: 2.5,
+    borderRightWidth: 2.5,
+    borderBottomRightRadius: 10,
   },
   guideBadge: {
     paddingHorizontal: 20,
@@ -955,6 +1076,19 @@ const styles = StyleSheet.create({
     fontSize: 64,
     color: '#FFFFFF',
   },
+  controlIcon: {
+    fontSize: 20,
+    color: 'rgba(255,255,255,0.9)',
+  },
+  controlLabel: {
+    ...Typography.caption2,
+    color: 'rgba(255,255,255,0.7)',
+    fontWeight: '500',
+    marginTop: 2,
+  },
+  flashIconEnabled: {
+    color: '#FFD700',
+  },
   flashLabel: {
     ...Typography.caption2,
     color: 'rgba(255,255,255,0.9)',
@@ -963,7 +1097,7 @@ const styles = StyleSheet.create({
   },
   flashEnabledButton: {
     borderWidth: 2,
-    borderColor: '#FFD700',
+    borderColor: 'rgba(255,215,0,0.6)',
   },
   flashLabelEnabled: {
     color: '#FFD700',
@@ -999,6 +1133,39 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.card,
     marginBottom: Spacing.lg,
     overflow: 'hidden',
+  },
+  quickCaptureRow: {
+    alignItems: 'center',
+    marginBottom: Spacing.sm,
+  },
+  quickCaptureToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 20,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.15)',
+  },
+  quickCaptureToggleActive: {
+    borderColor: 'rgba(10,132,255,0.5)',
+  },
+  quickCaptureIcon: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.7)',
+  },
+  quickCaptureIconActive: {
+    color: '#0A84FF',
+  },
+  quickCaptureLabel: {
+    ...Typography.caption2,
+    color: 'rgba(255,255,255,0.7)',
+    fontWeight: '600',
+  },
+  quickCaptureLabelActive: {
+    color: '#0A84FF',
   },
   captureRow: {
     flexDirection: 'row',

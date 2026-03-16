@@ -3,8 +3,8 @@ import { Pressable, StyleProp, StyleSheet, Text, View, ViewStyle, Platform } fro
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 
-const BODY_FONT = Platform.OS === 'ios' ? 'DM Sans' : 'sans-serif';
-const DISPLAY_FONT = Platform.OS === 'ios' ? 'Bricolage Grotesque' : 'sans-serif';
+const BODY_FONT = 'DM Sans';
+const DISPLAY_FONT = 'Bricolage Grotesque';
 
 interface ExpressiveStateViewProps {
   isDark: boolean;

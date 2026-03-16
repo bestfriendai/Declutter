@@ -104,9 +104,9 @@ export function Banner({
 
   return (
     <Animated.View
-      entering={SlideInUp.springify().damping(18)}
+      entering={SlideInUp.duration(350).damping(18)}
       exiting={SlideOutUp.duration(200)}
-      layout={LinearTransition.springify()}
+      layout={LinearTransition.duration(350)}
       style={[
         styles.container,
         {

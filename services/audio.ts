@@ -1,6 +1,8 @@
 /**
  * Audio Service for Focus Mode
  * Manages ambient sounds and white noise for focus sessions
+ *
+ * Respects the global sound-effects toggle from settings.
  */
 
 import { Audio, AVPlaybackStatus } from 'expo-av';
@@ -10,6 +12,21 @@ import { retry, isNetworkError } from '@/utils/retry';
 // Audio instance for ambient sounds
 let ambientSound: Audio.Sound | null = null;
 let isPlaying = false;
+
+// Global sound-effects toggle — set from settings
+let soundEffectsEnabled = true;
+
+export function setSoundEffectsEnabled(enabled: boolean) {
+  soundEffectsEnabled = enabled;
+  // If sound was just disabled, stop any playing ambient sound
+  if (!enabled) {
+    stopAmbientSound();
+  }
+}
+
+export function isSoundEffectsEnabled(): boolean {
+  return soundEffectsEnabled;
+}
 
 // White noise type mapping to actual sound files/URLs
 // Using free ambient sounds from reliable sources
@@ -41,7 +58,7 @@ export async function initializeAudio(): Promise<void> {
       playThroughEarpieceAndroid: false,
     });
   } catch (error) {
-    console.error('Error initializing audio:', error);
+    if (__DEV__) console.error('Error initializing audio:', error);
   }
 }
 
@@ -83,6 +100,8 @@ async function loadSoundWithRetry(
  * Play ambient sound based on type
  */
 export async function playAmbientSound(type: FocusModeSettings['whiteNoiseType']): Promise<void> {
+  if (!soundEffectsEnabled) return;
+
   // Stop any existing sound first
   await stopAmbientSound();
 
@@ -126,7 +145,7 @@ export async function playAmbientSound(type: FocusModeSettings['whiteNoiseType']
       }
     });
   } catch (error) {
-    console.error('Error playing ambient sound after retries:', error);
+    if (__DEV__) console.error('Error playing ambient sound after retries:', error);
     // Reset state on failure
     ambientSound = null;
     isPlaying = false;
@@ -148,7 +167,7 @@ async function handlePlaybackError(type: FocusModeSettings['whiteNoiseType']): P
     try {
       await playAmbientSound(type);
     } catch (error) {
-      console.error('Audio recovery failed:', error);
+      if (__DEV__) console.error('Audio recovery failed:', error);
     }
   }
 }
@@ -165,7 +184,7 @@ export async function stopAmbientSound(): Promise<void> {
       isPlaying = false;
     }
   } catch (error) {
-    console.error('Error stopping ambient sound:', error);
+    if (__DEV__) console.error('Error stopping ambient sound:', error);
   }
 }
 
@@ -179,7 +198,7 @@ export async function pauseAmbientSound(): Promise<void> {
       isPlaying = false;
     }
   } catch (error) {
-    console.error('Error pausing ambient sound:', error);
+    if (__DEV__) console.error('Error pausing ambient sound:', error);
   }
 }
 
@@ -193,7 +212,7 @@ export async function resumeAmbientSound(): Promise<void> {
       isPlaying = true;
     }
   } catch (error) {
-    console.error('Error resuming ambient sound:', error);
+    if (__DEV__) console.error('Error resuming ambient sound:', error);
   }
 }
 
@@ -206,7 +225,7 @@ export async function setVolume(volume: number): Promise<void> {
       await ambientSound.setVolumeAsync(Math.max(0, Math.min(1, volume)));
     }
   } catch (error) {
-    console.error('Error setting volume:', error);
+    if (__DEV__) console.error('Error setting volume:', error);
   }
 }
 
@@ -218,9 +237,11 @@ export function isAmbientPlaying(): boolean {
 }
 
 /**
- * Helper to play a one-shot sound with retry and auto-cleanup
+ * Helper to play a one-shot sound with retry and auto-cleanup.
+ * Respects the global sound-effects toggle.
  */
 async function playOneShotSound(uri: string, volume: number = 0.5): Promise<void> {
+  if (!soundEffectsEnabled) return;
   try {
     const sound = await loadSoundWithRetry(uri, {
       shouldPlay: true,

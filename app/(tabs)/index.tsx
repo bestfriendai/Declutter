@@ -17,17 +17,17 @@
  */
 
 import { useDeclutter } from '@/context/DeclutterContext';
-import { api } from '@/convex/_generated/api';
 import { AmbientBackdrop } from '@/components/ui/AmbientBackdrop';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
-import { useConvexAuth, useQuery } from 'convex/react';
+import { useSubscription, FREE_ROOM_LIMIT } from '@/hooks/useSubscription';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import React, { useCallback, useMemo } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Image,
   Platform,
   Pressable,
@@ -51,6 +51,17 @@ import { Ionicons } from '@expo/vector-icons';
 
 const DAILY_TASK_GOAL = 5;
 
+const DAILY_QUOTES = [
+  'Small steps create big change.',
+  'Done is better than perfect.',
+  'Progress compounds silently.',
+  'You are not behind. You are exactly where you need to be.',
+  'One room at a time, one task at a time.',
+  'Consistency beats intensity.',
+  'A calmer space makes a calmer mind.',
+  'You deserve a space that feels good.',
+];
+
 const ROOM_ICON_MAP: Record<string, keyof typeof Ionicons.glyphMap> = {
   bedroom: 'bed-outline',
   kitchen: 'restaurant-outline',
@@ -70,9 +81,12 @@ function getRoomIcon(type?: string): keyof typeof Ionicons.glyphMap {
 
 function getGreeting(name: string): string {
   const hour = new Date().getHours();
-  if (hour < 12) return `Good morning, ${name}`;
-  if (hour < 17) return `Good afternoon, ${name}`;
-  return `Breathe in, ${name}`;
+  const firstName = name.split(' ')[0];
+  if (hour < 6) return `Still up, ${firstName}?`;
+  if (hour < 12) return `Good morning, ${firstName}`;
+  if (hour < 17) return `Good afternoon, ${firstName}`;
+  if (hour < 21) return `Good evening, ${firstName}`;
+  return `Breathe in, ${firstName}`;
 }
 
 function getDayLabel(): string {
@@ -97,13 +111,33 @@ export default function HomeScreen() {
 
   // Data -- all safely optional-chained
   const { rooms, user, stats, setActiveRoom } = useDeclutter();
-  const { isAuthenticated } = useConvexAuth();
-  const streakInfo = useQuery(api.stats.getStreakInfo, isAuthenticated ? {} : 'skip');
+  const { isPro, roomLimit } = useSubscription();
 
-  const streak = streakInfo?.currentStreak ?? stats?.currentStreak ?? 0;
+  // Room limit check -- free users get 3 rooms max
+  const canCreateRoom = useMemo(() => {
+    if (isPro) return true;
+    return (rooms ?? []).length < roomLimit;
+  }, [isPro, rooms, roomLimit]);
+
+  const showRoomLimitAlert = useCallback(() => {
+    Alert.alert(
+      'Room limit reached',
+      `Free accounts can scan up to ${FREE_ROOM_LIMIT} rooms. Upgrade to Pro for unlimited room scans.`,
+      [
+        { text: 'Not now', style: 'cancel' },
+        { text: 'Upgrade to Pro', onPress: () => router.push('/paywall') },
+      ]
+    );
+  }, []);
+
   const userName = user?.name ?? 'Friend';
   const greeting = useMemo(() => getGreeting(userName), [userName]);
   const dateLabel = useMemo(() => getDayLabel(), []);
+  const dailyQuote = useMemo(() => {
+    // Deterministic daily quote based on date
+    const dayOfYear = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0).getTime()) / 86400000);
+    return DAILY_QUOTES[dayOfYear % DAILY_QUOTES.length];
+  }, []);
 
   // Daily task progress
   const todayCompletedTasks = useMemo(() => {
@@ -148,10 +182,15 @@ export default function HomeScreen() {
     if (heroRoom?.id) {
       router.push(`/room/${heroRoom.id}`);
     } else {
+      // New room -- check free tier limit
+      if (!canCreateRoom) {
+        showRoomLimitAlert();
+        return;
+      }
       setActiveRoom(null);
       router.push('/camera');
     }
-  }, [heroRoom, setActiveRoom]);
+  }, [heroRoom, setActiveRoom, canCreateRoom, showRoomLimitAlert]);
 
   const handleRoomPress = useCallback((roomId: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -160,9 +199,20 @@ export default function HomeScreen() {
 
   const handleScanPress = useCallback((roomId?: string | null) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setActiveRoom(roomId ?? null);
+    // If scanning an existing room (re-scan), always allow
+    if (roomId) {
+      setActiveRoom(roomId);
+      router.push('/camera');
+      return;
+    }
+    // New room scan -- check free tier limit
+    if (!canCreateRoom) {
+      showRoomLimitAlert();
+      return;
+    }
+    setActiveRoom(null);
     router.push('/camera');
-  }, [setActiveRoom]);
+  }, [setActiveRoom, canCreateRoom, showRoomLimitAlert]);
 
   const handleHeroPress = useCallback(() => {
     if (heroRoom?.id) {
@@ -242,8 +292,8 @@ export default function HomeScreen() {
             {dateLabel}
           </Text>
 
-          <Text style={[styles.quoteText, { color: isDark ? '#70707090' : '#AAAAAA80' }]}>
-            {'\u2018'}Small steps create big change.{'\u2019'}
+          <Text style={[styles.quoteText, { color: isDark ? 'rgba(112,112,112,0.56)' : 'rgba(170,170,170,0.50)' }]}>
+            {'\u2018'}{dailyQuote}{'\u2019'}
           </Text>
 
           {/* Streak Card */}
@@ -259,9 +309,24 @@ export default function HomeScreen() {
 
         {/* -- Hero Card ----------------------------------------------------- */}
         {isLoading ? (
-          <View style={styles.loadingWrap}>
-            <ActivityIndicator color={isDark ? '#FFFFFF' : '#1A1A1A'} />
-          </View>
+          <Animated.View
+            entering={reducedMotion ? undefined : FadeInDown.duration(400).delay(160)}
+            style={[styles.loadingWrap, {
+              backgroundColor: isDark ? 'rgba(20,20,20,0.6)' : 'rgba(240,240,240,0.6)',
+              borderRadius: 28,
+            }]}
+          >
+            <ActivityIndicator size="small" color={isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.25)'} />
+            <Text style={{
+              fontFamily: 'DM Sans',
+              fontSize: 13,
+              fontWeight: '500',
+              color: isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.25)',
+              marginTop: 12,
+            }}>
+              Loading your rooms...
+            </Text>
+          </Animated.View>
         ) : heroRoom ? (
           <Animated.View entering={reducedMotion ? undefined : FadeInDown.duration(400).delay(160)}>
             <HeroCard
@@ -300,35 +365,41 @@ export default function HomeScreen() {
           </Animated.View>
         )}
 
+        {/* -- Quick Action Chips (when rooms exist) ----------------------------- */}
+        {!isLoading && !heroRoom && flowRooms.length === 0 ? null : null}
+
         {/* -- CTA Button ---------------------------------------------------- */}
         {heroRoom || flowRooms.length > 0 ? (
           <Animated.View entering={reducedMotion ? undefined : FadeInDown.duration(400).delay(320)}>
             <CTAButton isDark={isDark} onPress={handleStartFlow} />
           </Animated.View>
         ) : null}
+
+        {/* -- Scan Another Room (secondary action when rooms exist) ---------- */}
+        {!isLoading && (heroRoom || flowRooms.length > 0) ? (
+          <Animated.View entering={reducedMotion ? undefined : FadeInDown.duration(400).delay(400)}>
+            <Pressable
+              onPress={() => handleScanPress(null)}
+              accessibilityRole="button"
+              accessibilityLabel="Scan another room"
+              style={({ pressed }) => [
+                styles.secondaryAction,
+                {
+                  backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
+                  borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+                  opacity: pressed ? 0.7 : 1,
+                },
+              ]}
+            >
+              <Ionicons name="add-circle-outline" size={18} color={isDark ? '#9E9EA6' : '#7D7D84'} />
+              <Text style={[styles.secondaryActionText, { color: isDark ? '#9E9EA6' : '#7D7D84' }]}>
+                Scan another room
+              </Text>
+            </Pressable>
+          </Animated.View>
+        ) : null}
       </ScrollView>
 
-      {/* Decorative sparkles */}
-      <View style={styles.sparkleContainer} pointerEvents="none">
-        <Ionicons
-          name="sparkles-outline"
-          size={16}
-          color={isDark ? '#FFFFFF' : '#1A1A1A'}
-          style={[styles.sparkle1, { opacity: isDark ? 0.3 : 0.25 }]}
-        />
-        <Ionicons
-          name="sparkles-outline"
-          size={12}
-          color={isDark ? '#FFFFFF' : '#1A1A1A'}
-          style={[styles.sparkle2, { opacity: 0.2 }]}
-        />
-        <Ionicons
-          name="sparkles"
-          size={20}
-          color={isDark ? '#FFFFFF' : '#1A1A1A'}
-          style={[styles.sparkle3, { opacity: isDark ? 0.35 : 0.3 }]}
-        />
-      </View>
     </View>
   );
 }
@@ -346,7 +417,7 @@ interface StreakCardProps {
 
 function StreakCard({ isDark, totalMinutes, dailyGoalMinutes, todayCompletedTasks }: StreakCardProps) {
   const hour = new Date().getHours();
-  const emoji = hour >= 17 ? '\uD83C\uDF19' : hour >= 12 ? '\u2600\uFE0F' : '\uD83C\uDF24\uFE0F';
+  const emoji = hour >= 21 ? '\uD83C\uDF19' : hour >= 17 ? '\uD83C\uDF05' : hour >= 12 ? '\u2600\uFE0F' : '\uD83C\uDF24\uFE0F';
 
   return (
     <View
@@ -354,7 +425,7 @@ function StreakCard({ isDark, totalMinutes, dailyGoalMinutes, todayCompletedTask
         styles.streakCard,
         {
           backgroundColor: isDark ? '#141414' : '#FFFFFF',
-          borderColor: isDark ? '#1C1C1C60' : '#E0E0E0',
+          borderColor: isDark ? 'rgba(28,28,28,0.38)' : '#E0E0E0',
           // Design: dark shadow #030611 blur 24 offset y8 | light shadow #000008 blur 12 offset y4
           shadowColor: isDark ? '#030611' : '#000000',
           shadowOffset: { width: 0, height: isDark ? 8 : 4 },
@@ -393,13 +464,13 @@ function StreakCard({ isDark, totalMinutes, dailyGoalMinutes, todayCompletedTask
           {/* Streak Info */}
           <View style={styles.streakInfo}>
             <Text style={[styles.streakLabel, { color: isDark ? '#8C8C92' : '#8C8377' }]}>
-              WIND DOWN
+              {todayCompletedTasks > 0 ? 'KEEP GOING' : 'DAILY RESET'}
             </Text>
             <Text style={[styles.streakName, { color: isDark ? '#FFFFFF' : '#1A1A1A' }]}>
-              Mindful Streak
+              {todayCompletedTasks > 0 ? 'On a roll' : 'Start your flow'}
             </Text>
             <Text style={[styles.streakSub, { color: isDark ? '#A7A7B0' : '#8A8176' }]}>
-              {totalMinutes} min / {dailyGoalMinutes} min
+              {totalMinutes > 0 ? `${totalMinutes} min today` : 'One small task to begin'}
             </Text>
           </View>
 
@@ -518,7 +589,7 @@ function HeroCard({ isDark, room, onScanPress, onPress }: HeroCardProps) {
           >
             <Ionicons name="leaf-outline" size={12} color={isDark ? '#FFFFFF' : '#1A1A1A'} />
             <Text style={[styles.heroBadgeText, { color: isDark ? '#FFFFFF' : '#1A1A1A' }]}>
-              Evening Pick
+              {new Date().getHours() >= 17 ? 'Evening Pick' : new Date().getHours() >= 12 ? 'Afternoon Focus' : 'Morning Reset'}
             </Text>
           </View>
 
@@ -559,7 +630,7 @@ function HeroCard({ isDark, room, onScanPress, onPress }: HeroCardProps) {
             <View
               style={[
                 styles.heroProgressTrack,
-                { backgroundColor: isDark ? '#1C1C1C60' : '#00000015' },
+                { backgroundColor: isDark ? 'rgba(28,28,28,0.38)' : 'rgba(0,0,0,0.08)' },
               ]}
             >
               <View
@@ -587,76 +658,86 @@ function HeroCard({ isDark, room, onScanPress, onPress }: HeroCardProps) {
 // ---------------------------------------------------------------------------
 
 function EmptyHeroCard({ isDark, onScanPress }: { isDark: boolean; onScanPress: () => void }) {
+  const scale = useSharedValue(1);
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+
+  const handlePressIn = useCallback(() => {
+    scale.value = withSpring(0.97, { damping: 20, stiffness: 400 });
+  }, [scale]);
+
+  const handlePressOut = useCallback(() => {
+    scale.value = withSpring(1, { damping: 15, stiffness: 300 });
+  }, [scale]);
+
   return (
-    <LinearGradient
-      colors={
-        isDark
-          ? ['rgba(22,22,26,0.98)', 'rgba(12,12,16,0.98)']
-          : ['rgba(255,255,255,0.98)', 'rgba(248,244,238,0.96)']
-      }
-      style={[
-        styles.heroCard,
-        styles.emptyHeroCard,
-        {
-          borderWidth: 1,
-          borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)',
-        },
-      ]}
-    >
-      <LinearGradient
-        colors={isDark ? ['#FFD39A', '#FFAA63'] : ['#FFC888', '#FFA36A']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.emptyHeroIcon}
-      >
-        <Ionicons name="camera-outline" size={22} color="#17120B" />
-      </LinearGradient>
-
-      <Text style={[styles.emptyHeroEyebrow, { color: isDark ? '#F9DFC1' : '#8A5A29' }]}>
-        FIRST RESET
-      </Text>
-
-      <Text style={[styles.emptyHeroTitle, { color: isDark ? '#FFF8EF' : '#17171A' }]}>
-        Start with the room you notice most.
-      </Text>
-
-      <Text
-        style={[
-          styles.emptyHeroSubtext,
-          { color: isDark ? 'rgba(255,255,255,0.56)' : 'rgba(23,23,26,0.54)' },
-        ]}
-      >
-        One photo is enough. Declutterly will turn it into a short, calm next step instead of a giant project.
-      </Text>
-
-      <Text
-        style={[
-          styles.emptyHeroNote,
-          { color: isDark ? 'rgba(249,223,193,0.72)' : 'rgba(122,80,39,0.72)' },
-        ]}
-      >
-        Try first: kitchen counter or bedroom floor.
-      </Text>
-
-      <Pressable
-        onPress={onScanPress}
-        accessibilityRole="button"
-        accessibilityLabel="Scan first room"
-        style={({ pressed }) => [{ opacity: pressed ? 0.88 : 1 }]}
-      >
+    <Pressable onPress={onScanPress} onPressIn={handlePressIn} onPressOut={handlePressOut}>
+      <Animated.View style={animatedStyle}>
         <LinearGradient
-          colors={isDark ? ['#FFF4E3', '#F7D19B'] : ['#1B1B20', '#33323A']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.emptyHeroButton}
+          colors={
+            isDark
+              ? ['rgba(22,22,26,0.98)', 'rgba(12,12,16,0.98)']
+              : ['rgba(255,255,255,0.98)', 'rgba(248,244,238,0.96)']
+          }
+          style={[
+            styles.heroCard,
+            styles.emptyHeroCard,
+            {
+              borderWidth: 1,
+              borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)',
+            },
+          ]}
         >
-          <Ionicons name="scan-outline" size={16} color={isDark ? '#17120B' : '#FFFFFF'} />
-          <Text style={[styles.emptyHeroButtonText, { color: isDark ? '#17120B' : '#FFFFFF' }]}>
-            Scan first room
+          <LinearGradient
+            colors={isDark ? ['#FFD39A', '#FFAA63'] : ['#FFC888', '#FFA36A']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.emptyHeroIcon}
+          >
+            <Ionicons name="camera-outline" size={22} color="#17120B" />
+          </LinearGradient>
+
+          <Text style={[styles.emptyHeroEyebrow, { color: isDark ? '#F9DFC1' : '#8A5A29' }]}>
+            TAKES 30 SECONDS
           </Text>
+
+          <Text style={[styles.emptyHeroTitle, { color: isDark ? '#FFF8EF' : '#17171A' }]}>
+            Snap a photo. We handle the rest.
+          </Text>
+
+          <Text
+            style={[
+              styles.emptyHeroSubtext,
+              { color: isDark ? 'rgba(255,255,255,0.56)' : 'rgba(23,23,26,0.54)' },
+            ]}
+          >
+            AI turns one photo into bite-sized tasks you can actually finish -- no overwhelming project lists.
+          </Text>
+
+          <Text
+            style={[
+              styles.emptyHeroNote,
+              { color: isDark ? 'rgba(249,223,193,0.72)' : 'rgba(122,80,39,0.72)' },
+            ]}
+          >
+            Most people start with their kitchen counter or desk.
+          </Text>
+
+          <LinearGradient
+            colors={isDark ? ['#FFF4E3', '#F7D19B'] : ['#1B1B20', '#33323A']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.emptyHeroButton}
+          >
+            <Ionicons name="scan-outline" size={16} color={isDark ? '#17120B' : '#FFFFFF'} />
+            <Text style={[styles.emptyHeroButtonText, { color: isDark ? '#17120B' : '#FFFFFF' }]}>
+              Scan your first room
+            </Text>
+          </LinearGradient>
         </LinearGradient>
-      </Pressable>
-    </LinearGradient>
+      </Animated.View>
+    </Pressable>
   );
 }
 
@@ -821,7 +902,7 @@ function CTAButton({ isDark, onPress }: CTAButtonProps) {
       onPressIn={handlePressIn}
       onPressOut={handlePressOut}
       accessibilityRole="button"
-      accessibilityLabel="Start Your Flow"
+      accessibilityLabel="Start to Declutter"
     >
       <Animated.View
         style={[
@@ -850,7 +931,7 @@ function CTAButton({ isDark, onPress }: CTAButtonProps) {
           </View>
           <View style={styles.ctaCopy}>
             <Text style={[styles.ctaText, { color: isDark ? '#121212' : '#FFFFFF' }]}>
-              Start Your Flow
+              Start to Declutter
             </Text>
             <Text style={[styles.ctaSubtext, { color: isDark ? '#3F372F' : '#D7D4DD' }]}>
               Pick up momentum in one tap
@@ -897,7 +978,7 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   kickerText: {
-    fontFamily: Platform.OS === 'ios' ? 'DM Sans' : 'sans-serif',
+    fontFamily: 'DM Sans',
     fontSize: 10,
     fontWeight: '700',
     letterSpacing: 1,
@@ -911,33 +992,33 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   kickerStatValue: {
-    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif',
+    fontFamily: 'System',
     fontSize: 13,
     fontWeight: '800',
   },
   kickerStatLabel: {
-    fontFamily: Platform.OS === 'ios' ? 'DM Sans' : 'sans-serif',
+    fontFamily: 'DM Sans',
     fontSize: 10,
     fontWeight: '500',
   },
   greetingText: {
-    fontFamily: Platform.OS === 'ios' ? 'DM Sans' : 'sans-serif',
+    fontFamily: 'DM Sans',
     fontSize: 13,
     fontWeight: '500',
   },
   titleText: {
-    fontFamily: Platform.OS === 'ios' ? 'Bricolage Grotesque' : 'sans-serif',
+    fontFamily: 'Bricolage Grotesque',
     fontSize: 32,
     fontWeight: '700',
     letterSpacing: -0.4,
   },
   dateText: {
-    fontFamily: Platform.OS === 'ios' ? 'DM Sans' : 'sans-serif',
+    fontFamily: 'DM Sans',
     fontSize: 12,
     fontWeight: '400',
   },
   quoteText: {
-    fontFamily: Platform.OS === 'ios' ? 'DM Sans' : 'sans-serif',
+    fontFamily: 'DM Sans',
     fontSize: 12,
     fontStyle: 'italic',
     fontWeight: '400',
@@ -983,18 +1064,18 @@ const styles = StyleSheet.create({
     gap: 3,
   },
   streakLabel: {
-    fontFamily: Platform.OS === 'ios' ? 'DM Sans' : 'sans-serif',
+    fontFamily: 'DM Sans',
     fontSize: 9,
     fontWeight: '600',
     letterSpacing: 0.8,
   },
   streakName: {
-    fontFamily: Platform.OS === 'ios' ? 'Bricolage Grotesque' : 'sans-serif',
+    fontFamily: 'Bricolage Grotesque',
     fontSize: 15,
     fontWeight: '700',
   },
   streakSub: {
-    fontFamily: Platform.OS === 'ios' ? 'DM Sans' : 'sans-serif',
+    fontFamily: 'DM Sans',
     fontSize: 11,
     fontWeight: '400',
   },
@@ -1003,12 +1084,12 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   goalNum: {
-    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif',
+    fontFamily: 'System',
     fontSize: 18,
     fontWeight: '700',
   },
   goalLabel: {
-    fontFamily: Platform.OS === 'ios' ? 'DM Sans' : 'sans-serif',
+    fontFamily: 'DM Sans',
     fontSize: 10,
     fontWeight: '400',
   },
@@ -1058,7 +1139,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   heroBadgeText: {
-    fontFamily: Platform.OS === 'ios' ? 'DM Sans' : 'sans-serif',
+    fontFamily: 'DM Sans',
     fontSize: 11,
     fontWeight: '600',
   },
@@ -1072,7 +1153,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   heroScanText: {
-    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif',
+    fontFamily: 'System',
     fontSize: 11,
     fontWeight: '600',
   },
@@ -1085,14 +1166,14 @@ const styles = StyleSheet.create({
     zIndex: 2,
   },
   heroEyebrow: {
-    fontFamily: Platform.OS === 'ios' ? 'DM Sans' : 'sans-serif',
+    fontFamily: 'DM Sans',
     fontSize: 11,
     fontWeight: '700',
     letterSpacing: 0.8,
     textTransform: 'uppercase',
   },
   heroTitle: {
-    fontFamily: Platform.OS === 'ios' ? 'Bricolage Grotesque' : 'sans-serif',
+    fontFamily: 'Bricolage Grotesque',
     fontSize: 28,
     fontWeight: '700',
     letterSpacing: -0.3,
@@ -1113,7 +1194,7 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   heroProgressText: {
-    fontFamily: Platform.OS === 'ios' ? 'DM Sans' : 'sans-serif',
+    fontFamily: 'DM Sans',
     fontSize: 12,
     fontWeight: '700',
   },
@@ -1123,7 +1204,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   sectionLabel: {
-    fontFamily: Platform.OS === 'ios' ? 'DM Sans' : 'sans-serif',
+    fontFamily: 'DM Sans',
     fontSize: 10,
     fontWeight: '600',
     letterSpacing: 1,
@@ -1150,17 +1231,17 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   flowCardName: {
-    fontFamily: Platform.OS === 'ios' ? 'DM Sans' : 'sans-serif',
+    fontFamily: 'DM Sans',
     fontSize: 15,
     fontWeight: '700',
   },
   flowCardSub: {
-    fontFamily: Platform.OS === 'ios' ? 'DM Sans' : 'sans-serif',
+    fontFamily: 'DM Sans',
     fontSize: 11,
     fontWeight: '400',
   },
   flowCardPct: {
-    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif',
+    fontFamily: 'System',
     fontSize: 14,
     fontWeight: '700',
   },
@@ -1208,13 +1289,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   ctaText: {
-    fontFamily: Platform.OS === 'ios' ? 'DM Sans' : 'sans-serif',
+    fontFamily: 'DM Sans',
     fontSize: 15,
     fontWeight: '700',
     letterSpacing: -0.2,
   },
   ctaSubtext: {
-    fontFamily: Platform.OS === 'ios' ? 'DM Sans' : 'sans-serif',
+    fontFamily: 'DM Sans',
     fontSize: 10,
     fontWeight: '500',
     marginTop: 2,
@@ -1243,13 +1324,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   emptyHeroEyebrow: {
-    fontFamily: Platform.OS === 'ios' ? 'DM Sans' : 'sans-serif',
+    fontFamily: 'DM Sans',
     fontSize: 11,
     fontWeight: '800',
     letterSpacing: 0.8,
   },
   emptyHeroTitle: {
-    fontFamily: Platform.OS === 'ios' ? 'Bricolage Grotesque' : 'sans-serif',
+    fontFamily: 'Bricolage Grotesque',
     fontSize: 22,
     lineHeight: 26,
     fontWeight: '700',
@@ -1257,14 +1338,14 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   emptyHeroSubtext: {
-    fontFamily: Platform.OS === 'ios' ? 'DM Sans' : 'sans-serif',
+    fontFamily: 'DM Sans',
     fontSize: 12,
     lineHeight: 17,
     fontWeight: '500',
     textAlign: 'center',
   },
   emptyHeroNote: {
-    fontFamily: Platform.OS === 'ios' ? 'DM Sans' : 'sans-serif',
+    fontFamily: 'DM Sans',
     fontSize: 10,
     lineHeight: 14,
     fontWeight: '700',
@@ -1284,29 +1365,22 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   emptyHeroButtonText: {
-    fontFamily: Platform.OS === 'ios' ? 'DM Sans' : 'sans-serif',
+    fontFamily: 'DM Sans',
     fontSize: 15,
     fontWeight: '800',
   },
-
-  // -- Sparkle decorations --------------------------------------------------
-  sparkleContainer: {
-    ...StyleSheet.absoluteFillObject,
-    pointerEvents: 'none',
+  secondaryAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 1,
+    gap: 8,
   },
-  sparkle1: {
-    position: 'absolute',
-    top: 90,
-    right: 16,
-  },
-  sparkle2: {
-    position: 'absolute',
-    top: 105,
-    left: 24,
-  },
-  sparkle3: {
-    position: 'absolute',
-    top: 190,
-    right: 26,
+  secondaryActionText: {
+    fontFamily: 'DM Sans',
+    fontSize: 14,
+    fontWeight: '600',
   },
 });

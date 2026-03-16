@@ -9,7 +9,7 @@ import { useColorScheme } from '@/hooks/useColorScheme';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
 import { MASCOT_PERSONALITIES, MascotActivity, MascotMood } from '@/types/declutter';
 import * as Haptics from 'expo-haptics';
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect } from 'react';
 import {
     Pressable,
     Text as RNText,
@@ -22,7 +22,6 @@ import Animated, {
     interpolate,
     useAnimatedStyle,
     useSharedValue,
-    withDelay,
     withRepeat,
     withSequence,
     withSpring,
@@ -36,90 +35,9 @@ interface MascotProps {
   onPress?: () => void;
 }
 
-// Sparkle effect for happy states
-function Sparkle({ delay, x, y, reducedMotion }: { delay: number; x: number; y: number; reducedMotion?: boolean }) {
-  const opacity = useSharedValue(reducedMotion ? 0.7 : 0);
-  const scale = useSharedValue(reducedMotion ? 1 : 0);
-  const rotation = useSharedValue(0);
-
-  useEffect(() => {
-    // Skip animations if reduced motion is preferred
-    if (reducedMotion) {
-      opacity.value = 0.7;
-      scale.value = 1;
-      return;
-    }
-    
-    opacity.value = withDelay(
-      delay,
-      withRepeat(
-        withSequence(
-          withTiming(1, { duration: 300 }),
-          withTiming(0, { duration: 300 }),
-          withTiming(0, { duration: 600 })
-        ),
-        -1,
-        false
-      )
-    );
-
-    scale.value = withDelay(
-      delay,
-      withRepeat(
-        withSequence(
-          withSpring(1, { damping: 8 }),
-          withTiming(0, { duration: 300 }),
-          withTiming(0, { duration: 600 })
-        ),
-        -1,
-        false
-      )
-    );
-
-    rotation.value = withDelay(
-      delay,
-      withRepeat(
-        withSequence(
-          withTiming(180, { duration: 600 }),
-          withTiming(180, { duration: 600 })
-        ),
-        -1,
-        false
-      )
-    );
-
-    // Cleanup animations on unmount
-    return () => {
-      cancelAnimation(opacity);
-      cancelAnimation(scale);
-      cancelAnimation(rotation);
-    };
-  }, [delay, opacity, scale, rotation, reducedMotion]);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    opacity: opacity.value,
-    transform: [
-      { scale: scale.value },
-      { rotate: `${rotation.value}deg` },
-    ],
-  }));
-
-  return (
-    <Animated.Text
-      style={[
-        styles.sparkle,
-        animatedStyle,
-        { left: x, top: y },
-      ]}
-    >
-      ✨
-    </Animated.Text>
-  );
-}
-
 // Get emoji based on personality, mood, and activity
 function getMascotEmoji(
-  personality: string,
+  _personality: string,
   mood: MascotMood,
   activity: MascotActivity
 ): string {
@@ -152,7 +70,7 @@ function getMascotEmoji(
 }
 
 // Get speech bubble text
-function getSpeechBubbleText(mood: MascotMood, activity: MascotActivity, name: string): string {
+function getSpeechBubbleText(mood: MascotMood, activity: MascotActivity, _name: string): string {
   if (activity === 'cleaning') return "Let's clean!";
   if (activity === 'cheering') return 'Great job!';
   if (activity === 'celebrating') return 'You did it!';
@@ -231,20 +149,6 @@ export function Mascot({
   };
 
   const config = sizeConfig[size];
-
-  // Generate sparkle positions
-  const sparkles = useMemo(() => {
-    return Array.from({ length: 4 }).map((_, i) => {
-      const angle = (i / 4) * Math.PI * 2;
-      const radius = config.container * 0.7;
-      return {
-        id: i,
-        delay: i * 300,
-        x: Math.cos(angle) * radius + config.container / 2 - 8,
-        y: Math.sin(angle) * radius + config.container / 2 - 8,
-      };
-    });
-  }, [config.container]);
 
   useEffect(() => {
     if (!mascot) return;
@@ -491,7 +395,6 @@ export function Mascot({
   const emoji = getMascotEmoji(mascot.personality, mascot.mood, mascot.activity);
   const speechText = getSpeechBubbleText(mascot.mood, mascot.activity, mascot.name);
   const moodColor = getMoodColor(mascot.mood);
-  const isHappy = ['ecstatic', 'happy', 'excited'].includes(mascot.mood);
 
   return (
     <View style={[styles.wrapper, { minHeight: config.container + 80 }]}>
@@ -524,11 +427,6 @@ export function Mascot({
             },
           ]}
         />
-
-        {/* Sparkles for happy moods */}
-        {isHappy && sparkles.map(s => (
-          <Sparkle key={s.id} delay={s.delay} x={s.x} y={s.y} reducedMotion={prefersReducedMotion} />
-        ))}
 
         {/* Main mascot */}
         <Pressable onPress={handlePress} disabled={!interactive}>
@@ -680,10 +578,6 @@ const styles = StyleSheet.create({
   },
   glow: {
     position: 'absolute',
-  },
-  sparkle: {
-    position: 'absolute',
-    fontSize: 14,
   },
   container: {
     borderRadius: 999,

@@ -33,8 +33,8 @@ import {
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-const BODY_FONT = Platform.OS === 'ios' ? 'DM Sans' : 'sans-serif';
-const DISPLAY_FONT = Platform.OS === 'ios' ? 'Bricolage Grotesque' : 'sans-serif';
+const BODY_FONT = 'DM Sans';
+const DISPLAY_FONT = 'Bricolage Grotesque';
 
 export default function SignupScreen() {
   const rawScheme = useColorScheme();
@@ -170,7 +170,7 @@ export default function SignupScreen() {
         >
           {/* Header */}
           <Animated.View
-            entering={FadeInDown.delay(0).springify()}
+            entering={FadeInDown.delay(0).duration(350)}
             style={styles.headerSection}
           >
             <View style={styles.headerPillRow}>
@@ -192,7 +192,7 @@ export default function SignupScreen() {
                 ]}
               >
                 <Ionicons
-                  name="sparkles-outline"
+                  name="person-add-outline"
                   size={14}
                   color={isDark ? '#E1F5EA' : '#316D55'}
                 />
@@ -211,7 +211,7 @@ export default function SignupScreen() {
 
           {/* Form */}
           <Animated.View
-            entering={FadeInDown.delay(80).springify()}
+            entering={FadeInDown.delay(80).duration(350)}
             style={[
               styles.formSection,
               {
@@ -345,20 +345,59 @@ export default function SignupScreen() {
             </View>
           </Animated.View>
 
-          {/* Error */}
+          {/* Inline password strength -- prevents failed submissions */}
+          {password.length > 0 && password.length < 8 && (
+            <Animated.View
+              entering={FadeInDown.duration(250)}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 6,
+                paddingVertical: 6,
+                paddingHorizontal: 4,
+              }}
+            >
+              <View style={{
+                flex: 1,
+                height: 3,
+                borderRadius: 2,
+                backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+                overflow: 'hidden',
+              }}>
+                <View style={{
+                  width: `${Math.min(100, (password.length / 8) * 100)}%`,
+                  height: '100%',
+                  borderRadius: 2,
+                  backgroundColor: password.length < 4 ? '#FF453A' : password.length < 6 ? '#FFD60A' : '#32D74B',
+                }} />
+              </View>
+              <Text style={{
+                fontFamily: BODY_FONT,
+                fontSize: 11,
+                color: password.length < 4 ? '#FF453A' : password.length < 6 ? '#FFD60A' : '#32D74B',
+              }}>
+                {8 - password.length} more {8 - password.length === 1 ? 'character' : 'characters'}
+              </Text>
+            </Animated.View>
+          )}
+
+          {/* Error -- ADHD-friendly: clear, non-blaming, with action */}
           {error ? (
             <Animated.View
-              entering={FadeInDown.springify()}
+              entering={FadeInDown.duration(350)}
               style={styles.errorBanner}
               accessibilityRole="alert"
               accessibilityLiveRegion="assertive"
             >
-              <Text style={styles.errorText}>{error}</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Ionicons name="alert-circle-outline" size={16} color="#FF453A" />
+                <Text style={[styles.errorText, { flex: 1 }]}>{error}</Text>
+              </View>
             </Animated.View>
           ) : null}
 
           {/* Sign Up button */}
-          <Animated.View entering={FadeInDown.delay(160).springify()}>
+          <Animated.View entering={FadeInDown.delay(160).duration(350)}>
             <Pressable
               onPress={handleSignup}
               disabled={loading}
@@ -395,7 +434,7 @@ export default function SignupScreen() {
 
           {/* Divider */}
           <Animated.View
-            entering={FadeInDown.delay(200).springify()}
+            entering={FadeInDown.delay(200).duration(350)}
             style={styles.dividerRow}
           >
             <View
@@ -417,7 +456,7 @@ export default function SignupScreen() {
 
           {/* Alternate entry buttons */}
           <Animated.View
-            entering={FadeInDown.delay(240).springify()}
+            entering={FadeInDown.delay(240).duration(350)}
             style={styles.socialSection}
           >
             {/* Continue as Guest */}
@@ -469,7 +508,7 @@ export default function SignupScreen() {
 
           {/* Sign In link */}
           <Animated.View
-            entering={FadeInDown.delay(280).springify()}
+            entering={FadeInDown.delay(280).duration(350)}
             style={styles.linkRow}
           >
             <Text style={[styles.linkText, { color: linkColor }]}>

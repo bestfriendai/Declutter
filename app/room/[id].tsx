@@ -1,10 +1,11 @@
 /**
  * Declutterly - Room Detail Screen
  * Redesigned to match Pencil designs: hero photo with progress ring overlay,
- * clean task list, "Start Your Flow" CTA
+ * clean task list, "Start to Declutter" CTA
  * With ADHD-friendly features: combo tracking, encouragement, single task mode
  */
 
+import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
@@ -38,7 +39,6 @@ import Svg, { Circle } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ComboCounter } from '@/components/ui/ComboCounter';
-import { GlassButton } from '@/components/ui/GlassButton';
 import { MysteryReward, RewardType } from '@/components/ui/MysteryReward';
 import { ShareableCard } from '@/components/ui/ShareableCard';
 import { Toast } from '@/components/ui/Toast';
@@ -66,16 +66,18 @@ import {
 const AnimatedCircle: any = Animated.createAnimatedComponent(Circle as any);
 
 const ENCOURAGEMENT_MESSAGES = [
-  "You're doing amazing!",
-  "Look at you go!",
-  "One task at a time, you've got this!",
-  "Progress, not perfection!",
-  "You're unstoppable!",
-  "Small wins add up!",
-  "Crushing it!",
-  "Your future self thanks you!",
-  "That's the spirit!",
-  "Keep the momentum!",
+  "That's one less thing on your plate.",
+  "Look at you actually doing it.",
+  "One task at a time. That's the whole strategy.",
+  "Progress, not perfection. You get it.",
+  "Your space is literally getting calmer.",
+  "Small wins add up faster than you think.",
+  "Your brain just got a little dopamine. You're welcome.",
+  "Your future self is already thanking you.",
+  "This is what momentum feels like.",
+  "See? Not as bad as the anxiety said it would be.",
+  "Another one down. You're on a roll.",
+  "The hardest part was starting. You already did that.",
 ];
 
 // Progress ring component matching the Pencil design
@@ -83,12 +85,10 @@ function ProgressRing({
   progress,
   size = 160,
   strokeWidth = 10,
-  isDark,
 }: {
   progress: number;
   size?: number;
   strokeWidth?: number;
-  isDark: boolean;
 }) {
   const center = size / 2;
   const radius = center - strokeWidth / 2;
@@ -119,16 +119,16 @@ function ProgressRing({
           cx={center}
           cy={center}
           r={radius}
-          stroke={isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.08)'}
+          stroke="rgba(255,255,255,0.20)"
           strokeWidth={strokeWidth}
           fill="none"
         />
-        {/* Progress fill */}
+        {/* Progress fill — always white over photo */}
         <AnimatedCircle
           cx={center}
           cy={center}
           r={radius}
-          stroke={isDark ? '#FFFFFF' : '#1A1A1A'}
+          stroke="#FFFFFF"
           strokeWidth={strokeWidth}
           fill="none"
           strokeLinecap="round"
@@ -138,21 +138,24 @@ function ProgressRing({
           origin={`${center}, ${center}`}
         />
       </Svg>
-      {/* Center text */}
+      {/* Center text — always white, it's over the photo */}
       <View style={StyleSheet.absoluteFill} pointerEvents="none">
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
           <Text style={{
             fontSize: 36,
             fontWeight: '700',
-            color: isDark ? '#FFFFFF' : '#1A1A1A',
+            color: '#FFFFFF',
             letterSpacing: -1,
+            textShadowColor: 'rgba(0,0,0,0.4)',
+            textShadowOffset: { width: 0, height: 1 },
+            textShadowRadius: 3,
           }}>
             {Math.round(progress)}%
           </Text>
           <Text style={{
             fontSize: 13,
             fontWeight: '400',
-            color: isDark ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.4)',
+            color: 'rgba(255,255,255,0.75)',
             marginTop: 2,
           }}>
             complete
@@ -184,7 +187,8 @@ export default function RoomDetailScreen() {
     stats,
   } = useDeclutter();
 
-  const [filter, setFilter] = useState<'all' | 'pending' | 'completed'>('all');
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [filter, _setFilter] = useState<'all' | 'pending' | 'completed'>('all');
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
   const [celebratingTask, setCelebratingTask] = useState<string | null>(null);
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState<number | null>(null);
@@ -562,13 +566,14 @@ export default function RoomDetailScreen() {
     );
   };
 
-  // Motivational message based on progress
+  // Motivational message based on progress -- ADHD-friendly, specific and encouraging
   const getMotivationalText = () => {
-    if (room.currentProgress >= 100) return 'All done! Amazing work!';
-    if (room.currentProgress >= 75) return 'Almost done! Keep going.';
-    if (room.currentProgress >= 50) return 'Halfway there! Great momentum.';
-    if (room.currentProgress >= 25) return 'Good start! Keep it up.';
-    return "Let's get started!";
+    if (room.currentProgress >= 100) return 'Every task done. You crushed it.';
+    if (room.currentProgress >= 75) return `Just ${pendingCount} ${pendingCount === 1 ? 'task' : 'tasks'} left. You can do this.`;
+    if (room.currentProgress >= 50) return 'Halfway there -- momentum is real.';
+    if (room.currentProgress >= 25) return `${completedCount} down. Keep the streak going.`;
+    if (completedCount > 0) return 'Great start -- one task at a time.';
+    return `${pendingCount} small steps. Pick the easiest one first.`;
   };
 
   return (
@@ -576,7 +581,7 @@ export default function RoomDetailScreen() {
       {/* Celebration Overlay */}
       {celebratingTask && (
         <Animated.View
-          entering={ZoomIn.springify()}
+          entering={ZoomIn.duration(350)}
           exiting={FadeOut.duration(300)}
           style={[styles.celebrationOverlay, celebrationStyle]}
         >
@@ -587,20 +592,20 @@ export default function RoomDetailScreen() {
           />
           <View style={styles.celebrationContent}>
             <Animated.Text
-              entering={ZoomIn.delay(100).springify()}
+              entering={ZoomIn.delay(100).duration(350)}
               style={styles.celebrationEmojis}
             >
-              {'\u{1F389}'} {'\u2728'} {'\u2B50'} {'\u{1F31F}'} {'\u{1F4AB}'} {'\u{1F38A}'}
+              {'\u{1F389}'} {'\u{1F3C6}'} {'\u2B50'} {'\u{1F31F}'} {'\u{1F4AB}'} {'\u{1F38A}'}
             </Animated.Text>
             <Animated.Text
-              entering={FadeInDown.delay(200).springify()}
+              entering={FadeInDown.delay(200).duration(350)}
               style={[styles.celebrationText, { color: '#FFFFFF' }]}
             >
               Task Complete!
             </Animated.Text>
             {comboCount > 1 && (
               <Animated.View
-                entering={ZoomIn.delay(300).springify()}
+                entering={ZoomIn.delay(300).duration(350)}
                 style={[styles.comboIndicator, { backgroundColor: 'rgba(255,159,10,0.3)' }]}
               >
                 <Text style={{ fontSize: 12, color: '#FF9F0A', fontWeight: '700' }}>
@@ -650,12 +655,14 @@ export default function RoomDetailScreen() {
             </View>
           )}
 
-          {/* Gradient overlay */}
+          {/* Gradient overlay — always dark so text is always legible over photo */}
           <LinearGradient
-            colors={isDark
-              ? ['rgba(10,10,10,0.1)', 'rgba(10,10,10,0)', 'rgba(10,10,10,0.5)', 'rgba(10,10,10,0.95)']
-              : ['rgba(250,250,250,0.1)', 'rgba(250,250,250,0)', 'rgba(250,250,250,0.5)', 'rgba(250,250,250,0.95)']
-            }
+            colors={[
+              'rgba(0,0,0,0.25)',
+              'rgba(0,0,0,0)',
+              'rgba(0,0,0,0.65)',
+              'rgba(0,0,0,0.90)',
+            ]}
             locations={[0, 0.2, 0.6, 1]}
             style={StyleSheet.absoluteFill}
           />
@@ -669,20 +676,33 @@ export default function RoomDetailScreen() {
               accessibilityLabel="Go back to Rooms"
               style={styles.heroBackButton}
             >
-              <Text style={{
-                fontSize: 17,
-                fontWeight: '400',
-                color: isDark ? '#FFFFFF' : '#1A1A1A',
-              }}>
-                {'<'} Rooms
-              </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <Ionicons name="chevron-back" size={20} color="#FFFFFF" style={{
+                  textShadowColor: 'rgba(0,0,0,0.5)',
+                  textShadowOffset: { width: 0, height: 1 },
+                  textShadowRadius: 3,
+                }} />
+                <Text style={{
+                  fontSize: 17,
+                  fontWeight: '400',
+                  color: '#FFFFFF',
+                  textShadowColor: 'rgba(0,0,0,0.5)',
+                  textShadowOffset: { width: 0, height: 1 },
+                  textShadowRadius: 3,
+                }}>
+                  Rooms
+                </Text>
+              </View>
             </Pressable>
 
             <Text style={{
               fontSize: 17,
               fontWeight: '600',
-              color: isDark ? '#FFFFFF' : '#1A1A1A',
+              color: '#FFFFFF',
               textAlign: 'center',
+              textShadowColor: 'rgba(0,0,0,0.5)',
+              textShadowOffset: { width: 0, height: 1 },
+              textShadowRadius: 3,
             }}>
               {room.name}
             </Text>
@@ -694,7 +714,13 @@ export default function RoomDetailScreen() {
               accessibilityLabel="Room options"
               style={{ width: 60, alignItems: 'flex-end' }}
             >
-              <Text style={{ fontSize: 17, color: isDark ? '#FFFFFF' : '#1A1A1A' }}>
+              <Text style={{
+                fontSize: 17,
+                color: '#FFFFFF',
+                textShadowColor: 'rgba(0,0,0,0.5)',
+                textShadowOffset: { width: 0, height: 1 },
+                textShadowRadius: 3,
+              }}>
                 {'\u2022\u2022\u2022'}
               </Text>
             </Pressable>
@@ -709,21 +735,23 @@ export default function RoomDetailScreen() {
               progress={room.currentProgress}
               size={160}
               strokeWidth={10}
-              isDark={isDark}
             />
           </Animated.View>
 
-          {/* Motivational text */}
+          {/* Motivational text — always white over photo */}
           <Animated.Text
             entering={reducedMotion ? undefined : FadeInDown.delay(500)}
             style={{
               fontSize: 15,
               fontWeight: '400',
               fontStyle: 'italic',
-              color: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.4)',
+              color: 'rgba(255,255,255,0.70)',
               textAlign: 'center',
               marginTop: 12,
               paddingBottom: 20,
+              textShadowColor: 'rgba(0,0,0,0.4)',
+              textShadowOffset: { width: 0, height: 1 },
+              textShadowRadius: 3,
             }}
           >
             {getMotivationalText()}
@@ -737,15 +765,71 @@ export default function RoomDetailScreen() {
           entering={reducedMotion ? undefined : FadeInDown.delay(400)}
           style={styles.todoHeader}
         >
-          <Text style={{
-            fontSize: 11,
-            fontWeight: '600',
-            letterSpacing: 2,
-            textTransform: 'uppercase',
-            color: isDark ? '#808080' : '#808080',
-          }}>
-            TO DO {'\u00B7'} {pendingCount} TASK{pendingCount !== 1 ? 'S' : ''}
-          </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <Text style={{
+                fontSize: 11,
+                fontWeight: '700',
+                letterSpacing: 1.5,
+                textTransform: 'uppercase',
+                color: isDark ? '#808080' : '#6B6B6B',
+              }}>
+                TO DO
+              </Text>
+              <View style={{
+                backgroundColor: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.07)',
+                borderRadius: 10,
+                paddingHorizontal: 8,
+                paddingVertical: 3,
+              }}>
+                <Text style={{
+                  fontSize: 11,
+                  fontWeight: '700',
+                  color: isDark ? 'rgba(255,255,255,0.60)' : 'rgba(0,0,0,0.45)',
+                }}>
+                  {pendingCount} {pendingCount !== 1 ? 'TASKS' : 'TASK'}
+                </Text>
+              </View>
+            </View>
+
+            {/* Time estimate -- helps ADHD brain commit */}
+            {pendingCount > 0 && (
+              <Text style={{
+                fontSize: 11,
+                fontWeight: '500',
+                color: isDark ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.30)',
+              }}>
+                ~{(room.tasks ?? []).filter(t => !t.completed).reduce((sum, t) => sum + (t.estimatedMinutes ?? 0), 0)} min total
+              </Text>
+            )}
+          </View>
+
+          {/* Session filter indicator */}
+          {sessionPreferences && (
+            <Pressable
+              onPress={() => setShowSessionCheckIn(true)}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 6,
+                marginTop: 8,
+                paddingHorizontal: 10,
+                paddingVertical: 5,
+                backgroundColor: isDark ? 'rgba(255,196,120,0.08)' : 'rgba(255,180,71,0.10)',
+                borderRadius: 10,
+                alignSelf: 'flex-start',
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Adjust session preferences"
+            >
+              <Text style={{ fontSize: 11, color: isDark ? '#E6C28C' : '#8A6A3C' }}>
+                Filtered for your energy
+              </Text>
+              <Text style={{ fontSize: 11, color: isDark ? 'rgba(230,194,140,0.6)' : 'rgba(138,106,60,0.6)' }}>
+                Tap to adjust
+              </Text>
+            </Pressable>
+          )}
         </Animated.View>
 
         {/* ============================= */}
@@ -775,11 +859,11 @@ export default function RoomDetailScreen() {
 
           {filteredTasks.length === 0 && (
             <View style={styles.emptyTasks}>
-              <Text style={{ fontSize: 40, marginBottom: 12 }}>{'\u{1F4CB}'}</Text>
+              <Text style={{ fontSize: 40, marginBottom: 12 }}>{totalCount === 0 ? '\u{1F4F7}' : '\u{1F50D}'}</Text>
               <Text style={[Typography.body, { color: colors.textSecondary, textAlign: 'center' }]}>
                 {totalCount === 0
-                  ? 'No tasks yet. Take a photo to generate tasks!'
-                  : 'Nothing fits this flow yet. Adjust your session or show every task.'}
+                  ? 'Snap a photo of this room and AI will create small, doable tasks for you.'
+                  : 'None of the remaining tasks match your current energy. That is okay -- you can adjust or view everything.'}
               </Text>
 
               <View style={styles.emptyActionsRow}>
@@ -855,7 +939,7 @@ export default function RoomDetailScreen() {
           )}
         </View>
 
-        {/* "Start Your Flow" CTA — only show if there are pending tasks */}
+        {/* "Start to Declutter" CTA — only show if there are pending tasks */}
         {pendingCount > 0 && (
           <Animated.View
             entering={reducedMotion ? undefined : FadeInDown.delay(700)}
@@ -872,24 +956,53 @@ export default function RoomDetailScreen() {
                 },
               ]}
               accessibilityRole="button"
-              accessibilityLabel="Start Your Flow"
+              accessibilityLabel="Start to Declutter"
             >
-              <Text style={{
-                fontSize: 15,
-                fontWeight: '600',
-                color: isDark ? '#0A0A0A' : '#FFFFFF',
-                marginRight: 6,
-              }}>
-                {'\u2728'}
-              </Text>
               <Text style={{
                 fontSize: 17,
                 fontWeight: '600',
                 color: isDark ? '#0A0A0A' : '#FFFFFF',
               }}>
-                Start Your Flow
+                {sessionPreferences ? 'Continue Decluttering' : 'Start to Declutter'}
               </Text>
+              {!sessionPreferences && (
+                <Text style={{
+                  fontSize: 12,
+                  fontWeight: '400',
+                  color: isDark ? 'rgba(10,10,10,0.5)' : 'rgba(255,255,255,0.6)',
+                  marginTop: 2,
+                }}>
+                  We will match tasks to your energy
+                </Text>
+              )}
             </Pressable>
+
+            {/* Feeling stuck? — ADHD safety net always visible */}
+            <View style={styles.stuckRow}>
+              <Pressable
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  setShowOverwhelm(true);
+                }}
+                style={({ pressed }) => [
+                  styles.stuckButton,
+                  {
+                    backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
+                    opacity: pressed ? 0.7 : 1,
+                  },
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel="Feeling overwhelmed"
+              >
+                <Text style={{
+                  fontSize: 13,
+                  fontWeight: '500',
+                  color: isDark ? 'rgba(255,255,255,0.40)' : 'rgba(0,0,0,0.35)',
+                }}>
+                  Feeling stuck? Take a breath
+                </Text>
+              </Pressable>
+            </View>
           </Animated.View>
         )}
 
@@ -900,7 +1013,7 @@ export default function RoomDetailScreen() {
       {/* Encouragement Banner */}
       {showEncouragement && (
         <Animated.View
-          entering={FadeInDown.springify()}
+          entering={FadeInDown.duration(350)}
           exiting={FadeOut}
           style={styles.encouragementBanner}
         >
@@ -1131,12 +1244,20 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
   },
   ctaButton: {
-    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 18,
     borderRadius: 16,
     minHeight: 56,
+  },
+  stuckRow: {
+    alignItems: 'center',
+    marginTop: 12,
+  },
+  stuckButton: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 20,
   },
   // Celebration
   celebrationOverlay: {

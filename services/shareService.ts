@@ -5,6 +5,9 @@
 
 import { Platform, Share } from 'react-native';
 
+const APP_URL = 'https://declutterly.app';
+const HASHTAGS = '#Declutterly #ADHDCleaning';
+
 /**
  * Share a before/after transformation card image via native share sheet.
  * @param uri - Local file URI of the captured card image
@@ -16,7 +19,7 @@ export async function shareBeforeAfterCard(
   roomName: string
 ): Promise<boolean> {
   try {
-    const message = `Check out my ${roomName} transformation! Cleaned with @declutterly`;
+    const message = `Check out my ${roomName} transformation! Cleaned with Declutterly ${APP_URL}`;
 
     if (Platform.OS === 'ios') {
       const result = await Share.share({
@@ -46,7 +49,7 @@ export async function shareAchievement(
   level: number
 ): Promise<boolean> {
   try {
-    const message = `I just earned the ${badgeEmoji} ${badgeName} badge on Declutterly! Level ${level} #Declutterly #ADHDCleaning`;
+    const message = `I just earned the ${badgeEmoji} ${badgeName} badge on Declutterly! Level ${level} ${HASHTAGS}\n${APP_URL}`;
     const result = await Share.share({
       message,
       title: `${badgeEmoji} Badge Unlocked!`,
@@ -63,7 +66,7 @@ export async function shareAchievement(
  */
 export async function shareStreakMilestone(streak: number): Promise<boolean> {
   try {
-    const message = `${streak}-day cleaning streak on Declutterly! Organize your space, organize your mind. #Declutterly #ADHDCleaning`;
+    const message = `${streak}-day cleaning streak on Declutterly! Organize your space, organize your mind. ${HASHTAGS}\n${APP_URL}`;
     const result = await Share.share({
       message,
       title: `${streak}-Day Streak!`,
@@ -76,6 +79,27 @@ export async function shareStreakMilestone(streak: number): Promise<boolean> {
 }
 
 /**
+ * Share a room completion with stats.
+ */
+export async function shareRoomCompletion(
+  roomName: string,
+  tasksCompleted: number,
+  timeSpent: number
+): Promise<boolean> {
+  try {
+    const message = getRoomShareMessage(roomName, tasksCompleted, timeSpent);
+    const result = await Share.share({
+      message,
+      title: `${roomName} Complete!`,
+    });
+    return result.action === Share.sharedAction;
+  } catch (error) {
+    if (__DEV__) console.log('Share room completion cancelled or failed:', error);
+    return false;
+  }
+}
+
+/**
  * Generate a share message for room completion.
  */
 export function getRoomShareMessage(
@@ -83,5 +107,23 @@ export function getRoomShareMessage(
   tasksCompleted: number,
   timeSpent: number
 ): string {
-  return `Just cleaned my ${roomName}! ${tasksCompleted} tasks done in ${timeSpent} minutes #Declutterly #ADHDCleaning`;
+  const taskWord = tasksCompleted === 1 ? 'task' : 'tasks';
+  return `Just cleaned my ${roomName}! ${tasksCompleted} ${taskWord} done in ${timeSpent} minutes ${HASHTAGS}\n${APP_URL}`;
+}
+
+/**
+ * Share an invite code for accountability partners.
+ */
+export async function shareInviteCode(inviteCode: string): Promise<boolean> {
+  try {
+    const message = `Join me on Declutterly! Use my invite code: ${inviteCode}\n\nWe can keep each other accountable and make cleaning fun.\n${APP_URL}`;
+    const result = await Share.share({
+      message,
+      title: 'Join me on Declutterly!',
+    });
+    return result.action === Share.sharedAction;
+  } catch (error) {
+    if (__DEV__) console.log('Share invite code cancelled or failed:', error);
+    return false;
+  }
 }

@@ -10,7 +10,9 @@ import { AmbientBackdrop } from '@/components/ui/AmbientBackdrop';
 import { ExpressiveStateView } from '@/components/ui/ExpressiveStateView';
 import {
   Challenge,
+  Connection,
   getMyChallenges,
+  getConnections,
 } from '@/services/social';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
@@ -34,25 +36,73 @@ import Animated, {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Mock Circle Data (matching Pencil design)
+// Avatar color palette for connections
 // ─────────────────────────────────────────────────────────────────────────────
-const CIRCLE_MEMBERS = [
-  { name: 'Sarah', initial: 'S', color: '#FFFFFF', dotColor: '#FFFFFF' },
-  { name: 'Jamie', initial: 'J', color: '#CCCCCC', dotColor: '#FFFFFF' },
-  { name: 'Alex', initial: 'A', color: '#999999', dotColor: '#707070' },
-  { name: 'Mia', initial: 'M', color: '#707070', dotColor: '#FFFFFF' },
-];
+const AVATAR_COLORS = ['#FFFFFF', '#CCCCCC', '#999999', '#707070', '#B0B0B0', '#D0D0D0'];
 
-const ACTIVITY_FEED = [
-  { initial: 'J', color: '#CCCCCC', message: 'Jamie finished Kitchen Reset \u{1F389}', time: '2h ago' },
-  { initial: 'S', color: '#FFFFFF', message: 'You completed 3 tasks in Bedroom', time: '5h ago' },
-  { initial: 'A', color: '#999999', message: 'Alex started Living Room \u{1F9F9}', time: 'Yesterday' },
-];
+function getAvatarColor(index: number): string {
+  return AVATAR_COLORS[index % AVATAR_COLORS.length];
+}
+
+function getInitial(name: string): string {
+  return (name.charAt(0) || '?').toUpperCase();
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Weekly Challenge Card
 // ─────────────────────────────────────────────────────────────────────────────
-function WeeklyChallengeCard({ isDark }: { isDark: boolean }) {
+function WeeklyChallengeCard({ isDark, challenge }: { isDark: boolean; challenge: Challenge | null }) {
+  if (!challenge) {
+    return (
+      <LinearGradient
+        colors={isDark
+          ? ['#1A1A1A', '#151515', '#121212'] as const
+          : ['#F5F5F5', '#F0F0F0', '#EBEBEB'] as const
+        }
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
+        style={[styles.challengeCard, {
+          borderColor: isDark ? 'rgba(255,255,255,0.09)' : 'rgba(0,0,0,0.06)',
+        }]}
+      >
+        <View style={styles.challengeHeaderRow}>
+          <View style={[styles.challengeBadge, {
+            backgroundColor: isDark ? 'rgba(255,255,255,0.13)' : 'rgba(0,0,0,0.06)',
+          }]}>
+            <Text style={{ fontSize: 12 }}>{'\u{1F3C6}'}</Text>
+            <Text style={[styles.challengeBadgeText, {
+              color: isDark ? 'rgba(255,255,255,0.56)' : 'rgba(0,0,0,0.5)',
+            }]}>
+              WEEKLY CHALLENGE
+            </Text>
+          </View>
+        </View>
+        <Text style={[styles.challengeTitle, {
+          color: isDark ? 'rgba(255,255,255,0.38)' : 'rgba(0,0,0,0.4)',
+          fontSize: 16,
+        }]}>
+          No active challenge
+        </Text>
+        <Text style={[styles.progressText, {
+          color: isDark ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.3)',
+        }]}>
+          Create or join a challenge to get started
+        </Text>
+      </LinearGradient>
+    );
+  }
+
+  // Compute progress from participants
+  const myProgress = challenge.participants?.[0]?.progress ?? 0;
+  const progressPercent = challenge.target > 0
+    ? Math.min(100, Math.round((myProgress / challenge.target) * 100))
+    : 0;
+
+  // Compute days left
+  const now = new Date();
+  const end = new Date(challenge.endDate);
+  const daysLeft = Math.max(0, Math.ceil((end.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
+
   return (
     <LinearGradient
       colors={isDark
@@ -66,22 +116,33 @@ function WeeklyChallengeCard({ isDark }: { isDark: boolean }) {
       }]}
     >
       {/* Badge */}
-      <View style={[styles.challengeBadge, {
-        backgroundColor: isDark ? 'rgba(255,255,255,0.13)' : 'rgba(0,0,0,0.06)',
-      }]}>
-        <Text style={{ fontSize: 12 }}>{'\u{1F3C6}'}</Text>
-        <Text style={[styles.challengeBadgeText, {
-          color: isDark ? 'rgba(255,255,255,0.56)' : 'rgba(0,0,0,0.5)',
+      <View style={styles.challengeHeaderRow}>
+        <View style={[styles.challengeBadge, {
+          backgroundColor: isDark ? 'rgba(255,255,255,0.13)' : 'rgba(0,0,0,0.06)',
         }]}>
-          WEEKLY CHALLENGE
-        </Text>
+          <Text style={{ fontSize: 12 }}>{'\u{1F3C6}'}</Text>
+          <Text style={[styles.challengeBadgeText, {
+            color: isDark ? 'rgba(255,255,255,0.56)' : 'rgba(0,0,0,0.5)',
+          }]}>
+            WEEKLY CHALLENGE
+          </Text>
+        </View>
+        <View style={[styles.challengeTimeBadge, {
+          backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.04)',
+        }]}>
+          <Text style={[styles.challengeTimeText, {
+            color: isDark ? 'rgba(255,255,255,0.44)' : 'rgba(0,0,0,0.44)',
+          }]}>
+            {daysLeft === 0 ? 'Ends today' : `${daysLeft} day${daysLeft !== 1 ? 's' : ''} left`}
+          </Text>
+        </View>
       </View>
 
       {/* Title */}
       <Text style={[styles.challengeTitle, {
         color: isDark ? '#FFFFFF' : '#1A1A1A',
       }]}>
-        Clean 5 rooms this week
+        {challenge.title}
       </Text>
 
       {/* Progress bar + text */}
@@ -93,14 +154,22 @@ function WeeklyChallengeCard({ isDark }: { isDark: boolean }) {
             colors={['#FFFFFF', '#888888'] as const}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
-            style={[styles.progressFill, { width: '60%' }]}
+            style={[styles.progressFill, { width: `${progressPercent}%` }]}
           />
         </View>
-        <Text style={[styles.progressText, {
-          color: isDark ? 'rgba(255,255,255,0.38)' : 'rgba(0,0,0,0.4)',
-        }]}>
-          3 of 5 complete {'\u00B7'} 250 XP reward
-        </Text>
+        <View style={styles.challengeProgressRow}>
+          <Text style={[styles.progressText, {
+            color: isDark ? 'rgba(255,255,255,0.38)' : 'rgba(0,0,0,0.4)',
+          }]}>
+            {myProgress} of {challenge.target} complete
+          </Text>
+          <Text style={[styles.progressText, {
+            color: isDark ? '#C4A87A' : '#8A6A3A',
+            fontWeight: '600',
+          }]}>
+            {challenge.participants?.length ?? 1} participant{(challenge.participants?.length ?? 1) !== 1 ? 's' : ''}
+          </Text>
+        </View>
       </View>
     </LinearGradient>
   );
@@ -109,15 +178,36 @@ function WeeklyChallengeCard({ isDark }: { isDark: boolean }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Your Circle Section
 // ─────────────────────────────────────────────────────────────────────────────
-function YourCircle({ isDark, onManage }: { isDark: boolean; onManage: () => void }) {
+function YourCircle({ isDark, onManage, connections }: { isDark: boolean; onManage: () => void; connections: Connection[] }) {
+  if (connections.length === 0) {
+    return (
+      <View style={styles.circleSection}>
+        <View style={styles.circleSectionHeader}>
+          <Text style={styles.circleSectionTitle}>
+            YOUR CIRCLE
+          </Text>
+        </View>
+        <View style={[styles.collectiveStats, {
+          backgroundColor: isDark ? '#141414' : '#FFFFFF',
+          borderColor: isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)',
+        }]}>
+          <Text style={[styles.collectiveLabel, { color: '#707070' }]}>
+            No connections yet
+          </Text>
+          <Text style={[styles.collectiveUnit, { color: isDark ? 'rgba(255,255,255,0.38)' : 'rgba(0,0,0,0.4)' }]}>
+            Invite friends to build your accountability circle
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.circleSection}>
       {/* Header */}
       <View style={styles.circleSectionHeader}>
-        <Text style={[styles.circleSectionTitle, {
-          color: isDark ? '#FFFFFF' : '#1A1A1A',
-        }]}>
-          Your Circle
+        <Text style={styles.circleSectionTitle}>
+          YOUR CIRCLE
         </Text>
         <Pressable
           onPress={onManage}
@@ -134,21 +224,21 @@ function YourCircle({ isDark, onManage }: { isDark: boolean; onManage: () => voi
 
       {/* Avatar row */}
       <View style={styles.avatarRow}>
-        {CIRCLE_MEMBERS.map((member, idx) => (
-          <View key={idx} style={styles.avatarWrap}>
-            <View style={[styles.circleAvatar, { backgroundColor: member.color }]}>
+        {connections.slice(0, 6).map((conn, idx) => (
+          <View key={conn.userId} style={styles.avatarWrap}>
+            <View style={[styles.circleAvatar, { backgroundColor: getAvatarColor(idx) }]}>
               <Text style={[styles.circleAvatarInitial, {
                 color: isDark ? '#1A1A1A' : '#FFFFFF',
               }]}>
-                {member.initial}
+                {getInitial(conn.displayName)}
               </Text>
             </View>
             <View style={styles.avatarNameRow}>
-              <View style={[styles.avatarDot, { backgroundColor: member.dotColor }]} />
+              <View style={[styles.avatarDot, { backgroundColor: getAvatarColor(idx) }]} />
               <Text style={[styles.avatarName, {
                 color: isDark ? '#FFFFFF' : '#1A1A1A',
-              }]}>
-                {member.name}
+              }]} numberOfLines={1}>
+                {conn.displayName}
               </Text>
             </View>
           </View>
@@ -161,17 +251,11 @@ function YourCircle({ isDark, onManage }: { isDark: boolean; onManage: () => voi
         borderColor: isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)',
       }]}>
         <Text style={[styles.collectiveLabel, { color: '#707070' }]}>
-          Together this week
+          Your circle
         </Text>
         <View style={styles.collectiveRow}>
-          <Text style={[styles.collectiveValue, { color: isDark ? '#FFFFFF' : '#1A1A1A' }]}>23</Text>
-          <Text style={[styles.collectiveUnit, { color: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)' }]}> tasks</Text>
-          <Text style={[styles.collectiveSep, { color: '#707070' }]}> {'\u00B7'} </Text>
-          <Text style={[styles.collectiveValue, { color: isDark ? '#FFFFFF' : '#1A1A1A' }]}>4</Text>
-          <Text style={[styles.collectiveUnit, { color: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)' }]}> rooms</Text>
-          <Text style={[styles.collectiveSep, { color: '#707070' }]}> {'\u00B7'} </Text>
-          <Text style={[styles.collectiveValue, { color: isDark ? '#FFFFFF' : '#1A1A1A' }]}>12</Text>
-          <Text style={[styles.collectiveUnit, { color: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)' }]}> hours</Text>
+          <Text style={[styles.collectiveValue, { color: isDark ? '#FFFFFF' : '#1A1A1A' }]}>{connections.length}</Text>
+          <Text style={[styles.collectiveUnit, { color: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)' }]}> connection{connections.length !== 1 ? 's' : ''}</Text>
         </View>
       </View>
     </View>
@@ -181,16 +265,44 @@ function YourCircle({ isDark, onManage }: { isDark: boolean; onManage: () => voi
 // ─────────────────────────────────────────────────────────────────────────────
 // Circle Activity Feed
 // ─────────────────────────────────────────────────────────────────────────────
-function CircleActivity({ isDark }: { isDark: boolean }) {
+function CircleActivity({ isDark, challenges }: { isDark: boolean; challenges: Challenge[] }) {
+  // Build activity feed from real challenge data
+  const activityItems = challenges.flatMap((challenge) =>
+    (challenge.participants ?? []).map((p) => ({
+      initial: getInitial(p.displayName),
+      color: AVATAR_COLORS[Math.abs(p.displayName.charCodeAt(0)) % AVATAR_COLORS.length],
+      message: p.completed
+        ? `${p.displayName} completed "${challenge.title}"`
+        : `${p.displayName} joined "${challenge.title}"`,
+      time: p.completed && p.completedAt
+        ? formatRelativeTime(p.completedAt)
+        : formatRelativeTime(p.joined),
+    }))
+  ).slice(0, 5);
+
+  if (activityItems.length === 0) {
+    return (
+      <View style={styles.activitySection}>
+        <Text style={styles.activityTitle}>
+          CIRCLE ACTIVITY
+        </Text>
+        <Text style={{
+          fontSize: 13,
+          color: isDark ? 'rgba(255,255,255,0.38)' : 'rgba(0,0,0,0.4)',
+        }}>
+          Activity from your challenges and connections will appear here.
+        </Text>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.activitySection}>
-      <Text style={[styles.activityTitle, {
-        color: isDark ? '#FFFFFF' : '#1A1A1A',
-      }]}>
-        Circle Activity
+      <Text style={styles.activityTitle}>
+        CIRCLE ACTIVITY
       </Text>
 
-      {ACTIVITY_FEED.map((item, idx) => (
+      {activityItems.map((item, idx) => (
         <React.Fragment key={idx}>
           <View style={styles.feedItem}>
             <View style={[styles.feedAvatar, { backgroundColor: item.color }]}>
@@ -211,7 +323,7 @@ function CircleActivity({ isDark }: { isDark: boolean }) {
               </Text>
             </View>
           </View>
-          {idx < ACTIVITY_FEED.length - 1 && (
+          {idx < activityItems.length - 1 && (
             <View style={[styles.feedDivider, {
               backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
             }]} />
@@ -240,7 +352,7 @@ function GrowCircle({ isDark }: { isDark: boolean }) {
         <Text style={[styles.inviteDesc, {
           color: isDark ? 'rgba(255,255,255,0.38)' : 'rgba(0,0,0,0.45)',
         }]}>
-          Invite a friend to clean together. Both earn +200 XP.
+          Invite a friend and you both earn +200 XP instantly. People who clean with a buddy stick with it 3x longer.
         </Text>
       </View>
 
@@ -249,7 +361,7 @@ function GrowCircle({ isDark }: { isDark: boolean }) {
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
           try {
             await Share.share({
-              message: 'Join me on Declutterly! We can clean together and earn XP. Download: https://declutterly.app/invite',
+              message: 'Hey! Join me on Declutterly - it makes cleaning actually fun with AI + gamification. We both get +200 XP when you join. Download: https://declutterly.app/invite',
             });
           } catch {
             // User cancelled share
@@ -274,6 +386,23 @@ function GrowCircle({ isDark }: { isDark: boolean }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Main Screen
 // ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Relative time formatter
+// ─────────────────────────────────────────────────────────────────────────────
+function formatRelativeTime(date: Date): string {
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  if (diffMins < 1) return 'Just now';
+  if (diffMins < 60) return `${diffMins}m ago`;
+  const diffHours = Math.floor(diffMins / 60);
+  if (diffHours < 24) return `${diffHours}h ago`;
+  const diffDays = Math.floor(diffHours / 24);
+  if (diffDays === 1) return 'Yesterday';
+  if (diffDays < 7) return `${diffDays}d ago`;
+  return `${Math.floor(diffDays / 7)}w ago`;
+}
+
 export default function SocialScreen() {
   const insets = useSafeAreaInsets();
   const rawScheme = useColorScheme();
@@ -282,15 +411,19 @@ export default function SocialScreen() {
   const { isAuthenticated } = useAuth();
   const reducedMotion = useReducedMotion();
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const [_challenges, setChallenges] = useState<Challenge[]>([]);
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const [_isLoading, setIsLoading] = useState(true);
+  const [challenges, setChallenges] = useState<Challenge[]>([]);
+  const [connections, setConnections] = useState<Connection[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   const loadData = useCallback(async () => {
     try {
-      setChallenges(await getMyChallenges());
+      const [challengeData, connectionData] = await Promise.all([
+        getMyChallenges(),
+        getConnections(),
+      ]);
+      setChallenges(challengeData);
+      setConnections(connectionData);
     } catch {
       // Failed to load
     } finally {
@@ -312,6 +445,9 @@ export default function SocialScreen() {
     loadData();
   };
 
+  // Active challenge = first in_progress challenge
+  const activeChallenge = challenges.find(c => c.status === 'in_progress') ?? null;
+
   const handleManageCircle = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     router.push('/accountability');
@@ -323,7 +459,7 @@ export default function SocialScreen() {
   }, []);
 
   const enterAnim = (delay: number) =>
-    reducedMotion ? undefined : FadeInDown.delay(delay).springify();
+    reducedMotion ? undefined : FadeInDown.delay(delay).duration(350);
 
   if (!isAuthenticated) {
     return (
@@ -391,17 +527,17 @@ export default function SocialScreen() {
 
         {/* Weekly Challenge */}
         <Animated.View entering={enterAnim(60)} style={styles.section}>
-          <WeeklyChallengeCard isDark={isDark} />
+          <WeeklyChallengeCard isDark={isDark} challenge={activeChallenge} />
         </Animated.View>
 
         {/* Your Circle */}
         <Animated.View entering={enterAnim(120)} style={styles.section}>
-          <YourCircle isDark={isDark} onManage={handleManageCircle} />
+          <YourCircle isDark={isDark} onManage={handleManageCircle} connections={connections} />
         </Animated.View>
 
         {/* Circle Activity */}
         <Animated.View entering={enterAnim(180)} style={styles.section}>
-          <CircleActivity isDark={isDark} />
+          <CircleActivity isDark={isDark} challenges={challenges} />
         </Animated.View>
 
         {/* Grow Your Circle */}
@@ -449,6 +585,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     gap: 14,
   },
+  challengeHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
   challengeBadge: {
     alignSelf: 'flex-start',
     flexDirection: 'row',
@@ -457,6 +598,20 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     paddingHorizontal: 10,
     borderRadius: 12,
+  },
+  challengeTimeBadge: {
+    paddingVertical: 3,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+  },
+  challengeTimeText: {
+    fontSize: 11,
+    fontWeight: '500',
+  },
+  challengeProgressRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
   challengeBadgeText: {
     fontSize: 11,
@@ -494,9 +649,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   circleSectionTitle: {
-    fontSize: 17,
-    fontWeight: '500',
-    letterSpacing: -0.3,
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 1.5,
+    textTransform: 'uppercase',
+    color: '#808080',
   },
   circleManage: {
     fontSize: 13,
@@ -543,6 +700,11 @@ const styles = StyleSheet.create({
     padding: 16,
     borderWidth: 1,
     gap: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 2,
   },
   collectiveLabel: {
     fontSize: 12,
@@ -570,9 +732,11 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   activityTitle: {
-    fontSize: 15,
-    fontWeight: '500',
-    letterSpacing: -0.3,
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 1.5,
+    textTransform: 'uppercase',
+    color: '#808080',
   },
   feedItem: {
     flexDirection: 'row',
@@ -618,6 +782,11 @@ const styles = StyleSheet.create({
     padding: 18,
     borderWidth: 1,
     gap: 14,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 2,
   },
   inviteLeft: {
     flex: 1,

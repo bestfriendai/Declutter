@@ -39,7 +39,7 @@ export default function MilestoneParticles({
   return (
     <View style={styles.container}>
       <Animated.View
-        entering={ZoomIn.springify()}
+        entering={ZoomIn.duration(350)}
         style={[styles.badge, { backgroundColor: milestoneColors[milestone] }]}
       >
         <Text style={styles.badgeEmoji}>{milestoneEmojis[milestone]}</Text>
@@ -49,7 +49,7 @@ export default function MilestoneParticles({
       {particles.map((particle) => (
         <Animated.View
           key={particle.id}
-          entering={FadeInDown.delay(particle.delay).springify()}
+          entering={FadeInDown.delay(particle.delay).duration(350)}
           exiting={FadeOut.delay(1000 + particle.delay)}
           style={[
             styles.particle,

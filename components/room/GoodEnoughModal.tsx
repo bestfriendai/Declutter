@@ -38,16 +38,16 @@ export function GoodEnoughModal({
       >
         <BlurView intensity={85} tint="dark" style={StyleSheet.absoluteFill} />
         <Animated.View
-          entering={ZoomIn.springify()}
+          entering={ZoomIn.duration(350)}
           style={styles.content}
         >
           <Text style={styles.emoji}>🌿</Text>
           <Text style={styles.title}>You did real work today.</Text>
           <Text style={styles.subtitle}>
-            Progress isn&apos;t about finishing everything — it&apos;s about showing up. And you did.
+            You showed up and made progress. That is more than most people do. Your space is already calmer because of what you just did.
           </Text>
           <Text style={styles.message}>
-            Rest is part of the process.
+            Stopping here is not quitting -- it is pacing.
           </Text>
           <View style={styles.buttons}>
             <Pressable

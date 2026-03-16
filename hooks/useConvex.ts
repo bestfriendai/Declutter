@@ -1,6 +1,14 @@
 /**
  * Convex Hooks
- * Convenience hooks for accessing Convex queries and mutations
+ * Convenience hooks for accessing Convex queries and mutations.
+ *
+ * Convention:
+ * - useXxx()       = query (reactive, returns data | undefined while loading)
+ * - useCreateXxx() = mutation
+ * - useXxxAction() = action (server-side with side effects)
+ *
+ * All query hooks return `undefined` while loading. Check for `undefined`
+ * to show a loading state, and handle `null` as "no data found".
  */
 
 import { useQuery, useMutation, useAction, useConvexAuth } from "convex/react";
@@ -13,6 +21,7 @@ export { useConvexAuth };
 // USER HOOKS
 // ==================
 
+/** Reactive current user. Returns `undefined` while loading, `null` if not found. */
 export function useCurrentUser() {
   return useQuery(api.users.get);
 }

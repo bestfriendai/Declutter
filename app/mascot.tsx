@@ -104,8 +104,11 @@ export default function MascotScreen() {
         </View>
 
         {/* Stats Card */}
-        <Animated.View entering={FadeInDown.delay(60).springify()} style={[styles.statsCard, { backgroundColor: colors.card }]}>
-          <RNText style={[styles.sectionTitle, { color: colors.text }]}>Stats</RNText>
+        <Animated.View entering={FadeInDown.delay(60).duration(350)} style={[styles.statsCard, {
+          backgroundColor: colors.card,
+          borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+        }]}>
+          <RNText style={styles.sectionTitle}>STATS</RNText>
 
           {/* Level Progress */}
           <View style={styles.levelSection}>
@@ -157,8 +160,8 @@ export default function MascotScreen() {
         </Animated.View>
 
         {/* Actions */}
-        <Animated.View entering={FadeInDown.delay(120).springify()} style={styles.actionsSection}>
-          <RNText style={[styles.sectionTitle, { color: colors.text }]}>Actions</RNText>
+        <Animated.View entering={FadeInDown.delay(120).duration(350)} style={styles.actionsSection}>
+          <RNText style={styles.sectionTitle}>ACTIONS</RNText>
 
           <View style={styles.actionButtons}>
             <Pressable
@@ -200,8 +203,11 @@ export default function MascotScreen() {
         </Animated.View>
 
         {/* Info Card */}
-        <Animated.View entering={FadeInDown.delay(180).springify()} style={[styles.infoCard, { backgroundColor: colors.card }]}>
-          <RNText style={[styles.sectionTitle, { color: colors.text }]}>About</RNText>
+        <Animated.View entering={FadeInDown.delay(180).duration(350)} style={[styles.infoCard, {
+          backgroundColor: colors.card,
+          borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+        }]}>
+          <RNText style={styles.sectionTitle}>ABOUT</RNText>
           <View style={[styles.infoRow, { borderBottomColor: isDark ? colors.divider : colors.borderLight }]}>
             <RNText style={[styles.infoLabel, { color: colors.textSecondary }]}>
               Personality
@@ -237,10 +243,14 @@ export default function MascotScreen() {
         </Animated.View>
 
         {/* Tips */}
-        <Animated.View entering={FadeInDown.delay(240).springify()} style={[styles.tipsCard, { backgroundColor: personalityInfo.color + '20' }]}>
+        <Animated.View entering={FadeInDown.delay(240).duration(350)} style={[styles.tipsCard, { backgroundColor: personalityInfo.color + '20' }]}>
           <RNText style={styles.tipsEmoji}>💡</RNText>
           <RNText style={[styles.tipsText, { color: colors.text }]}>
-            Complete tasks to feed {mascot.name} and keep them happy! A happy buddy means more motivation for you.
+            {mascot.happiness < 30
+              ? `${mascot.name} is feeling a bit down. A quick cleaning session or a pet can lift their mood!`
+              : mascot.hunger < 30
+              ? `${mascot.name} is getting hungry! Complete a task to fill them up with energy.`
+              : `${mascot.name} is doing great! Keep up the rhythm and you will both level up together.`}
           </RNText>
         </Animated.View>
       </ScrollView>
@@ -337,9 +347,19 @@ const styles = StyleSheet.create({
     padding: Spacing.ml,
     borderRadius: BorderRadius.lg,
     marginBottom: Spacing.ml,
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 2,
   },
   sectionTitle: {
-    ...Typography.title3,
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 1.5,
+    textTransform: 'uppercase',
+    color: '#808080',
     marginBottom: Spacing.md,
   },
   levelSection: {
@@ -406,8 +426,9 @@ const styles = StyleSheet.create({
   actionButton: {
     flex: 1,
     alignItems: 'center',
-    padding: Spacing.md,
-    borderRadius: BorderRadius.lg,
+    paddingVertical: Spacing.ml,
+    paddingHorizontal: Spacing.sm,
+    borderRadius: 20,
   },
   actionEmoji: {
     fontSize: 28,
@@ -426,6 +447,12 @@ const styles = StyleSheet.create({
     padding: Spacing.ml,
     borderRadius: BorderRadius.lg,
     marginBottom: Spacing.ml,
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 2,
   },
   infoRow: {
     flexDirection: 'row',

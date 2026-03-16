@@ -127,7 +127,7 @@ export function DecisionPointModal({
         <BlurView intensity={40} tint={colorScheme} style={StyleSheet.absoluteFill} />
         
         <Animated.View
-          entering={SlideInUp.springify().damping(20)}
+          entering={SlideInUp.duration(350).damping(20)}
           exiting={FadeOut.duration(200)}
           style={[styles.modalContent, { backgroundColor: colors.card }]}
         >

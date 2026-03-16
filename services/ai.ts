@@ -1,84 +1,68 @@
 import { convex } from '@/config/convex';
 import { api } from '@/convex/_generated/api';
 import { AIAnalysisResult, CleaningTask, EnergyLevel, PhotoQuality, PhotoQualityFeedback, ProgressAnalysisResult } from '@/types/declutter';
-import {
-    getGeminiApiKey,
-    setGeminiApiKey,
-} from './gemini';
-import {
-    analyzeProgressWithZai,
-    analyzeRoomImageWithZai,
-    detectObjectsInRoom,
-    getMotivationWithZai,
-    getZaiApiKey,
-    isZaiApiKeyConfigured,
-    setZaiApiKey,
-    setZaiCodingPlan,
-    setZaiFreeTier,
-} from './zai';
+import { retryWithTimeout, isNetworkError, isServerError } from '@/utils/retry';
 
-export type AIProvider = 'gemini' | 'zai';
+/** Timeout for AI analysis calls (30s) — generous for image analysis */
+const AI_ANALYSIS_TIMEOUT_MS = 30_000;
+/** Timeout for lightweight AI calls like motivation (10s) */
+const AI_LIGHT_TIMEOUT_MS = 10_000;
 
-const ENV_PROVIDER = (process.env.EXPO_PUBLIC_AI_PROVIDER as AIProvider) || 'gemini';
-const ENV_ZAI_FREE = process.env.EXPO_PUBLIC_ZAI_FREE_TIER === 'true';
-const ENV_ZAI_CODING_PLAN = process.env.EXPO_PUBLIC_ZAI_CODING_PLAN === 'true';
+// =====================
+// AI PROVIDER: Gemini via Convex server actions (API key stays server-side)
+// =====================
 
-let currentProvider: AIProvider = ENV_PROVIDER;
-
-export function setAIProvider(provider: AIProvider) {
-  currentProvider = provider;
+export function getProviderInfo(): {
+  name: string;
+  model: string;
+  features: string[];
+} {
+  return {
+    name: 'Google',
+    model: 'Gemini 2.5 Flash',
+    features: [
+      'Fast multimodal analysis',
+      'ADHD-friendly task breakdown',
+      'Progress comparison',
+    ],
+  };
 }
 
-export function getAIProvider(): AIProvider {
-  return currentProvider;
-}
-
-export function isCurrentProviderConfigured(): boolean {
-  if (currentProvider === 'zai') {
-    return isZaiApiKeyConfigured();
-  }
-  return true;
-}
-
-export function setApiKey(key: string, provider?: AIProvider) {
-  const target = provider || currentProvider;
-  if (target === 'zai') {
-    setZaiApiKey(key);
-  } else {
-    setGeminiApiKey(key);
-  }
-}
-
-export function getApiKey(provider?: AIProvider): string {
-  const target = provider || currentProvider;
-  if (target === 'zai') {
-    return getZaiApiKey();
-  }
-  return getGeminiApiKey();
-}
-
-export function setFreeTier(enabled: boolean) {
-  setZaiFreeTier(enabled);
-}
-
-export function setCodingPlan(enabled: boolean) {
-  setZaiCodingPlan(enabled);
-}
+// =====================
+// ROOM IMAGE ANALYSIS
+// =====================
 
 export async function analyzeRoomImage(
   base64Image: string,
   additionalContext?: string
 ): Promise<AIAnalysisResult> {
-  if (currentProvider === 'zai') {
-    setZaiFreeTier(ENV_ZAI_FREE);
-    setZaiCodingPlan(ENV_ZAI_CODING_PLAN);
-    return analyzeRoomImageWithZai(base64Image, additionalContext);
+  try {
+    return await retryWithTimeout(
+      async () => {
+        return convex.action(api.gemini.analyzeRoom, {
+          base64Image,
+          additionalContext,
+        });
+      },
+      AI_ANALYSIS_TIMEOUT_MS,
+      {
+        maxAttempts: 2,
+        initialDelayMs: 2000,
+        isRetryable: (error) => isNetworkError(error) || isServerError(error as any),
+        onRetry: (attempt, error) => {
+          if (__DEV__) console.log(`AI analysis retry ${attempt}: ${error.message}`);
+        },
+      }
+    );
+  } catch (error) {
+    if (__DEV__) console.error('AI analysis failed after retries:', error);
+    return getFallbackAnalysis(additionalContext);
   }
-  return convex.action(api.gemini.analyzeRoom, {
-    base64Image,
-    additionalContext,
-  });
 }
+
+// =====================
+// PROGRESS ANALYSIS
+// =====================
 
 export async function analyzeProgress(
   beforeImage: string,
@@ -93,16 +77,42 @@ export async function analyzeProgress(
   encouragement: string;
   encouragingMessage: string;
 }> {
-  if (currentProvider === 'zai') {
-    setZaiFreeTier(ENV_ZAI_FREE);
-    setZaiCodingPlan(ENV_ZAI_CODING_PLAN);
-    return analyzeProgressWithZai(beforeImage, afterImage);
+  try {
+    return await retryWithTimeout(
+      async () => {
+        return convex.action(api.gemini.analyzeProgress, {
+          beforeImage,
+          afterImage,
+        });
+      },
+      AI_ANALYSIS_TIMEOUT_MS,
+      {
+        maxAttempts: 2,
+        initialDelayMs: 2000,
+        isRetryable: (error) => isNetworkError(error) || isServerError(error as any),
+        onRetry: (attempt, error) => {
+          if (__DEV__) console.log(`Progress analysis retry ${attempt}: ${error.message}`);
+        },
+      }
+    );
+  } catch (error) {
+    if (__DEV__) console.error('Progress analysis failed after retries:', error);
+    return {
+      progressPercentage: 0,
+      percentImproved: 0,
+      completedTasks: [],
+      areasImproved: [],
+      remainingTasks: ['Unable to analyze right now — try again in a moment'],
+      areasRemaining: [],
+      encouragement: "We couldn't analyze the photo, but you're clearly making progress. Keep going!",
+      encouragingMessage: "We couldn't analyze the photo, but you're clearly making progress. Keep going!",
+    };
   }
-  return convex.action(api.gemini.analyzeProgress, {
-    beforeImage,
-    afterImage,
-  });
 }
+
+// =====================
+// MOTIVATION
+// =====================
 
 export interface MotivationResponse {
   message: string;
@@ -113,28 +123,33 @@ export interface MotivationResponse {
 }
 
 export async function getMotivation(context: string): Promise<MotivationResponse> {
-  if (currentProvider === 'zai') {
-    setZaiFreeTier(ENV_ZAI_FREE);
-    setZaiCodingPlan(ENV_ZAI_CODING_PLAN);
-    const message = await getMotivationWithZai(context);
-    return { message, emoji: "🐰", tone: "supportive" };
+  try {
+    return await retryWithTimeout(
+      async () => {
+        const result = await convex.action(api.gemini.getMotivation, {
+          context,
+        });
+        return result as MotivationResponse;
+      },
+      AI_LIGHT_TIMEOUT_MS,
+      {
+        maxAttempts: 2,
+        initialDelayMs: 1000,
+        isRetryable: (error) => isNetworkError(error) || isServerError(error as any),
+      }
+    );
+  } catch {
+    return getLocalMotivationFallback();
   }
-  const result = await convex.action(api.gemini.getMotivation, {
-    context,
-  });
-  return result as MotivationResponse;
 }
 
 /**
  * Simple motivation message getter (returns just the string)
- * For backward compatibility with existing code
  */
 export async function getMotivationMessage(context: string): Promise<string> {
   const response = await getMotivation(context);
   return response.message;
 }
-
-export { detectObjectsInRoom };
 
 // =====================
 // PHASE SYSTEM: Filter tasks by time + energy
@@ -142,51 +157,30 @@ export { detectObjectsInRoom };
 
 /**
  * Filters tasks based on available time and energy level.
- * - Time: only returns tasks whose estimatedMinutes fit within the budget
- * - Energy: filters by energyRequired based on user's current energy
- *   - 'exhausted': only zero-decision, minimal-energy tasks
- *   - 'low': exclude challenging tasks and high-energy tasks
- *   - 'moderate': all except high-energy tasks
- *   - 'high': everything
  */
 export function getFilteredTasks(
   tasks: CleaningTask[],
   timeMinutes: number,
   energyLevel: EnergyLevel
 ): CleaningTask[] {
-  // Define which energy levels are allowed at each user energy state
   const energyAllowMap: Record<EnergyLevel, EnergyLevel[]> = {
-    minimal: ['minimal'], // "exhausted" maps to minimal
+    minimal: ['minimal'],
     low: ['minimal', 'low'],
     moderate: ['minimal', 'low', 'moderate'],
     high: ['minimal', 'low', 'moderate', 'high'],
   };
 
-  // Map the user-facing energy level name to filter key
   const allowedEnergies = energyAllowMap[energyLevel] || ['minimal', 'low', 'moderate', 'high'];
-
-  // For exhausted users, also filter out tasks with decision load
   const isExhausted = energyLevel === 'minimal';
 
-  // Filter by energy first
   let filtered = tasks.filter((task) => {
     const taskEnergy = task.energyRequired || 'low';
     if (!allowedEnergies.includes(taskEnergy)) return false;
-
-    // For exhausted users, exclude tasks with decision-making
-    if (isExhausted && task.decisionLoad && task.decisionLoad !== 'none') {
-      return false;
-    }
-
-    // For low energy, exclude challenging tasks
-    if (energyLevel === 'low' && task.difficulty === 'challenging') {
-      return false;
-    }
-
+    if (isExhausted && task.decisionLoad && task.decisionLoad !== 'none') return false;
+    if (energyLevel === 'low' && task.difficulty === 'challenging') return false;
     return true;
   });
 
-  // Sort by visual impact (high first for dopamine wins)
   const impactOrder: Record<string, number> = { high: 0, medium: 1, low: 2 };
   filtered.sort((a, b) => {
     const aImpact = impactOrder[a.visualImpact || 'medium'] ?? 1;
@@ -194,7 +188,6 @@ export function getFilteredTasks(
     return aImpact - bImpact;
   });
 
-  // Fit within time budget
   const result: CleaningTask[] = [];
   let remainingTime = timeMinutes;
 
@@ -213,10 +206,6 @@ export function getFilteredTasks(
 // PHOTO QUALITY FEEDBACK
 // =====================
 
-/**
- * Returns user-friendly guidance based on photo quality assessment.
- * Helps users take better photos for more accurate AI analysis.
- */
 export function getPhotoQualityFeedback(photoQuality: PhotoQuality): PhotoQualityFeedback {
   const suggestions: string[] = [];
   let isAcceptable = true;
@@ -231,14 +220,12 @@ export function getPhotoQualityFeedback(photoQuality: PhotoQuality): PhotoQualit
     isAcceptable = photoQuality.confidence >= 0.5;
   }
 
-  // Coverage check - use string comparison since coverage is 'full' | 'partial' | 'limited'
   const coverageScore = photoQuality.coverage === 'full' ? 1.0 : photoQuality.coverage === 'partial' ? 0.5 : 0.25;
   if (coverageScore < 0.5) {
     suggestions.push('Try to get more of the room in the frame. Step back or use a wider angle.');
     isAcceptable = false;
   }
 
-  // Clarity check
   const clarityScore = photoQuality.clarity === 'clear' ? 1.0 : photoQuality.clarity === 'mixed' ? 0.6 : 0.3;
   if (clarityScore < 0.5) {
     suggestions.push('Hold your phone steady for a clearer photo. Try bracing against a surface.');
@@ -259,27 +246,18 @@ export function getPhotoQualityFeedback(photoQuality: PhotoQuality): PhotoQualit
     overallMessage = 'We can still work with this, but a better photo would give you more accurate tasks.';
   }
 
-  return {
-    isAcceptable,
-    suggestions,
-    overallMessage,
-  };
+  return { isAcceptable, suggestions, overallMessage };
 }
 
 // =====================
 // BEFORE/AFTER PROGRESS (structured result)
 // =====================
 
-/**
- * Analyzes progress between before and after photos and returns a structured result.
- * Wraps the existing analyzeProgress to provide the ProgressAnalysisResult shape.
- */
 export async function analyzeProgressStructured(
   beforeImage: string,
   afterImage: string
 ): Promise<ProgressAnalysisResult> {
   const result = await analyzeProgress(beforeImage, afterImage);
-
   return {
     percentImproved: result.percentImproved,
     areasImproved: result.areasImproved,
@@ -288,33 +266,68 @@ export async function analyzeProgressStructured(
   };
 }
 
-export function getProviderInfo(provider?: AIProvider): {
-  name: string;
-  model: string;
-  features: string[];
-} {
-  const target = provider || currentProvider;
-  
-  if (target === 'zai') {
-    return {
-      name: 'Z.AI',
-      model: ENV_ZAI_FREE ? 'GLM-4.6V-Flash (Free)' : 'GLM-4.6V',
-      features: [
-        'Object detection with bounding boxes',
-        'Thinking mode for reasoning',
-        '128K context window',
-        'Native multimodal tool calling',
-      ],
-    };
-  }
-  
+// =====================
+// FALLBACKS — used when AI is unavailable so the app stays usable
+// =====================
+
+const FALLBACK_MOTIVATIONS: MotivationResponse[] = [
+  { message: "You don't have to do everything today. Just start with one small thing.", emoji: "💛", tone: "supportive" },
+  { message: "Progress over perfection. Every item you put away is a win!", emoji: "🌟", tone: "cheerful" },
+  { message: "Your future self will thank you for whatever you do right now.", emoji: "💪", tone: "encouraging" },
+  { message: "It's okay if it's not perfect. Done is better than perfect.", emoji: "✨", tone: "calm" },
+  { message: "10 minutes is better than 0 minutes. What can you do in just 10 minutes?", emoji: "⏰", tone: "supportive" },
+  { message: "The hardest part is starting. You've already done that by being here!", emoji: "🎉", tone: "cheerful" },
+  { message: "Celebrate every small win. You're making progress!", emoji: "🏆", tone: "cheerful" },
+  { message: "Remember: you don't have to feel motivated to start. Motivation often follows action.", emoji: "🧠", tone: "calm" },
+];
+
+function getLocalMotivationFallback(): MotivationResponse {
+  return FALLBACK_MOTIVATIONS[Math.floor(Math.random() * FALLBACK_MOTIVATIONS.length)];
+}
+
+function getFallbackAnalysis(_context?: string): AIAnalysisResult {
   return {
-    name: 'Google',
-    model: 'Gemini 2.5 Flash',
-    features: [
-      'Fast multimodal analysis',
-      'ADHD-friendly task breakdown',
-      'Progress comparison',
-    ],
+    tasks: [
+      {
+        id: 'fallback-1',
+        title: 'Pick up any visible trash',
+        description: 'Grab anything that is obviously garbage and toss it.',
+        estimatedMinutes: 2,
+        difficulty: 'quick',
+        category: 'trash_removal',
+        priority: 'high',
+        visualImpact: 'high',
+        completed: false,
+      },
+      {
+        id: 'fallback-2',
+        title: 'Clear one surface',
+        description: 'Pick any flat surface and move everything off it to a temporary pile.',
+        estimatedMinutes: 3,
+        difficulty: 'quick',
+        category: 'surface_clearing',
+        priority: 'high',
+        visualImpact: 'high',
+        completed: false,
+      },
+      {
+        id: 'fallback-3',
+        title: 'Put 5 things where they belong',
+        description: 'Just 5 items. Walk each one home.',
+        estimatedMinutes: 5,
+        difficulty: 'quick',
+        category: 'organization',
+        priority: 'medium',
+        visualImpact: 'medium',
+        completed: false,
+      },
+    ] as CleaningTask[],
+    roomType: 'other',
+    messLevel: 'moderate' as any,
+    estimatedTotalTime: 10,
+    summary: 'Quick starter tasks to get you moving',
+    quickWins: ['Pick up visible trash', 'Clear one surface'],
+    encouragement: "We couldn't analyze the photo right now, but here are some quick wins to get started!",
+    photoQuality: { lighting: 'good', coverage: 'full', clarity: 'clear', confidence: 0.5 },
   };
 }

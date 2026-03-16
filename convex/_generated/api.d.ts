@@ -28,6 +28,7 @@ import type * as sync from "../sync.js";
 import type * as tasks from "../tasks.js";
 import type * as users from "../users.js";
 import type * as variableRewards from "../variableRewards.js";
+import type * as zai from "../zai.js";
 
 import type {
   ApiFromModules,
@@ -56,6 +57,7 @@ declare const fullApi: ApiFromModules<{
   tasks: typeof tasks;
   users: typeof users;
   variableRewards: typeof variableRewards;
+  zai: typeof zai;
 }>;
 
 /**

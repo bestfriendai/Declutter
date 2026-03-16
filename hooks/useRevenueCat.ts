@@ -161,7 +161,7 @@ export function useRevenueCat(): UseRevenueCatReturn {
         const apiKey = Platform.OS === 'ios' ? REVENUECAT_IOS_KEY : REVENUECAT_ANDROID_KEY;
 
         if (!apiKey) {
-          console.warn('RevenueCat API key not configured');
+          if (__DEV__) console.warn('RevenueCat API key not configured');
           setIsLoading(false);
           return;
         }
@@ -183,7 +183,7 @@ export function useRevenueCat(): UseRevenueCatReturn {
           ]);
         }
       } catch (err) {
-        console.error('Failed to initialize RevenueCat:', err);
+        if (__DEV__) console.error('Failed to initialize RevenueCat:', err);
         if (isSubscribed) {
           setError('Failed to initialize subscription service');
         }
@@ -225,7 +225,7 @@ export function useRevenueCat(): UseRevenueCatReturn {
         }
       }
     } catch (err) {
-      console.error('Failed to fetch offerings:', err);
+      if (__DEV__) console.error('Failed to fetch offerings:', err);
     }
   }, []);
 
@@ -236,7 +236,7 @@ export function useRevenueCat(): UseRevenueCatReturn {
       const customerInfo = await Purchases.getCustomerInfo();
       updateSubscriptionState(customerInfo);
     } catch (err) {
-      console.error('Failed to fetch subscription:', err);
+      if (__DEV__) console.error('Failed to fetch subscription:', err);
     }
   }, []);
 
@@ -342,15 +342,6 @@ export function useRevenueCat(): UseRevenueCatReturn {
     });
   };
 
-  // Purchase selected plan
-  const purchaseSelectedPlan = useCallback(async (): Promise<boolean> => {
-    if (!selectedPlan) {
-      setError('Please select a plan');
-      return false;
-    }
-    return purchasePlan(selectedPlan);
-  }, [selectedPlan]);
-
   // Purchase a specific plan
   const purchasePlan = useCallback(async (planId: string): Promise<boolean> => {
     if (!_purchasesAvailable || !Purchases) {
@@ -384,7 +375,7 @@ export function useRevenueCat(): UseRevenueCatReturn {
         return false;
       }
 
-      console.error('Purchase failed:', err);
+      if (__DEV__) console.error('Purchase failed:', err);
       setError(err.message || 'Purchase failed. Please try again.');
       return false;
     } finally {
@@ -416,7 +407,7 @@ export function useRevenueCat(): UseRevenueCatReturn {
 
       return hasActiveSubscription;
     } catch (err: any) {
-      console.error('Restore failed:', err);
+      if (__DEV__) console.error('Restore failed:', err);
       setError(err.message || 'Failed to restore purchases');
       return false;
     } finally {
@@ -438,7 +429,10 @@ export function useRevenueCat(): UseRevenueCatReturn {
     plans,
     selectedPlan,
     setSelectedPlan,
-    purchaseSelectedPlan,
+    purchaseSelectedPlan: async () => {
+      if (!selectedPlan) { setError('Please select a plan'); return false; }
+      return purchasePlan(selectedPlan);
+    },
     purchasePlan,
     restorePurchases,
     refreshSubscription,

@@ -11,7 +11,7 @@ import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useLocalSearchParams } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
     Pressable,
     ScrollView,
@@ -48,6 +48,14 @@ import { analyzeProgress, analyzeRoomImage, getMotivation } from '@/services/ai'
 import { Typography } from '@/theme/typography';
 import { AIAnalysisResult, CleaningTask, RoomType } from '@/types/declutter';
 
+// Cycling scan messages for loading state -- calm, specific, reducing anxiety
+const SCAN_MESSAGES = [
+  { text: 'Gently scanning your space\u2026', sub: 'No judgment here -- just looking at what is there' },
+  { text: 'Spotting the quick wins\u2026', sub: 'Finding the easiest places to start' },
+  { text: 'Building small, doable tasks\u2026', sub: 'Each one is designed to feel possible' },
+  { text: 'Almost ready\u2026', sub: 'Your personalized plan is nearly done' },
+];
+
 // Fallback task templates when AI is unavailable
 type FallbackTask = {
   title: string;
@@ -64,7 +72,7 @@ const FALLBACK_TASKS: Record<RoomType, FallbackTask[]> = {
     { title: 'Pick up clothes from floor', description: 'Gather clothes and put in hamper or closet', emoji: '\u{1F455}', priority: 'high', difficulty: 'quick', estimatedMinutes: 5 },
     { title: 'Clear nightstand clutter', description: 'Organize items on nightstand', emoji: '\u{1FAB4}', priority: 'medium', difficulty: 'quick', estimatedMinutes: 5 },
     { title: 'Put away clean laundry', description: 'Fold and store clean clothes', emoji: '\u{1F9FA}', priority: 'medium', difficulty: 'medium', estimatedMinutes: 10 },
-    { title: 'Dust surfaces', description: 'Wipe down dresser and nightstands', emoji: '\u2728', priority: 'low', difficulty: 'quick', estimatedMinutes: 8 },
+    { title: 'Dust surfaces', description: 'Wipe down dresser and nightstands', emoji: '\u{1F9F9}', priority: 'low', difficulty: 'quick', estimatedMinutes: 8 },
   ],
   kitchen: [
     { title: 'Wash dishes in sink', description: 'Clean and dry dishes', emoji: '\u{1F37D}\uFE0F', priority: 'high', difficulty: 'medium', estimatedMinutes: 10 },
@@ -110,7 +118,7 @@ const FALLBACK_TASKS: Record<RoomType, FallbackTask[]> = {
   ],
   other: [
     { title: 'Pick up items from floor', description: 'Clear floor space', emoji: '\u{1F9F9}', priority: 'high', difficulty: 'quick', estimatedMinutes: 5 },
-    { title: 'Clear main surfaces', description: 'Declutter tables and counters', emoji: '\u2728', priority: 'high', difficulty: 'quick', estimatedMinutes: 8 },
+    { title: 'Clear main surfaces', description: 'Declutter tables and counters', emoji: '\u{1FA91}', priority: 'high', difficulty: 'quick', estimatedMinutes: 8 },
     { title: 'Put items in their homes', description: 'Return items to proper places', emoji: '\u{1F3E0}', priority: 'medium', difficulty: 'quick', estimatedMinutes: 10 },
     { title: 'Wipe down surfaces', description: 'Clean all surfaces', emoji: '\u{1F9FD}', priority: 'medium', difficulty: 'quick', estimatedMinutes: 8 },
     { title: 'Quick organization pass', description: 'General tidying', emoji: '\u{1F4CB}', priority: 'low', difficulty: 'quick', estimatedMinutes: 10 },
@@ -151,15 +159,26 @@ function AnalysisScreenContent() {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [_retryCount, setRetryCount] = useState(0);
 
+  // Scanning UX state
+  const [currentMsgIndex, setCurrentMsgIndex] = useState(0);
+  const [timedOut, setTimedOut] = useState(false);
+  const scanFrameHeight = useRef(0);
+
   const room = rooms.find(r => r.id === roomId);
 
   // Animations for scanning
   const pulseScale = useSharedValue(1);
   const pulseOpacity = useSharedValue(0.4);
   const scanBadgePulse = useSharedValue(1);
+  const scanLineY = useSharedValue(0);
+  const progressValue = useSharedValue(0);
 
   useEffect(() => {
     if (isAnalyzing) {
+      // Reset state
+      setCurrentMsgIndex(0);
+      setTimedOut(false);
+
       // Pulsing circle in center
       pulseScale.value = withRepeat(
         withSequence(
@@ -186,15 +205,52 @@ function AnalysisScreenContent() {
         -1
       );
 
+      // Scan line animation — top to bottom continuously
+      scanLineY.value = 0;
+      scanLineY.value = withRepeat(
+        withTiming(1, { duration: 2000, easing: Easing.inOut(Easing.ease) }),
+        -1,
+        false
+      );
+
+      // Progress bar fills to 90% over 40 seconds
+      progressValue.value = 0;
+      progressValue.value = withTiming(0.9, { duration: 40000, easing: Easing.out(Easing.quad) });
+
       return () => {
         cancelAnimation(pulseScale);
         cancelAnimation(pulseOpacity);
         cancelAnimation(scanBadgePulse);
+        cancelAnimation(scanLineY);
+        cancelAnimation(progressValue);
         pulseScale.value = 1;
         pulseOpacity.value = 0.4;
         scanBadgePulse.value = 1;
+        scanLineY.value = 0;
+        progressValue.value = 0;
       };
     }
+  }, [isAnalyzing]);
+
+  // Cycle scan messages every 3500ms while analyzing
+  useEffect(() => {
+    if (!isAnalyzing) return;
+    const interval = setInterval(() => {
+      setCurrentMsgIndex(prev => (prev + 1) % SCAN_MESSAGES.length);
+    }, 3500);
+    return () => clearInterval(interval);
+  }, [isAnalyzing]);
+
+  // Timeout safety net — trigger after 45 seconds
+  useEffect(() => {
+    if (!isAnalyzing) {
+      setTimedOut(false);
+      return;
+    }
+    const timer = setTimeout(() => {
+      setTimedOut(true);
+    }, 45000);
+    return () => clearTimeout(timer);
   }, [isAnalyzing]);
 
   useEffect(() => {
@@ -213,6 +269,14 @@ function AnalysisScreenContent() {
 
   const scanBadgeStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scanBadgePulse.value }],
+  }));
+
+  const scanLineStyle = useAnimatedStyle(() => ({
+    top: scanLineY.value * scanFrameHeight.current,
+  }));
+
+  const progressBarStyle = useAnimatedStyle(() => ({
+    width: progressValue.value * 200,
   }));
 
   const runAnalysis = async () => {
@@ -412,36 +476,74 @@ function AnalysisScreenContent() {
         </Animated.View>
 
         {/* Corner brackets — scanning frame */}
-        <View style={styles.scanFrame}>
+        <View
+          style={styles.scanFrame}
+          onLayout={e => { scanFrameHeight.current = e.nativeEvent.layout.height; }}
+        >
           <View style={[styles.corner, styles.cornerTL]} />
           <View style={[styles.corner, styles.cornerTR]} />
           <View style={[styles.corner, styles.cornerBL]} />
           <View style={[styles.corner, styles.cornerBR]} />
 
+          {/* Subtle tinted ring behind pulse */}
+          <View style={styles.scanRing} />
+
           {/* Central pulsing circle */}
           <Animated.View style={[styles.scanPulse, pulseStyle]}>
             <View style={styles.scanPulseInner} />
           </Animated.View>
+
+          {/* Animated scan line */}
+          <Animated.View
+            style={[styles.scanLine, scanLineStyle]}
+            pointerEvents="none"
+          />
         </View>
 
         {/* Bottom text */}
         <View style={[styles.scanBottomContent, { paddingBottom: insets.bottom + 20 }]}>
-          <Text style={styles.scanTitle}>Gently scanning{'\u2026'}</Text>
-          <Text style={styles.scanSubtitle}>
-            Taking a calm look at your space and finding ways to help
-          </Text>
+          {/* Cycling message with fade transition */}
+          <Animated.View key={currentMsgIndex} entering={FadeIn.duration(400)} style={{ alignItems: 'center' }}>
+            <Text style={styles.scanTitle}>{SCAN_MESSAGES[currentMsgIndex].text}</Text>
+            <Text style={styles.scanSubtitle}>{SCAN_MESSAGES[currentMsgIndex].sub}</Text>
+          </Animated.View>
 
-          {/* Pagination dots */}
-          <View style={styles.scanDots}>
-            <View style={[styles.scanDot, styles.scanDotActive]} />
-            <View style={styles.scanDot} />
-            <View style={styles.scanDot} />
+          {/* Progress bar */}
+          <View style={styles.scanProgressTrack}>
+            <Animated.View style={[styles.scanProgressFill, progressBarStyle]} />
           </View>
+
+          {/* Pagination dots — active dot tracks message index */}
+          <View style={styles.scanDots}>
+            {SCAN_MESSAGES.map((_, i) => (
+              <View
+                key={i}
+                style={[styles.scanDot, i === currentMsgIndex && styles.scanDotActive]}
+              />
+            ))}
+          </View>
+
+          {/* Timeout UI */}
+          {timedOut && (
+            <View style={{ marginTop: 16, alignItems: 'center' }}>
+              <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 13, marginBottom: 12 }}>
+                Taking longer than expected{'\u2026'}
+              </Text>
+              <Pressable
+                onPress={handleUseFallbackTasks}
+                style={{ backgroundColor: 'rgba(255,255,255,0.15)', paddingHorizontal: 24, paddingVertical: 12, borderRadius: 24 }}
+                accessibilityRole="button"
+                accessibilityLabel="Use default tasks instead"
+              >
+                <Text style={{ color: '#FFFFFF', fontSize: 15, fontWeight: '600' }}>Use Default Tasks Instead</Text>
+              </Pressable>
+            </View>
+          )}
 
           {/* Cancel button */}
           <Pressable
             onPress={handleDismissAnalysis}
-            style={styles.cancelButton}
+            style={[styles.cancelButton, timedOut && { marginTop: 12 }]}
             accessibilityRole="button"
             accessibilityLabel="Cancel scanning"
           >
@@ -456,16 +558,45 @@ function AnalysisScreenContent() {
   // CELEBRATION — brief transition before results
   // ============================================
   if (showCelebration && result) {
+    const cleanPct = 100 - result.messLevel;
     return (
-      <View style={[styles.container, { backgroundColor: isDark ? '#0A0A0A' : '#FAFAFA', alignItems: 'center', justifyContent: 'center' }]}>
-        <Animated.View entering={ZoomIn.springify()} style={{ alignItems: 'center' }}>
-          <Text style={{ fontSize: 72 }}>{'\u{1F389}'}</Text>
-          <Text style={[Typography.largeTitle, { color: colors.text, marginTop: 16 }]}>
+      <View style={[styles.container, { alignItems: 'center', justifyContent: 'center' }]}>
+        <LinearGradient
+          colors={['#0A0A0A', '#1A1A2E', '#0A0A0A']}
+          style={StyleSheet.absoluteFill}
+        />
+        <Animated.View entering={ZoomIn.duration(350)} style={{ alignItems: 'center', paddingHorizontal: 32 }}>
+          {/* Confetti emojis with staggered fade-in */}
+          <View style={{ flexDirection: 'row', gap: 12, marginBottom: 16 }}>
+            <Animated.Text entering={FadeInDown.delay(0).duration(500)} style={{ fontSize: 32 }}>{'\u{1F389}'}</Animated.Text>
+            <Animated.Text entering={FadeInDown.delay(120).duration(500)} style={{ fontSize: 40 }}>{'\u{1F31F}'}</Animated.Text>
+            <Animated.Text entering={FadeInDown.delay(240).duration(500)} style={{ fontSize: 32 }}>{'\u{1F973}'}</Animated.Text>
+            <Animated.Text entering={FadeInDown.delay(60).duration(500)} style={{ fontSize: 36 }}>{'\u{1F381}'}</Animated.Text>
+          </View>
+
+          <Text style={{ fontSize: 36, fontWeight: '800', color: '#FFFFFF', textAlign: 'center', letterSpacing: -0.5 }}>
             Analysis Complete!
           </Text>
-          <Text style={[Typography.body, { color: colors.textSecondary, marginTop: 8, textAlign: 'center' }]}>
-            Found {result.tasks.length} tasks to transform your space
-          </Text>
+
+          {/* Prominent stats */}
+          <View style={{ flexDirection: 'row', gap: 24, marginTop: 24 }}>
+            <Animated.View entering={FadeInDown.delay(300).duration(350)} style={{ alignItems: 'center' }}>
+              <Text style={{ fontSize: 42, fontWeight: '800', color: '#FFFFFF' }}>{cleanPct}%</Text>
+              <Text style={{ fontSize: 13, color: 'rgba(255,255,255,0.55)', marginTop: 2 }}>Clean</Text>
+            </Animated.View>
+            <View style={{ width: 1, backgroundColor: 'rgba(255,255,255,0.15)', alignSelf: 'stretch' }} />
+            <Animated.View entering={FadeInDown.delay(400).duration(350)} style={{ alignItems: 'center' }}>
+              <Text style={{ fontSize: 42, fontWeight: '800', color: '#FFFFFF' }}>{result.tasks.length}</Text>
+              <Text style={{ fontSize: 13, color: 'rgba(255,255,255,0.55)', marginTop: 2 }}>Tasks Found</Text>
+            </Animated.View>
+          </View>
+
+          <Animated.Text
+            entering={FadeInDown.delay(500).duration(500)}
+            style={{ fontSize: 15, color: 'rgba(255,255,255,0.5)', marginTop: 20, textAlign: 'center' }}
+          >
+            {result.summary || 'Your personalized plan is ready'}
+          </Animated.Text>
         </Animated.View>
       </View>
     );
@@ -526,7 +657,7 @@ function AnalysisScreenContent() {
           contentContainerStyle={{ paddingTop: insets.top + 60, paddingBottom: insets.bottom + 100, paddingHorizontal: 20 }}
           showsVerticalScrollIndicator={false}
         >
-          <Animated.View entering={FadeInDown.delay(50).springify()} style={{ marginBottom: 24 }}>
+          <Animated.View entering={FadeInDown.delay(50).duration(350)} style={{ marginBottom: 24 }}>
             <SimplePhaseProgress
               currentPhase={1}
               phaseProgress={progressResult.progressPercentage}
@@ -550,7 +681,7 @@ function AnalysisScreenContent() {
           />
 
           {progressResult.remainingTasks.length > 0 && (
-            <Animated.View entering={FadeInDown.delay(1500).springify()} style={{ marginTop: 24 }}>
+            <Animated.View entering={FadeInDown.delay(1500).duration(350)} style={{ marginTop: 24 }}>
               <Text style={[Typography.title3, { color: colors.text, marginBottom: 12 }]}>
                 {'\u{1F4CB}'} Still To Do
               </Text>
@@ -597,14 +728,14 @@ function AnalysisScreenContent() {
           icon: zone.type === 'floor' ? '\u{1F9F9}' :
                 zone.type === 'surface' ? '\u{1FA91}' :
                 zone.type === 'storage' ? '\u{1F4E6}' :
-                '\u2728',
+                '\u{1F4CB}',
         }))
       : [
           {
             id: 'general',
             title: `Items in ${room?.name || 'room'}`,
             taskCount: totalTaskCount,
-            icon: '\u2728',
+            icon: '\u{1F4CB}',
           }
         ];
 
@@ -643,7 +774,7 @@ function AnalysisScreenContent() {
                   },
                 ]}
               >
-                <Text style={{ fontSize: 14, marginRight: 6 }}>{'\u2728'}</Text>
+                <Text style={{ fontSize: 14, marginRight: 6 }}>{'\u{1F50D}'}</Text>
                 <Text
                   style={{
                     fontSize: 14,
@@ -801,7 +932,7 @@ function AnalysisScreenContent() {
       <ExpressiveStateView
         isDark={isDark}
         kicker="ANALYSIS"
-        icon="sparkles-outline"
+        icon="scan-outline"
         title="No analysis data"
         description="Capture a room photo first and Declutterly will break the mess into guided tasks you can actually start."
         primaryLabel="Go Back"
@@ -875,14 +1006,29 @@ const styles = StyleSheet.create({
   },
   corner: {
     position: 'absolute',
-    width: 40,
-    height: 40,
-    borderColor: 'rgba(255,255,255,0.6)',
+    width: 48,
+    height: 48,
+    borderColor: 'rgba(255,255,255,0.9)',
   },
   cornerTL: { top: 0, left: 0, borderTopWidth: 3, borderLeftWidth: 3, borderTopLeftRadius: 12 },
   cornerTR: { top: 0, right: 0, borderTopWidth: 3, borderRightWidth: 3, borderTopRightRadius: 12 },
   cornerBL: { bottom: 0, left: 0, borderBottomWidth: 3, borderLeftWidth: 3, borderBottomLeftRadius: 12 },
   cornerBR: { bottom: 0, right: 0, borderBottomWidth: 3, borderRightWidth: 3, borderBottomRightRadius: 12 },
+  scanRing: {
+    position: 'absolute',
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.15)',
+  },
+  scanLine: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    height: 2,
+    backgroundColor: 'rgba(255,255,255,0.4)',
+  },
   scanPulse: {
     width: 60,
     height: 60,
@@ -918,7 +1064,21 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.6)',
     textAlign: 'center',
     lineHeight: 22,
-    marginBottom: 24,
+    marginBottom: 20,
+  },
+  scanProgressTrack: {
+    height: 3,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    borderRadius: 2,
+    width: 200,
+    maxWidth: 200,
+    overflow: 'hidden',
+    marginBottom: 20,
+  },
+  scanProgressFill: {
+    height: 3,
+    backgroundColor: 'rgba(255,255,255,0.8)',
+    borderRadius: 2,
   },
   scanDots: {
     flexDirection: 'row',

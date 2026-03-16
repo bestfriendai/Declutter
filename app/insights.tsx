@@ -57,7 +57,7 @@ function ChartBar({
 
   return (
     <Animated.View
-      entering={FadeInDown.delay(delay).springify()}
+      entering={FadeInDown.delay(delay).duration(350)}
       style={styles.chartBarContainer}
     >
       <View style={styles.chartBarWrapper}>
@@ -101,7 +101,7 @@ function StatTile({
 
   return (
     <Animated.View
-      entering={FadeInRight.delay(delay).springify()}
+      entering={FadeInRight.delay(delay).duration(350)}
       style={styles.statTile}
     >
       <BlurView
@@ -330,16 +330,16 @@ export default function InsightsScreen() {
         ) : !hasData ? (
           /* Empty State for New Users */
           <Animated.View
-            entering={FadeInDown.delay(100).springify()}
+            entering={FadeInDown.delay(100).duration(350)}
             style={styles.emptyStateContainer}
           >
             <ExpressiveStateView
               isDark={isDark}
               kicker="INSIGHTS"
               emoji="📊"
-              title="No insights yet"
-              description="Complete tasks and build a streak to unlock analytics about your pace, patterns, and momentum."
-              primaryLabel="Start decluttering"
+              title="Your patterns will appear here"
+              description="After a few cleaning sessions, you will see your best days, peak times, and progress trends. Data makes the invisible visible."
+              primaryLabel="Scan your first room"
               onPrimary={() => {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
                 router.push('/(tabs)');
@@ -353,7 +353,7 @@ export default function InsightsScreen() {
           <>
         {/* Time Period Selector */}
         <Animated.View
-          entering={FadeInDown.delay(100).springify()}
+          entering={FadeInDown.delay(100).duration(350)}
           style={styles.periodSelector}
           accessibilityRole="tablist"
         >
@@ -420,11 +420,11 @@ export default function InsightsScreen() {
         </View>
 
         {/* Weekly Activity Chart */}
-        <Animated.View entering={FadeInDown.delay(400).springify()}>
+        <Animated.View entering={FadeInDown.delay(400).duration(350)}>
           <GlassCard style={styles.chartCard}>
             <View style={styles.chartHeader}>
-              <Text style={[styles.chartTitle, { color: colors.text }]}>
-                Weekly Activity
+              <Text style={styles.chartTitle}>
+                WEEKLY ACTIVITY
               </Text>
               <View style={styles.chartLegend}>
                 <View
@@ -457,13 +457,13 @@ export default function InsightsScreen() {
         </Animated.View>
 
         {/* Progress Rings */}
-        <Animated.View entering={FadeInDown.delay(500).springify()}>
+        <Animated.View entering={FadeInDown.delay(500).duration(350)}>
           <GlassCard 
             style={styles.progressCard}
             accessibilityLabel={`Overall progress: Task completion ${Math.round(insights.taskCompletionRate)}%, Streak goal ${Math.min(stats.currentStreak * 10, 100)}%, Collection ${Math.round(insights.collectionProgress)}%`}
           >
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>
-              Overall Progress
+            <Text style={styles.sectionTitle}>
+              OVERALL PROGRESS
             </Text>
             <View style={styles.progressRings} accessibilityElementsHidden={true}>
               <ProgressRing
@@ -492,10 +492,10 @@ export default function InsightsScreen() {
         </Animated.View>
 
         {/* Room Performance */}
-        <Animated.View entering={FadeInDown.delay(600).springify()}>
+        <Animated.View entering={FadeInDown.delay(600).duration(350)}>
           <GlassCard style={styles.roomsCard}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>
-              Room Performance
+            <Text style={styles.sectionTitle}>
+              ROOM PERFORMANCE
             </Text>
             {insights.roomCompletionRates.length > 0 ? (
               insights.roomCompletionRates.map((room, index) => (
@@ -540,10 +540,10 @@ export default function InsightsScreen() {
         </Animated.View>
 
         {/* Collection Stats */}
-        <Animated.View entering={FadeInDown.delay(700).springify()}>
+        <Animated.View entering={FadeInDown.delay(700).duration(350)}>
           <GlassCard style={styles.collectionCard}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>
-              Collection Stats
+            <Text style={styles.sectionTitle}>
+              COLLECTION STATS
             </Text>
             <View style={styles.collectionGrid}>
               <View style={styles.collectionItem}>
@@ -626,12 +626,12 @@ export default function InsightsScreen() {
         </Animated.View>
 
         {/* Quick Tips */}
-        <Animated.View entering={FadeInDown.delay(800).springify()}>
+        <Animated.View entering={FadeInDown.delay(800).duration(350)}>
           <GlassCard style={styles.tipsCard}>
             <View style={styles.tipsHeader}>
               <Ionicons name="bulb" size={24} color="#F59E0B" />
-              <Text style={[styles.sectionTitle, { color: colors.text, marginLeft: 8 }]}>
-                Personalized Tips
+              <Text style={[styles.sectionTitle, { marginLeft: 8 }]}>
+                PERSONALIZED TIPS
               </Text>
             </View>
             <View style={styles.tipsList}>
@@ -639,7 +639,15 @@ export default function InsightsScreen() {
                 <View style={styles.tipItem}>
                   <Ionicons name="flame-outline" size={16} color={colors.warning} />
                   <Text style={[styles.tipText, { color: colors.textSecondary }]}>
-                    Build your streak! Complete one task daily to maintain momentum.
+                    ADHD tip: Just do one tiny task today. Consistency beats intensity. Even 2 minutes counts.
+                  </Text>
+                </View>
+              )}
+              {stats.currentStreak >= 3 && stats.currentStreak < 7 && (
+                <View style={styles.tipItem}>
+                  <Ionicons name="flame-outline" size={16} color={colors.warning} />
+                  <Text style={[styles.tipText, { color: colors.textSecondary }]}>
+                    {7 - stats.currentStreak} more days to a 7-day streak badge! You are building real momentum.
                   </Text>
                 </View>
               )}
@@ -647,14 +655,14 @@ export default function InsightsScreen() {
                 <View style={styles.tipItem}>
                   <Ionicons name="home-outline" size={16} color={colors.info} />
                   <Text style={[styles.tipText, { color: colors.textSecondary }]}>
-                    Focus on one room at a time for better results.
+                    ADHD-friendly approach: finish one room before starting the next. Visible progress keeps you motivated.
                   </Text>
                 </View>
               )}
               <View style={styles.tipItem}>
                 <Ionicons name="time-outline" size={16} color={colors.success} />
                 <Text style={[styles.tipText, { color: colors.textSecondary }]}>
-                  Try a 15-minute focus session to boost productivity!
+                  Try a 5-minute focus session if 25 feels too long. Short wins build confidence for longer ones.
                 </Text>
               </View>
             </View>
@@ -761,7 +769,11 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   chartTitle: {
-    ...Typography.headline,
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 1.5,
+    textTransform: 'uppercase',
+    color: '#808080',
   },
   chartLegend: {
     flexDirection: 'row',
@@ -789,7 +801,7 @@ const styles = StyleSheet.create({
   chartBarWrapper: {
     height: 100,
     width: 24,
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: 'rgba(128,128,128,0.12)',
     borderRadius: 12,
     justifyContent: 'flex-end',
     overflow: 'hidden',
@@ -811,7 +823,11 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   sectionTitle: {
-    ...Typography.headline,
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 1.5,
+    textTransform: 'uppercase',
+    color: '#808080',
     marginBottom: Spacing.md,
   },
   progressRings: {

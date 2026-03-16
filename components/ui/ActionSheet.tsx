@@ -113,7 +113,7 @@ export function ActionSheet({
       {/* Sheet Content */}
       <View style={[styles.container, { paddingBottom: insets.bottom + Spacing.md }]}>
         <Animated.View
-          entering={SlideInDown.springify().damping(18).stiffness(200)}
+          entering={SlideInDown.duration(350).damping(18).stiffness(200)}
           exiting={SlideOutDown.duration(Durations.normal)}
         >
           {/* Actions Group */}

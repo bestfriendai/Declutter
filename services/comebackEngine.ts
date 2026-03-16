@@ -64,11 +64,12 @@ const WELCOME_BACK_MESSAGES = {
 };
 
 /**
- * Get welcome back message based on days since activity
- * NEVER returns guilt/shame messaging
+ * Get welcome back message based on days since activity.
+ * NEVER returns guilt/shame messaging.
+ * Time-of-day aware — greetings adapt to morning, afternoon, evening.
  */
-export function getWelcomeBackMessage(daysSinceActivity: number): { 
-  message: string; 
+export function getWelcomeBackMessage(daysSinceActivity: number): {
+  message: string;
   submessage: string;
   emoji: string;
   bonusActive: boolean;
@@ -91,10 +92,17 @@ export function getWelcomeBackMessage(daysSinceActivity: number): {
   }
 
   const selected = messages[Math.floor(Math.random() * messages.length)];
-  
+
+  // Adapt the submessage to time of day for a personal touch
+  const hour = new Date().getHours();
+  let timePrefix = '';
+  if (hour < 12) timePrefix = 'Good morning! ';
+  else if (hour < 17) timePrefix = 'Good afternoon! ';
+  else timePrefix = 'Good evening! ';
+
   return {
     message: selected.message,
-    submessage: selected.submessage,
+    submessage: timePrefix + selected.submessage,
     emoji,
     bonusActive,
   };

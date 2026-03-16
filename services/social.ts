@@ -233,5 +233,10 @@ export async function getConnections(): Promise<Connection[]> {
 }
 
 export async function removeConnection(_targetUserId: string): Promise<boolean> {
+  // TODO: Implement removeConnection mutation in Convex backend (api.social.removeConnection)
+  // For now, this is a no-op since the backend mutation doesn't exist yet.
+  if (__DEV__) {
+    console.info('removeConnection: not yet implemented on the backend');
+  }
   return false;
 }

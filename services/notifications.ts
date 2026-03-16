@@ -99,7 +99,7 @@ export async function registerForPushNotifications(): Promise<string | null> {
 
     return token;
   } catch (error) {
-    console.error('Error registering for push notifications:', error);
+    if (__DEV__) console.error('Error registering for push notifications:', error);
     return null;
   }
 }
@@ -168,7 +168,7 @@ export async function scheduleDailyReminder(
     await AsyncStorage.setItem('daily-reminder-id', identifier);
     return identifier;
   } catch (error) {
-    console.error('Error scheduling daily reminder:', error);
+    if (__DEV__) console.error('Error scheduling daily reminder:', error);
     return null;
   }
 }
@@ -228,7 +228,7 @@ export async function scheduleStreakReminder(
     await AsyncStorage.setItem('streak-reminder-id', identifier);
     return identifier;
   } catch (error) {
-    console.error('Error scheduling streak reminder:', error);
+    if (__DEV__) console.error('Error scheduling streak reminder:', error);
     return null;
   }
 }
@@ -251,7 +251,7 @@ export async function showNotification(
       trigger: null, // Immediate
     });
   } catch (error) {
-    console.error('Error showing notification:', error);
+    if (__DEV__) console.error('Error showing notification:', error);
   }
 }
 
@@ -376,7 +376,7 @@ export async function scheduleShameFreeReminder(
     await AsyncStorage.setItem('daily-reminder-id', identifier);
     return identifier;
   } catch (error) {
-    console.error('Error scheduling shame-free reminder:', error);
+    if (__DEV__) console.error('Error scheduling shame-free reminder:', error);
     return null;
   }
 }
@@ -459,7 +459,7 @@ export async function scheduleGracePeriodReminder(gracePeriodEndsAt: string): Pr
     await AsyncStorage.setItem('grace-reminder-id', identifier);
     return identifier;
   } catch (error) {
-    console.error('Error scheduling grace period reminder:', error);
+    if (__DEV__) console.error('Error scheduling grace period reminder:', error);
     return null;
   }
 }
@@ -473,7 +473,7 @@ export async function cancelScheduledReminder(key: string): Promise<void> {
       await AsyncStorage.removeItem(`${key}-id`);
     }
   } catch (error) {
-    console.error('Error canceling notification:', error);
+    if (__DEV__) console.error('Error canceling notification:', error);
   }
 }
 
@@ -486,7 +486,7 @@ export async function cancelAllNotifications(): Promise<void> {
       'streak-reminder-id',
     ]);
   } catch (error) {
-    console.error('Error canceling all notifications:', error);
+    if (__DEV__) console.error('Error canceling all notifications:', error);
   }
 }
 
@@ -584,7 +584,7 @@ export async function setBadgeCount(count: number): Promise<void> {
   try {
     await Notifications.setBadgeCountAsync(count);
   } catch (error) {
-    console.error('Error setting badge count:', error);
+    if (__DEV__) console.error('Error setting badge count:', error);
   }
 }
 
@@ -615,7 +615,7 @@ export async function scheduleFocusModeReminder(
     });
     return identifier;
   } catch (error) {
-    console.error('Error scheduling focus mode reminder:', error);
+    if (__DEV__) console.error('Error scheduling focus mode reminder:', error);
     return null;
   }
 }
@@ -650,7 +650,7 @@ export async function scheduleMotivationalNotification(): Promise<string | null>
       },
     });
   } catch (error) {
-    console.error('Error scheduling motivational notification:', error);
+    if (__DEV__) console.error('Error scheduling motivational notification:', error);
     return null;
   }
 }

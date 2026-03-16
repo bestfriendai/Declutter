@@ -5,18 +5,18 @@
  * "Send Check-In to Jamie" CTA, check-in history dots, encouragement.
  */
 
-import { Colors } from '@/constants/Colors';
 import { AmbientBackdrop } from '@/components/ui/AmbientBackdrop';
 import { ExpressiveStateView } from '@/components/ui/ExpressiveStateView';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
-import { Typography } from '@/theme/typography';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/context/AuthContext';
+import { useDeclutter } from '@/context/DeclutterContext';
+import { Connection, getConnections } from '@/services/social';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   Alert,
   Pressable,
@@ -29,27 +29,44 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Check-in items (matching design)
-// ─────────────────────────────────────────────────────────────────────────────
-const CHECK_IN_ITEMS = [
-  { text: 'Cleaned bedroom this week', checked: true },
-  { text: '30-min declutter session', checked: false },
-  { text: 'Donated 5 items', checked: false },
-];
-
-// Week history (W1-W5, first 3 complete)
-const WEEK_HISTORY = [
-  { label: 'W1', complete: true },
-  { label: 'W2', complete: true },
-  { label: 'W3', complete: true },
-  { label: 'W4', complete: false },
-  { label: 'W5', complete: false },
-];
-
-// ─────────────────────────────────────────────────────────────────────────────
 // Partner Card
 // ─────────────────────────────────────────────────────────────────────────────
-function PartnerCard({ isDark }: { isDark: boolean }) {
+function PartnerCard({ isDark, partner }: { isDark: boolean; partner: Connection | null }) {
+  if (!partner) {
+    return (
+      <View style={[styles.partnerCard, {
+        backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : '#FFFFFF',
+        borderColor: isDark ? 'rgba(255,255,255,0.09)' : 'rgba(0,0,0,0.06)',
+      }]}>
+        <View style={styles.partnerTop}>
+          <View style={styles.partnerAvatarOuter}>
+            <View style={[styles.partnerAvatar, {
+              backgroundColor: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }]}>
+              <Text style={{ fontSize: 20, color: isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.2)' }}>?</Text>
+            </View>
+          </View>
+          <View style={styles.partnerInfo}>
+            <Text style={[styles.partnerName, {
+              color: isDark ? 'rgba(255,255,255,0.38)' : 'rgba(0,0,0,0.4)',
+            }]}>
+              No partner yet
+            </Text>
+            <Text style={[styles.partnerStatus, {
+              color: isDark ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.3)',
+            }]}>
+              Invite a friend from the Community tab
+            </Text>
+          </View>
+        </View>
+      </View>
+    );
+  }
+
+  const initial = (partner.displayName.charAt(0) || '?').toUpperCase();
+
   return (
     <View style={[styles.partnerCard, {
       backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : '#FFFFFF',
@@ -62,8 +79,10 @@ function PartnerCard({ isDark }: { isDark: boolean }) {
             colors={['#CCCCCC', '#808080'] as const}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
-            style={styles.partnerAvatar}
-          />
+            style={[styles.partnerAvatar, { alignItems: 'center', justifyContent: 'center' }]}
+          >
+            <Text style={{ fontSize: 18, fontWeight: '600', color: '#FFFFFF' }}>{initial}</Text>
+          </LinearGradient>
         </View>
 
         {/* Partner info */}
@@ -71,10 +90,10 @@ function PartnerCard({ isDark }: { isDark: boolean }) {
           <Text style={[styles.partnerName, {
             color: isDark ? '#FFFFFF' : '#1A1A1A',
           }]}>
-            Jamie R.
+            {partner.displayName}
           </Text>
           <Text style={[styles.partnerStatus, {
-            color: isDark ? '#FFFFFF' : '#1A1A1A',
+            color: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.45)',
           }]}>
             Accountability Partner {'\u00B7'} Active {'\u{1F7E2}'}
           </Text>
@@ -99,10 +118,8 @@ function CheckInCard({ isDark, checkItems, onToggle }: {
     }]}>
       {/* Header */}
       <View style={styles.checkInHeader}>
-        <Text style={[styles.checkInTitle, {
-          color: isDark ? '#FFFFFF' : '#1A1A1A',
-        }]}>
-          Weekly Check-In
+        <Text style={styles.checkInTitle}>
+          WEEKLY CHECK-IN
         </Text>
         <Text style={[styles.checkInDue, {
           color: isDark ? '#E0E0E0' : '#707070',
@@ -154,18 +171,30 @@ function CheckInCard({ isDark, checkItems, onToggle }: {
 // ─────────────────────────────────────────────────────────────────────────────
 // Check-In History
 // ─────────────────────────────────────────────────────────────────────────────
-function CheckInHistory({ isDark }: { isDark: boolean }) {
+function CheckInHistory({ isDark, currentStreak }: { isDark: boolean; currentStreak: number }) {
+  // Build week history from current streak
+  const totalWeeks = 5;
+  const completedWeeks = Math.min(currentStreak, totalWeeks);
+  const weekHistory = Array.from({ length: totalWeeks }, (_, i) => ({
+    label: `W${i + 1}`,
+    complete: i < completedWeeks,
+  }));
+
+  const motivationMessage = currentStreak >= 3
+    ? `${currentStreak} week streak! You're crushing it. Keep the momentum going!`
+    : currentStreak >= 1
+    ? `${currentStreak} week${currentStreak !== 1 ? 's' : ''} in. Every step counts!`
+    : 'Complete your first check-in to start building your streak.';
+
   return (
     <View style={styles.historySection}>
-      <Text style={[styles.historyTitle, {
-        color: isDark ? '#FFFFFF' : '#1A1A1A',
-      }]}>
-        Check-In History
+      <Text style={styles.historyTitle}>
+        CHECK-IN HISTORY
       </Text>
 
       {/* Week dots */}
       <View style={styles.historyRow}>
-        {WEEK_HISTORY.map((week, idx) => (
+        {weekHistory.map((week, idx) => (
           <View key={idx} style={styles.historyItem}>
             {week.complete ? (
               <View style={styles.historyDotComplete}>
@@ -200,7 +229,7 @@ function CheckInHistory({ isDark }: { isDark: boolean }) {
         <Text style={[styles.motivText, {
           color: isDark ? 'rgba(255,255,255,0.44)' : 'rgba(0,0,0,0.45)',
         }]}>
-          3 week streak! You and Jamie are crushing it. Keep the momentum going!
+          {motivationMessage}
         </Text>
       </View>
     </View>
@@ -215,13 +244,66 @@ export default function AccountabilityScreen() {
   const insets = useSafeAreaInsets();
   const rawScheme = useColorScheme();
   const colorScheme = rawScheme === 'dark' ? 'dark' : 'light';
-  const colors = Colors[colorScheme];
   const isDark = colorScheme === 'dark';
   const reducedMotion = useReducedMotion();
   const { isAuthenticated } = useAuth();
+  const { rooms, stats } = useDeclutter();
 
-  // State
-  const [checkItems, setCheckItems] = useState(CHECK_IN_ITEMS);
+  // Load connections
+  const [partner, setPartner] = useState<Connection | null>(null);
+  const loadPartner = useCallback(async () => {
+    try {
+      const conns = await getConnections();
+      setPartner(conns.length > 0 ? conns[0] : null);
+    } catch {
+      // No connections
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      loadPartner();
+    }
+  }, [isAuthenticated, loadPartner]);
+
+  // Build dynamic check-in items based on actual user activity this week
+  const buildCheckInItems = useCallback(() => {
+    const now = new Date();
+    const weekStart = new Date(now);
+    weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+    weekStart.setHours(0, 0, 0, 0);
+
+    // Count rooms cleaned this week
+    const roomsCleanedThisWeek = (rooms ?? []).filter(r =>
+      (r?.tasks ?? []).some(t => t?.completed && t?.completedAt && new Date(t.completedAt) >= weekStart)
+    ).length;
+
+    // Count tasks completed this week
+    let tasksThisWeek = 0;
+    for (const room of rooms ?? []) {
+      for (const task of room?.tasks ?? []) {
+        if (task?.completed && task?.completedAt && new Date(task.completedAt) >= weekStart) {
+          tasksThisWeek++;
+        }
+      }
+    }
+
+    // Total minutes this week
+    const totalMinutes = stats?.totalMinutesCleaned ?? 0;
+
+    return [
+      { text: `Cleaned a room this week`, checked: roomsCleanedThisWeek > 0 },
+      { text: `Completed 5+ tasks`, checked: tasksThisWeek >= 5 },
+      { text: `Spent 30+ min cleaning`, checked: totalMinutes >= 30 },
+    ];
+  }, [rooms, stats]);
+
+  const [checkItems, setCheckItems] = useState(() => buildCheckInItems());
+
+  // Refresh check-in items when data changes
+  useEffect(() => {
+    setCheckItems(buildCheckInItems());
+  }, [buildCheckInItems]);
 
   const handleToggleCheck = (idx: number) => {
     setCheckItems(prev => prev.map((item, i) =>
@@ -229,9 +311,33 @@ export default function AccountabilityScreen() {
     ));
   };
 
+  const completedCount = checkItems.filter(item => item.checked).length;
+  const allComplete = completedCount === checkItems.length;
+
+  const partnerName = partner?.displayName ?? 'your partner';
+
   const handleSendCheckIn = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    Alert.alert('Check-In Sent!', 'Jamie will see your progress. Keep it up!');
+    if (!partner) {
+      Alert.alert(
+        'No partner yet',
+        'Add a connection from the Community tab to start sending check-ins.'
+      );
+      return;
+    }
+    if (completedCount === 0) {
+      Alert.alert(
+        'Check something off first!',
+        'Complete at least one item before sending your check-in. Even one small thing counts.'
+      );
+      return;
+    }
+    Alert.alert(
+      allComplete ? 'All done! Check-In Sent!' : 'Check-In Sent!',
+      allComplete
+        ? `${partnerName} will be so proud. You crushed it this week!`
+        : `${partnerName} will see your ${completedCount}/${checkItems.length} progress. Keep it up!`
+    );
   };
 
   const handleOpenSocial = () => {
@@ -245,7 +351,7 @@ export default function AccountabilityScreen() {
   };
 
   const enterAnim = (delay: number) =>
-    reducedMotion ? undefined : FadeInDown.delay(delay).springify();
+    reducedMotion ? undefined : FadeInDown.delay(delay).duration(350);
 
   // Show sign-in prompt for unauthenticated users
   if (!isAuthenticated) {
@@ -314,7 +420,7 @@ export default function AccountabilityScreen() {
 
         {/* Partner Card */}
         <Animated.View entering={enterAnim(60)} style={styles.section}>
-          <PartnerCard isDark={isDark} />
+          <PartnerCard isDark={isDark} partner={partner} />
         </Animated.View>
 
         {/* Weekly Check-In */}
@@ -331,23 +437,30 @@ export default function AccountabilityScreen() {
           <Pressable
             onPress={handleSendCheckIn}
             accessibilityRole="button"
-            accessibilityLabel="Send Check-In to Jamie"
+            accessibilityLabel={partner ? `Send Check-In to ${partnerName}` : 'Send Check-In'}
             style={({ pressed }) => [styles.sendBtn, {
-              backgroundColor: isDark ? '#FFFFFF' : '#1A1A1A',
+              backgroundColor: allComplete
+                ? (isDark ? '#30D158' : '#30D158')
+                : (isDark ? '#FFFFFF' : '#1A1A1A'),
               opacity: pressed ? 0.85 : 1,
             }]}
           >
             <Text style={[styles.sendBtnText, {
-              color: isDark ? '#0A0A0A' : '#FFFFFF',
+              color: allComplete ? '#FFFFFF' : (isDark ? '#0A0A0A' : '#FFFFFF'),
             }]}>
-              Send Check-In to Jamie
+              {allComplete
+                ? 'Send Check-In (all done!)'
+                : partner
+                  ? `Send Check-In to ${partnerName} (${completedCount}/${checkItems.length})`
+                  : `Check-In (${completedCount}/${checkItems.length})`
+              }
             </Text>
           </Pressable>
         </Animated.View>
 
         {/* Check-In History */}
         <Animated.View entering={enterAnim(240)} style={styles.section}>
-          <CheckInHistory isDark={isDark} />
+          <CheckInHistory isDark={isDark} currentStreak={stats?.currentStreak ?? 0} />
         </Animated.View>
       </ScrollView>
     </View>
@@ -388,6 +501,11 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     padding: 20,
     borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 2,
   },
   partnerTop: {
     flexDirection: 'row',
@@ -426,6 +544,11 @@ const styles = StyleSheet.create({
     padding: 20,
     borderWidth: 1,
     gap: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 2,
   },
   checkInHeader: {
     flexDirection: 'row',
@@ -433,9 +556,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   checkInTitle: {
-    fontSize: 16,
-    fontWeight: '500',
-    letterSpacing: -0.3,
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 1.5,
+    textTransform: 'uppercase',
+    color: '#808080',
   },
   checkInDue: {
     fontSize: 12,
@@ -474,9 +599,11 @@ const styles = StyleSheet.create({
     gap: 14,
   },
   historyTitle: {
-    fontSize: 15,
-    fontWeight: '500',
-    letterSpacing: -0.3,
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 1.5,
+    textTransform: 'uppercase',
+    color: '#808080',
   },
   historyRow: {
     flexDirection: 'row',

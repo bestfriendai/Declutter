@@ -71,26 +71,26 @@ interface OnboardingSelections {
   commitment?: string;
 }
 
-const BODY_FONT = Platform.OS === 'ios' ? 'DM Sans' : 'sans-serif';
-const DISPLAY_FONT = Platform.OS === 'ios' ? 'Bricolage Grotesque' : 'sans-serif';
+const BODY_FONT = 'DM Sans';
+const DISPLAY_FONT = 'Bricolage Grotesque';
 
 const STEP_SEQUENCE: OnboardingStep[] = [
   {
     id: 'welcome',
     kind: 'welcome',
     kicker: 'Step 1 of 12',
-    title: 'Make space for a calmer brain.',
+    title: 'Your space deserves to feel calm.',
     description:
-      'Declutter builds a plan around how you actually live, not how a productivity app wishes you lived.',
+      'Declutterly builds a plan around how your brain actually works -- not how a productivity app wishes it did.',
     accent: '#FFB547',
   },
   {
     id: 'problem',
     kind: 'intro',
     kicker: 'Step 2 of 12',
-    title: 'Clutter is usually a systems problem, not a character flaw.',
+    title: 'Clutter is a systems problem, not a character flaw.',
     description:
-      'We are going to build a plan around your space, your energy, and the kind of support that keeps you moving.',
+      'In 2 minutes, we will build a plan around your space, your energy, and the kind of support that keeps you moving -- even on hard days.',
     accent: '#E85A4F',
   },
   {
@@ -106,7 +106,7 @@ const STEP_SEQUENCE: OnboardingStep[] = [
     kind: 'multi',
     kicker: 'Step 4 of 12',
     title: 'What gets you stuck most often?',
-    description: 'Pick every friction point that feels true. We will build around the pattern, not blame it.',
+    description: 'Pick every one that feels true. No judgment -- we are building around the pattern, not blaming it.',
     accent: '#E85A4F',
   },
   {
@@ -145,8 +145,8 @@ const STEP_SEQUENCE: OnboardingStep[] = [
     id: 'building',
     kind: 'loading',
     kicker: 'Step 9 of 12',
-    title: 'Building your first declutter rhythm...',
-    description: 'Sizing the plan to your energy, your time, and your space.',
+    title: 'Building your personal rhythm...',
+    description: 'Matching tasks to your energy, sizing sessions to your time, and keeping it all doable.',
     accent: '#FFB547',
   },
   {
@@ -171,7 +171,7 @@ const STEP_SEQUENCE: OnboardingStep[] = [
     kicker: 'Step 12 of 12',
     title: 'Lock in momentum while it is fresh.',
     description:
-      'Get the full guided plan, streak support, and room-by-room coaching. You can still continue without upgrading.',
+      'Get the full guided plan, streak support, and room-by-room coaching. You can absolutely continue without upgrading.',
     accent: '#FFB547',
   },
 ];
@@ -211,7 +211,7 @@ const TIME_OPTIONS: StepOption<number>[] = [
 const MOTIVATION_OPTIONS: StepOption<string>[] = [
   { value: 'gentle', title: 'Gentle encouragement', subtitle: 'Compassion helps me stay in it', emoji: '🌿' },
   { value: 'structured', title: 'Clear structure', subtitle: 'Tell me exactly what comes next', emoji: '🧭' },
-  { value: 'celebration', title: 'Visible wins and celebration', subtitle: 'I need momentum and payoff', emoji: '✨' },
+  { value: 'celebration', title: 'Visible wins and celebration', subtitle: 'I need momentum and payoff', emoji: '🎯' },
   { value: 'challenge', title: 'A bit of challenge', subtitle: 'I like goals, streaks, and momentum', emoji: '🏆' },
 ];
 
@@ -668,7 +668,7 @@ export default function OnboardingScreen() {
                     },
                   ]}
                 >
-                  <Ionicons name="sparkles-outline" size={14} color={isDark ? '#FFEBD0' : '#6B4B24'} />
+                  <Ionicons name="checkmark-circle-outline" size={14} color={isDark ? '#FFEBD0' : '#6B4B24'} />
                   <Text style={[styles.heroMicroChipText, { color: isDark ? '#E8DDD0' : '#6D5B49' }]}>
                     built around real energy
                   </Text>
@@ -909,7 +909,7 @@ export default function OnboardingScreen() {
                   <Text style={[styles.checklistTitle, { color: colors.text }]}>Your first-week checklist</Text>
                   {previewChecklist.map((item) => (
                     <View key={item} style={styles.checklistRow}>
-                      <Ionicons name="sparkles" size={14} color={step.accent} />
+                      <Ionicons name="checkmark-circle" size={14} color={step.accent} />
                       <Text style={[styles.checklistText, { color: colors.textSecondary }]}>{item}</Text>
                     </View>
                   ))}

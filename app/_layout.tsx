@@ -4,8 +4,9 @@
  */
 
 import { Colors } from '@/constants/Colors';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { CelebrationProvider } from '@/components/ui/CelebrationEngine';
-import { AuthProvider } from '@/context/AuthContext';
+import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { ConvexClientProvider } from '@/context/ConvexProvider';
 import { DeclutterProvider } from '@/context/DeclutterContext';
 import { FocusProvider } from '@/context/FocusContext';
@@ -13,7 +14,7 @@ import { MascotProvider } from '@/context/MascotContext';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { ThemeProvider } from '@/theme/ThemeProvider';
 import { useFonts } from 'expo-font';
-import { Stack, useRouter } from 'expo-router';
+import { Stack, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { recordAppOpen, scheduleOptimalNotification } from '@/services/notificationTiming';
@@ -29,6 +30,38 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 // Keep splash screen visible while loading
 SplashScreen.preventAutoHideAsync();
 
+/**
+ * Auth guard: redirects unauthenticated users away from protected screens
+ * and authenticated users away from auth screens.
+ */
+function AuthGuard({ children }: { children: React.ReactNode }) {
+  const { isAuthenticated, isAnonymous, isLoading, isAuthReady } = useAuth();
+  const segments = useSegments();
+  const router = useRouter();
+
+  useEffect(() => {
+    // Wait until auth state is resolved before redirecting
+    if (!isAuthReady || isLoading) return;
+
+    const firstSegment = segments[0] ?? '';
+
+    // Screens that don't require authentication
+    const publicSegments = ['auth', 'onboarding', 'splash', '+not-found'];
+    const isOnPublicScreen = publicSegments.includes(firstSegment);
+
+    if (!isAuthenticated && !isOnPublicScreen) {
+      // Not authenticated and trying to access a protected screen -> onboarding
+      router.replace('/onboarding');
+    } else if (isAuthenticated && !isAnonymous && firstSegment === 'auth') {
+      // Authenticated (non-guest) but on auth screens -> home
+      // Guest users are allowed on auth screens for account upgrade
+      router.replace('/');
+    }
+  }, [isAuthenticated, isAnonymous, isLoading, isAuthReady, segments, router]);
+
+  return <>{children}</>;
+}
+
 export default function RootLayout() {
   const rawScheme = useColorScheme();
   const colorScheme = rawScheme === 'dark' ? 'dark' : 'light';
@@ -36,7 +69,6 @@ export default function RootLayout() {
   const isDark = colorScheme === 'dark';
 
   const [loaded, error] = useFonts({
-    SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
     'DM Sans': require('../assets/fonts/DMSans-VariableFont_opsz,wght.ttf'),
     'Bricolage Grotesque': require('../assets/fonts/BricolageGrotesque-VariableFont_opsz,wdth,wght.ttf'),
   });
@@ -84,10 +116,12 @@ export default function RootLayout() {
           <ThemeProvider>
             <CelebrationProvider>
               <AuthProvider>
+                <AuthGuard>
                 <DeclutterProvider>
                   <MascotProvider>
                     <FocusProvider>
                       <StatusBar style={isDark ? 'light' : 'dark'} animated />
+                      <ErrorBoundary>
                       <Stack
                         screenOptions={{
                           headerShown: false,
@@ -106,20 +140,22 @@ export default function RootLayout() {
                         <Stack.Screen name="notification-permission" options={{ headerShown: false, animation: 'fade', gestureEnabled: false }} />
                         <Stack.Screen name="camera" options={{ headerShown: false, presentation: 'fullScreenModal' }} />
                         <Stack.Screen name="focus" options={{ headerShown: false, presentation: 'modal' }} />
-                        <Stack.Screen name="room/[id]" options={{ headerShown: false }} />
+                        <Stack.Screen name="room/[id]" options={{ headerShown: false, animation: 'ios_from_right' }} />
                         <Stack.Screen name="settings" options={{ headerShown: false }} />
                         <Stack.Screen name="achievements" options={{ headerShown: false }} />
                         <Stack.Screen name="insights" options={{ headerShown: false }} />
                         <Stack.Screen name="mascot" options={{ headerShown: false, presentation: 'modal' }} />
-                        <Stack.Screen name="analysis" options={{ headerShown: false }} />
+                        <Stack.Screen name="analysis" options={{ headerShown: false, animation: 'fade' }} />
                         <Stack.Screen name="social" options={{ headerShown: false }} />
                         <Stack.Screen name="accountability" options={{ headerShown: false }} />
                         <Stack.Screen name="collection" options={{ headerShown: false }} />
                         <Stack.Screen name="+not-found" options={{ headerShown: false }} />
                       </Stack>
+                      </ErrorBoundary>
                     </FocusProvider>
                   </MascotProvider>
                 </DeclutterProvider>
+                </AuthGuard>
               </AuthProvider>
             </CelebrationProvider>
           </ThemeProvider>

@@ -27,6 +27,8 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@/context/AuthContext';
 import { useDeclutter } from '@/context/DeclutterContext';
+import { setHapticsEnabled } from '@/services/haptics';
+import { setSoundEffectsEnabled } from '@/services/audio';
 import { LinearGradient } from 'expo-linear-gradient';
 import { PromptModal } from '@/components/ui/PromptModal';
 
@@ -107,7 +109,7 @@ function Row({
             {label}
           </Text>
           {sublabel && (
-            <Text style={[styles.rowSublabel, { color: '#707070' }]}>
+            <Text style={[styles.rowSublabel, { color: isDark ? 'rgba(255,255,255,0.44)' : 'rgba(23,23,26,0.46)' }]}>
               {sublabel}
             </Text>
           )}
@@ -183,13 +185,14 @@ export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const reducedMotion = useReducedMotion();
 
-  const { updateProfile, signOut } = useAuth();
+  const { updateProfile, signOut, deleteAccount, isAnonymous } = useAuth();
   const { user, settings, updateSettings, setUser } = useDeclutter();
 
   // Toggle states
   const [darkModeEnabled, setDarkModeEnabled] = useState(isDark);
-  const [soundFXEnabled, setSoundFXEnabled] = useState(true);
+  const [soundFXEnabled, setSoundFXEnabled] = useState(settings?.soundFX ?? true);
   const [hapticEnabled, setHapticEnabled] = useState(settings?.hapticFeedback ?? true);
+  const [reducedMotionEnabled, setReducedMotionEnabled] = useState(reducedMotion);
   const [isEditProfileVisible, setIsEditProfileVisible] = useState(false);
   const [displayNameDraft, setDisplayNameDraft] = useState('');
 
@@ -208,11 +211,85 @@ export default function SettingsScreen() {
 
   const handleSoundFXToggle = (value: boolean) => {
     setSoundFXEnabled(value);
+    setSoundEffectsEnabled(value);
+    updateSettings?.({ soundFX: value });
   };
 
   const handleHapticToggle = (value: boolean) => {
     setHapticEnabled(value);
+    setHapticsEnabled(value);
     updateSettings?.({ hapticFeedback: value });
+  };
+
+  const handleReducedMotionToggle = (value: boolean) => {
+    setReducedMotionEnabled(value);
+    updateSettings?.({ reducedMotion: value });
+  };
+
+  const handleClearCache = () => {
+    Alert.alert(
+      'Clear Local Cache',
+      'This removes cached photos and temporary data. Your rooms, tasks, and progress are safely stored in the cloud and will not be affected.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear Cache',
+          onPress: async () => {
+            try {
+              const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+              const cacheKeys = (await AsyncStorage.getAllKeys()).filter(
+                (k: string) => k.startsWith('@declutterly_cache') || k.startsWith('@declutterly_session_times')
+              );
+              if (cacheKeys.length > 0) {
+                await AsyncStorage.multiRemove(cacheKeys);
+              }
+              Alert.alert('Done', 'Cache cleared successfully.');
+            } catch {
+              Alert.alert('Error', 'Could not clear cache. Please try again.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      'Delete Account',
+      'This will permanently delete your account and all associated data. This action cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            Alert.alert(
+              'Are you absolutely sure?',
+              'All rooms, tasks, progress, and achievements will be permanently deleted.',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Yes, Delete Everything',
+                  style: 'destructive',
+                  onPress: async () => {
+                    try {
+                      const result = await deleteAccount();
+                      if (result.success) {
+                        router.replace('/');
+                      } else {
+                        Alert.alert('Error', result.error || 'Could not delete account. Please contact support.');
+                      }
+                    } catch {
+                      Alert.alert('Error', 'Could not delete account. Please contact support.');
+                    }
+                  },
+                },
+              ]
+            );
+          },
+        },
+      ]
+    );
   };
 
   const openEditProfile = () => {
@@ -277,7 +354,7 @@ export default function SettingsScreen() {
   };
 
   const enterAnim = (delay: number) =>
-    reducedMotion ? undefined : FadeInDown.delay(delay).springify();
+    reducedMotion ? undefined : FadeInDown.delay(delay).duration(350);
 
   return (
     <View style={[styles.container, { backgroundColor: isDark ? '#0A0A0A' : '#F8F8F8' }]}>
@@ -292,25 +369,26 @@ export default function SettingsScreen() {
 
       {/* Header */}
       <View style={[styles.navBar, { paddingTop: insets.top + 8 }]}>
-        <Pressable
-          onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            router.back();
-          }}
-          style={styles.backButton}
-          accessibilityRole="button"
-          accessibilityLabel="Go back"
-        >
-          <Text style={[styles.backIcon, {
-            color: isDark ? '#FFFFFF' : '#1A1A1A',
-          }]}>
-            {'\u2039'}
-          </Text>
-        </Pressable>
+        <View style={styles.navTopRow}>
+          <Pressable
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              router.back();
+            }}
+            style={[styles.backButton, {
+              backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.84)',
+              borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+            }]}
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
+          >
+            <Ionicons name="chevron-back" size={18} color={isDark ? '#FFFFFF' : '#1A1A1A'} />
+          </Pressable>
+        </View>
         <Text style={[styles.navTitle, { color: isDark ? '#FFFFFF' : '#1A1A1A' }]}>
           Settings
         </Text>
-        <Text style={[styles.navSubtitle, { color: isDark ? 'rgba(255,255,255,0.52)' : 'rgba(0,0,0,0.48)' }]}>
+        <Text style={[styles.navSubtitle, { color: isDark ? 'rgba(255,255,255,0.52)' : 'rgba(23,23,26,0.48)' }]}>
           Tune the app so your resets feel lighter, calmer, and easier to repeat.
         </Text>
       </View>
@@ -397,13 +475,13 @@ export default function SettingsScreen() {
           </LinearGradient>
         </Animated.View>
 
-        {/* GENERAL */}
+        {/* PROFILE & NOTIFICATIONS */}
         <Animated.View entering={enterAnim(40)}>
-          <Group title="GENERAL" isDark={isDark}>
+          <Group title="PROFILE & NOTIFICATIONS" isDark={isDark}>
             <Row
               icon="person-outline"
               label="Edit Profile"
-              sublabel="Change your name and photo"
+              sublabel="Change your display name"
               onPress={openEditProfile}
               colors={colors}
               isDark={isDark}
@@ -411,20 +489,10 @@ export default function SettingsScreen() {
             <Row
               icon="notifications-outline"
               label="Notifications"
-              sublabel="Push & email alerts"
+              sublabel="Gentle nudges & reminders"
               onPress={() => {
                 router.push('/notification-permission');
               }}
-              colors={colors}
-              isDark={isDark}
-            />
-            <Row
-              icon="moon-outline"
-              label="Dark Mode"
-              sublabel="Enable dark theme"
-              toggle
-              toggleValue={darkModeEnabled}
-              onToggle={handleDarkModeToggle}
               colors={colors}
               isDark={isDark}
               isLast
@@ -432,12 +500,23 @@ export default function SettingsScreen() {
           </Group>
         </Animated.View>
 
-        {/* APPEARANCE */}
-        <Animated.View entering={enterAnim(100)}>
-          <Group title="APPEARANCE" isDark={isDark}>
+        {/* LOOK & FEEL */}
+        <Animated.View entering={enterAnim(80)}>
+          <Group title="LOOK & FEEL" isDark={isDark}>
+            <Row
+              icon="moon-outline"
+              label="Dark Mode"
+              sublabel="Easier on the eyes at night"
+              toggle
+              toggleValue={darkModeEnabled}
+              onToggle={handleDarkModeToggle}
+              colors={colors}
+              isDark={isDark}
+            />
             <Row
               icon="volume-high-outline"
-              label="Sound FX"
+              label="Sound Effects"
+              sublabel="Completion dings & ambient sounds"
               toggle
               toggleValue={soundFXEnabled}
               onToggle={handleSoundFXToggle}
@@ -447,9 +526,20 @@ export default function SettingsScreen() {
             <Row
               icon="flash-outline"
               label="Haptic Feedback"
+              sublabel="Vibrations on key actions"
               toggle
               toggleValue={hapticEnabled}
               onToggle={handleHapticToggle}
+              colors={colors}
+              isDark={isDark}
+            />
+            <Row
+              icon="accessibility-outline"
+              label="Reduce Animations"
+              sublabel="Simpler transitions for comfort"
+              toggle
+              toggleValue={reducedMotionEnabled}
+              onToggle={handleReducedMotionToggle}
               colors={colors}
               isDark={isDark}
               isLast
@@ -458,11 +548,12 @@ export default function SettingsScreen() {
         </Animated.View>
 
         {/* SUPPORT & ABOUT */}
-        <Animated.View entering={enterAnim(160)}>
+        <Animated.View entering={enterAnim(140)}>
           <Group title="SUPPORT & ABOUT" isDark={isDark}>
             <Row
               icon="help-circle-outline"
               label="Help & FAQ"
+              sublabel="Get answers or email us"
               onPress={handleContactSupport}
               colors={colors}
               isDark={isDark}
@@ -483,7 +574,8 @@ export default function SettingsScreen() {
             />
             <Row
               icon="star-outline"
-              label="Rate Declutter"
+              label="Rate Declutterly"
+              sublabel="Your review helps others with ADHD find us"
               onPress={handleRateApp}
               colors={colors}
               isDark={isDark}
@@ -493,13 +585,50 @@ export default function SettingsScreen() {
           </Group>
         </Animated.View>
 
+        {/* DATA & STORAGE */}
+        <Animated.View entering={enterAnim(200)}>
+          <Group title="DATA & STORAGE" isDark={isDark}>
+            <Row
+              icon="trash-outline"
+              label="Clear Cache"
+              sublabel="Free up space without losing data"
+              onPress={handleClearCache}
+              colors={colors}
+              isDark={isDark}
+              isLast
+            />
+          </Group>
+        </Animated.View>
+
         {/* ACCOUNT */}
-        <Animated.View entering={enterAnim(220)}>
+        <Animated.View entering={enterAnim(260)}>
           <Group title="ACCOUNT" isDark={isDark}>
+            {isAnonymous && (
+              <Row
+                icon="person-add-outline"
+                label="Upgrade to Full Account"
+                sublabel="Keep your data and add email sign-in"
+                onPress={() => {
+                  router.push('/auth/signup');
+                }}
+                colors={colors}
+                isDark={isDark}
+                highlightIcon
+              />
+            )}
             <Row
               icon="log-out-outline"
               label="Sign Out"
               onPress={handleSignOut}
+              destructive
+              colors={colors}
+              isDark={isDark}
+            />
+            <Row
+              icon="close-circle-outline"
+              label="Delete Account"
+              sublabel="Permanently remove all your data"
+              onPress={handleDeleteAccount}
               destructive
               colors={colors}
               isDark={isDark}
@@ -510,7 +639,7 @@ export default function SettingsScreen() {
 
         {/* Version */}
         <Text style={[styles.versionText, { color: isDark ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.3)' }]}>
-          Declutterly v1.0.0
+          Declutterly v1.0.0 (Build 1)
         </Text>
       </ScrollView>
 
@@ -544,17 +673,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 12,
   },
-  backButton: {
+  navTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 8,
-    minHeight: 44,
-    minWidth: 44,
+    marginBottom: 12,
   },
-  backIcon: {
-    fontSize: 34,
-    fontWeight: '300',
-    lineHeight: 38,
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   navTitle: {
     fontSize: 34,

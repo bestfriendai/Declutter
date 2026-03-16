@@ -38,27 +38,27 @@ interface PasswordRequirementsProps {
 const DEFAULT_REQUIREMENTS: Requirement[] = [
   {
     id: 'length',
-    label: 'At least 8 characters',
+    label: '8+ characters long',
     test: (pwd) => pwd.length >= 8,
   },
   {
     id: 'uppercase',
-    label: 'Contains uppercase letter',
+    label: 'One uppercase letter (A-Z)',
     test: (pwd) => /[A-Z]/.test(pwd),
   },
   {
     id: 'lowercase',
-    label: 'Contains lowercase letter',
+    label: 'One lowercase letter (a-z)',
     test: (pwd) => /[a-z]/.test(pwd),
   },
   {
     id: 'number',
-    label: 'Contains a number',
+    label: 'One number (0-9)',
     test: (pwd) => /[0-9]/.test(pwd),
   },
   {
     id: 'special',
-    label: 'Contains special character',
+    label: 'One special character (!@#...)',
     test: (pwd) => /[^a-zA-Z0-9]/.test(pwd),
   },
 ];
@@ -201,7 +201,7 @@ export function PasswordRequirements({
       {/* Success Message */}
       {allMet && (
         <Animated.View
-          entering={FadeIn.springify()}
+          entering={FadeIn.duration(350)}
           style={[styles.successMessage, { backgroundColor: colors.successMuted }]}
         >
           <Text style={styles.successIcon}>🎉</Text>

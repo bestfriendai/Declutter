@@ -84,7 +84,7 @@ function BenefitItem({
 }) {
   return (
     <Animated.View 
-      entering={FadeInDown.delay(delay).springify()}
+      entering={FadeInDown.delay(delay).duration(350)}
       style={[styles.benefitItem, { backgroundColor: colors.surface }]}
     >
       <Text style={styles.benefitEmoji}>{emoji}</Text>
@@ -115,14 +115,14 @@ export default function NotificationPermissionScreen() {
         try {
           await convex.mutation(api.notifications.savePushToken, { token });
         } catch (error) {
-          console.error('Failed to save push token to backend:', error);
+          if (__DEV__) console.info('Failed to save push token to backend:', error);
         }
       }
 
       // Navigate to home regardless of permission result
       router.replace('/(tabs)');
     } catch (error) {
-      console.error('Error requesting notification permissions:', error);
+      if (__DEV__) console.info('Error requesting notification permissions:', error);
       router.replace('/(tabs)');
     } finally {
       setIsRequesting(false);
@@ -139,13 +139,13 @@ export default function NotificationPermissionScreen() {
       <StatusBar style={isDark ? 'light' : 'dark'} />
       
       <LinearGradient
-        colors={isDark 
-          ? ['rgba(103, 126, 234, 0.15)', 'rgba(118, 75, 162, 0.1)', 'transparent'] 
-          : ['rgba(103, 126, 234, 0.08)', 'rgba(118, 75, 162, 0.05)', 'transparent']
+        colors={isDark
+          ? ['rgba(103,126,234,0.22)', 'rgba(118,75,162,0.14)', 'rgba(10,10,10,0)'] as const
+          : ['rgba(103,126,234,0.10)', 'rgba(118,75,162,0.06)', 'rgba(250,250,250,0)'] as const
         }
         style={styles.gradient}
         start={{ x: 0.5, y: 0 }}
-        end={{ x: 0.5, y: 0.5 }}
+        end={{ x: 0.5, y: 0.65 }}
       />
 
       <View style={[styles.content, { paddingTop: insets.top + 60, paddingBottom: insets.bottom + 20 }]}>
@@ -200,10 +200,12 @@ export default function NotificationPermissionScreen() {
         <View style={{ flex: 1 }} />
 
         {/* CTA Button */}
-        <Animated.View entering={FadeInUp.delay(800).springify()}>
+        <Animated.View entering={FadeInUp.delay(800).duration(350)}>
           <Pressable
             onPress={handleEnableNotifications}
             disabled={isRequesting}
+            accessibilityRole="button"
+            accessibilityLabel="Enable gentle cleaning reminders"
             style={({ pressed }) => [
               styles.ctaButton,
               { opacity: pressed || isRequesting ? 0.9 : 1 }
@@ -226,9 +228,15 @@ export default function NotificationPermissionScreen() {
         <Pressable
           onPress={handleSkip}
           style={styles.skipButton}
+          accessibilityRole="button"
+          accessibilityLabel="Skip notifications for now"
+          accessibilityHint="You can always enable notifications later in Settings"
         >
           <Text style={[styles.skipText, { color: colors.textSecondary }]}>
             Maybe Later
+          </Text>
+          <Text style={[styles.skipHint, { color: isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.25)' }]}>
+            You can turn these on in Settings anytime
           </Text>
         </Pressable>
       </View>
@@ -244,11 +252,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   gradient: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 400,
+    ...StyleSheet.absoluteFillObject,
   },
   content: {
     flex: 1,
@@ -281,6 +285,13 @@ const styles = StyleSheet.create({
     padding: Spacing.md,
     borderRadius: BorderRadius.lg,
     gap: Spacing.md,
+    borderWidth: 1,
+    borderColor: 'rgba(128,128,128,0.12)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 1,
   },
   benefitEmoji: {
     fontSize: 24,
@@ -296,7 +307,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   ctaGradient: {
-    paddingVertical: Spacing.md + 2,
+    height: 54,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -304,6 +315,7 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 17,
     fontWeight: '600',
+    letterSpacing: -0.2,
   },
   skipButton: {
     marginTop: Spacing.lg,
@@ -312,5 +324,11 @@ const styles = StyleSheet.create({
   },
   skipText: {
     fontSize: 15,
+    textAlign: 'center',
+  },
+  skipHint: {
+    fontSize: 12,
+    marginTop: 4,
+    textAlign: 'center',
   },
 });

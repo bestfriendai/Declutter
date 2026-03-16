@@ -94,7 +94,7 @@ export default function JoinScreen() {
       setError('Invalid code. Make sure the challenge code is correct and still active.');
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     } catch (err) {
-      console.error('Join error:', err);
+      if (__DEV__) console.info('Join error:', err);
       setError('Failed to join. Please try again.');
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     } finally {
@@ -173,7 +173,7 @@ export default function JoinScreen() {
         </View>
 
         <View style={styles.content}>
-          <Animated.View entering={FadeInDown.delay(100).springify()}>
+          <Animated.View entering={FadeInDown.delay(100).duration(350)}>
             <View style={styles.iconContainer}>
               <View style={[styles.iconCircle, { backgroundColor: colors.primary + '20' }]}>
                 <Ionicons name="ticket-outline" size={48} color={colors.primary} />
@@ -181,14 +181,14 @@ export default function JoinScreen() {
             </View>
 
             <Text style={[styles.title, { color: colors.text }]}>
-              Enter Invite Code
+              Join a Challenge
             </Text>
             <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-              Join a challenge with a code from a friend
+              Enter the code your friend shared. You will both earn XP for completing tasks together.
             </Text>
           </Animated.View>
 
-          <Animated.View entering={FadeInDown.delay(200).springify()}>
+          <Animated.View entering={FadeInDown.delay(200).duration(350)}>
             <GlassCard style={styles.inputCard}>
               <TextInput
                 style={[
@@ -217,7 +217,7 @@ export default function JoinScreen() {
             </GlassCard>
           </Animated.View>
 
-          <Animated.View entering={FadeInDown.delay(300).springify()}>
+          <Animated.View entering={FadeInDown.delay(300).duration(350)}>
             <GlassButton
               title={isJoining ? 'Joining...' : 'Join'}
               onPress={handleJoin}
@@ -235,10 +235,10 @@ export default function JoinScreen() {
             />
           </Animated.View>
 
-          <Animated.View entering={FadeInDown.delay(400).springify()}>
+          <Animated.View entering={FadeInDown.delay(400).duration(350)}>
             <Text style={[styles.helpText, { color: colors.textSecondary }]}>
-              Codes are 8 characters and are case-insensitive.{'\n'}
-              Ask a friend for their challenge code to get started.
+              Codes are 8 characters and case-insensitive.{'\n'}
+              Cleaning together makes it 3x more likely to stick.
             </Text>
           </Animated.View>
         </View>
@@ -288,6 +288,8 @@ const styles = StyleSheet.create({
     borderRadius: 50,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: 'rgba(128,128,128,0.15)',
   },
   title: {
     ...Typography.title1,
@@ -306,10 +308,10 @@ const styles = StyleSheet.create({
   codeInput: {
     ...Typography.title1,
     textAlign: 'center',
-    letterSpacing: 6,
-    paddingVertical: Spacing.md,
+    letterSpacing: 8,
+    paddingVertical: 18,
     borderWidth: 2,
-    borderRadius: BorderRadius.input,
+    borderRadius: 16,
   },
   errorText: {
     ...Typography.footnote,

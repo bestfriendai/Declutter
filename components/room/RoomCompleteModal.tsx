@@ -48,21 +48,18 @@ export function RoomCompleteModal({
         <Confetti visible={visible} intensity="heavy" />
 
         <Animated.View
-          entering={ZoomIn.springify()}
+          entering={ZoomIn.duration(350)}
           style={styles.roomCompleteContent}
         >
           {/* Room emoji with glow */}
           <View style={styles.roomCompleteEmojiContainer}>
             <Text style={styles.roomCompleteEmoji}>{room?.emoji || '🏠'}</Text>
-            <Text style={styles.roomCompleteSparkle1}>✨</Text>
-            <Text style={styles.roomCompleteSparkle2}>🌟</Text>
-            <Text style={styles.roomCompleteSparkle3}>💫</Text>
           </View>
 
           {/* Celebration message */}
           <Text style={styles.roomCompleteTitle}>Room Complete!</Text>
           <Text style={styles.roomCompleteSubtitle}>
-            {room?.name || 'This room'} is now sparkling clean!
+            {room?.name || 'This room'} is done. You did every single task.
           </Text>
 
           {/* Stats summary */}
@@ -85,7 +82,7 @@ export function RoomCompleteModal({
 
           {/* Motivational message */}
           <Text style={styles.roomCompleteMotivation}>
-            You did amazing! Keep up the momentum 💪
+            Remember this feeling. You are capable of more than you think.
           </Text>
 
           {/* Continue button */}
@@ -165,24 +162,6 @@ const styles = StyleSheet.create({
   },
   roomCompleteEmoji: {
     fontSize: 80,
-  },
-  roomCompleteSparkle1: {
-    position: 'absolute',
-    top: -10,
-    right: -25,
-    fontSize: 28,
-  },
-  roomCompleteSparkle2: {
-    position: 'absolute',
-    top: 10,
-    left: -30,
-    fontSize: 24,
-  },
-  roomCompleteSparkle3: {
-    position: 'absolute',
-    bottom: 0,
-    right: -20,
-    fontSize: 20,
   },
   roomCompleteTitle: {
     fontSize: 32,

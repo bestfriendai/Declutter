@@ -52,7 +52,7 @@ export async function getUserCleaningProfile(): Promise<UserCleaningProfile> {
       return { ...defaultProfile, ...JSON.parse(stored) };
     }
   } catch (error) {
-    console.error('Error loading user cleaning profile:', error);
+    if (__DEV__) console.error('Error loading user cleaning profile:', error);
   }
   return defaultProfile;
 }
@@ -61,7 +61,7 @@ export async function saveUserCleaningProfile(profile: UserCleaningProfile): Pro
   try {
     await AsyncStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profile));
   } catch (error) {
-    console.error('Error saving user cleaning profile:', error);
+    if (__DEV__) console.error('Error saving user cleaning profile:', error);
   }
 }
 
@@ -99,7 +99,7 @@ export async function recordTaskCompletion(
     
     await updateProfileFromHistory(trimmedHistory);
   } catch (error) {
-    console.error('Error recording task completion:', error);
+    if (__DEV__) console.error('Error recording task completion:', error);
   }
 }
 
@@ -364,6 +364,6 @@ export async function clearTaskHistory(): Promise<void> {
     await AsyncStorage.removeItem(TASK_HISTORY_KEY);
     await AsyncStorage.removeItem(PROFILE_STORAGE_KEY);
   } catch (error) {
-    console.error('Error clearing task history:', error);
+    if (__DEV__) console.error('Error clearing task history:', error);
   }
 }

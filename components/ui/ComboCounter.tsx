@@ -34,7 +34,9 @@ function getComboGradient(count: number): readonly [string, string] {
 
 function getComboLabel(count: number): string | null {
   if (count >= 10) return 'LEGENDARY!';
+  if (count >= 7) return 'ON FIRE!';
   if (count >= 5) return 'UNSTOPPABLE!';
+  if (count >= 3) return 'ROLLING!';
   return null;
 }
 
@@ -76,7 +78,7 @@ export function ComboCounter({ count, visible, position = 'floating' }: ComboCou
 
   const enterAnimation = reducedMotion
     ? undefined
-    : ZoomIn.springify().damping(10);
+    : ZoomIn.duration(350).damping(10);
 
   return (
     <Animated.View

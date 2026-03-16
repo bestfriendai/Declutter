@@ -29,8 +29,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const AnimatedCircle: any = Animated.createAnimatedComponent(Circle as any);
 
-const BODY_FONT = Platform.OS === 'ios' ? 'DM Sans' : 'sans-serif';
-const DISPLAY_FONT = Platform.OS === 'ios' ? 'Bricolage Grotesque' : 'sans-serif';
+const BODY_FONT = 'DM Sans';
+const DISPLAY_FONT = 'Bricolage Grotesque';
 const WEEKDAY_LABELS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 
 type WindowMode = 'weekly' | 'monthly';
@@ -197,7 +197,7 @@ function ConcentricRings({
             { color: isDark ? 'rgba(255,255,255,0.46)' : 'rgba(23,23,26,0.42)' },
           ]}
         >
-          done
+          {overallPercent >= 100 ? 'complete!' : overallPercent >= 50 ? 'halfway there' : 'done'}
         </Text>
       </View>
     </View>
@@ -299,7 +299,7 @@ function ProgressChart({
               { color: isDark ? 'rgba(255,255,255,0.48)' : 'rgba(23,23,26,0.46)' },
             ]}
           >
-            {empty ? 'Your first reset will wake this up.' : `${total} tasks completed`}
+            {empty ? 'Your first reset lights up the chart.' : `${total} task${total === 1 ? '' : 's'} completed`}
           </Text>
         </View>
 
@@ -324,7 +324,7 @@ function ProgressChart({
               { color: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(23,23,26,0.48)' },
             ]}
           >
-            One room, one photo, one calm win. That is enough to start your rhythm.
+            One room, one photo, one calm win. Takes 2 minutes to start your rhythm.
           </Text>
 
           <View style={styles.emptyTrackRow}>
@@ -537,7 +537,7 @@ export default function ProgressScreen() {
           <View
             style={[
               styles.segment,
-              { backgroundColor: isDark ? 'rgba(22,22,26,0.92)' : 'rgba(26,26,30,0.96)' },
+              { backgroundColor: isDark ? 'rgba(22,22,26,0.92)' : 'rgba(23,23,26,0.08)' },
             ]}
           >
             {(['weekly', 'monthly'] as const).map((item) => {
@@ -568,7 +568,7 @@ export default function ProgressScreen() {
                             : '#17171A'
                           : isDark
                             ? 'rgba(255,255,255,0.44)'
-                            : 'rgba(255,255,255,0.68)',
+                            : 'rgba(23,23,26,0.44)',
                       },
                     ]}
                   >
@@ -597,7 +597,7 @@ export default function ProgressScreen() {
                 { color: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(23,23,26,0.46)' },
               ]}
             >
-              One first reset wakes this page up.
+              Scan one room to fill these rings. It takes less than 2 minutes.
             </Text>
           ) : null}
 
