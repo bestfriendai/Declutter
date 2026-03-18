@@ -13,6 +13,8 @@ export const SECURE_KEYS = {
   API_KEY: 'declutterly_api_key',
   AUTH_TOKEN: 'declutterly_auth_token',
   REFRESH_TOKEN: 'declutterly_refresh_token',
+  USER_PROFILE: 'declutterly_user_profile',
+  AUTH_STATE: 'declutterly_auth_state',
 } as const;
 
 // Check if SecureStore is available
@@ -27,6 +29,57 @@ const isSecureStoreAvailable = async (): Promise<boolean> => {
     return false;
   }
 };
+
+export async function saveSecureValue(key: string, value: string): Promise<void> {
+  const secureAvailable = await isSecureStoreAvailable();
+
+  if (secureAvailable) {
+    await SecureStore.setItemAsync(key, value, {
+      keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+    });
+    return;
+  }
+
+  await AsyncStorage.setItem(key, value);
+}
+
+export async function loadSecureValue(key: string): Promise<string | null> {
+  const secureAvailable = await isSecureStoreAvailable();
+
+  if (secureAvailable) {
+    return SecureStore.getItemAsync(key);
+  }
+
+  return AsyncStorage.getItem(key);
+}
+
+export async function deleteSecureValue(key: string): Promise<void> {
+  const secureAvailable = await isSecureStoreAvailable();
+
+  if (secureAvailable) {
+    await SecureStore.deleteItemAsync(key);
+    return;
+  }
+
+  await AsyncStorage.removeItem(key);
+}
+
+export async function saveSecureJson<T>(key: string, value: T): Promise<void> {
+  await saveSecureValue(key, JSON.stringify(value));
+}
+
+export async function loadSecureJson<T>(key: string): Promise<T | null> {
+  const storedValue = await loadSecureValue(key);
+  if (!storedValue) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(storedValue) as T;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Validates API key format (Gemini API keys are typically 39 characters)
@@ -52,9 +105,7 @@ export async function saveApiKeySecure(apiKey: string): Promise<void> {
     const secureAvailable = await isSecureStoreAvailable();
     
     if (secureAvailable) {
-      await SecureStore.setItemAsync(SECURE_KEYS.API_KEY, trimmedKey, {
-        keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
-      });
+      await saveSecureValue(SECURE_KEYS.API_KEY, trimmedKey);
     } else {
       // Fallback for web - warn in dev
       if (__DEV__) {
@@ -77,7 +128,7 @@ export async function loadApiKeySecure(): Promise<string | null> {
     const secureAvailable = await isSecureStoreAvailable();
     
     if (secureAvailable) {
-      return await SecureStore.getItemAsync(SECURE_KEYS.API_KEY);
+      return await loadSecureValue(SECURE_KEYS.API_KEY);
     } else {
       return await AsyncStorage.getItem(SECURE_KEYS.API_KEY);
     }
@@ -95,7 +146,7 @@ export async function deleteApiKeySecure(): Promise<void> {
     const secureAvailable = await isSecureStoreAvailable();
     
     if (secureAvailable) {
-      await SecureStore.deleteItemAsync(SECURE_KEYS.API_KEY);
+      await deleteSecureValue(SECURE_KEYS.API_KEY);
     } else {
       await AsyncStorage.removeItem(SECURE_KEYS.API_KEY);
     }
@@ -111,9 +162,7 @@ export async function saveAuthToken(token: string): Promise<void> {
   try {
     const secureAvailable = await isSecureStoreAvailable();
     if (secureAvailable) {
-      await SecureStore.setItemAsync(SECURE_KEYS.AUTH_TOKEN, token, {
-        keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
-      });
+      await saveSecureValue(SECURE_KEYS.AUTH_TOKEN, token);
     } else {
       await AsyncStorage.setItem(SECURE_KEYS.AUTH_TOKEN, token);
     }
@@ -130,7 +179,7 @@ export async function loadAuthToken(): Promise<string | null> {
   try {
     const secureAvailable = await isSecureStoreAvailable();
     if (secureAvailable) {
-      return await SecureStore.getItemAsync(SECURE_KEYS.AUTH_TOKEN);
+      return await loadSecureValue(SECURE_KEYS.AUTH_TOKEN);
     }
     return await AsyncStorage.getItem(SECURE_KEYS.AUTH_TOKEN);
   } catch {
@@ -145,7 +194,7 @@ export async function deleteAuthToken(): Promise<void> {
   try {
     const secureAvailable = await isSecureStoreAvailable();
     if (secureAvailable) {
-      await SecureStore.deleteItemAsync(SECURE_KEYS.AUTH_TOKEN);
+      await deleteSecureValue(SECURE_KEYS.AUTH_TOKEN);
     } else {
       await AsyncStorage.removeItem(SECURE_KEYS.AUTH_TOKEN);
     }
@@ -163,7 +212,7 @@ export async function clearAllSecureStorage(): Promise<void> {
     try {
       const secureAvailable = await isSecureStoreAvailable();
       if (secureAvailable) {
-        await SecureStore.deleteItemAsync(key);
+        await deleteSecureValue(key);
       } else {
         await AsyncStorage.removeItem(key);
       }
@@ -194,13 +243,15 @@ class RateLimiter {
   }
 
   canMakeRequest(): boolean {
-    this.prune();
+    const now = Date.now();
+    // Atomic: prune, check, and push in one operation to prevent race conditions
+    this.requests = this.requests.filter(time => now - time < this.windowMs);
 
     if (this.requests.length >= this.maxRequests) {
       return false;
     }
 
-    this.requests.push(Date.now());
+    this.requests.push(now);
     return true;
   }
 

@@ -3,26 +3,31 @@
  * ThemeProvider, safe area, status bar, font loading
  */
 
-import { Colors } from '@/constants/Colors';
-import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { RouteErrorBoundary } from '@/components/ErrorBoundary';
 import { CelebrationProvider } from '@/components/ui/CelebrationEngine';
+import { OfflineIndicator } from '@/components/ui/OfflineIndicator';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { ConvexClientProvider } from '@/context/ConvexProvider';
 import { DeclutterProvider } from '@/context/DeclutterContext';
-import { FocusProvider } from '@/context/FocusContext';
-import { MascotProvider } from '@/context/MascotContext';
+// FocusProvider removed — focus session state is managed by DeclutterContext
 import { useColorScheme } from '@/hooks/useColorScheme';
+import { recordAppOpen, scheduleOptimalNotification } from '@/services/notificationTiming';
+import { addNotificationResponseListener } from '@/services/notifications';
 import { ThemeProvider } from '@/theme/ThemeProvider';
+import { TransitionStack } from '@/components/navigation/TransitionStack';
+import {
+  SlideFromRight,
+  ModalSlideUp,
+  FadeScale,
+  BottomSheet,
+  DraggableCard,
+  ZoomIn,
+} from '@/constants/transitions';
 import { useFonts } from 'expo-font';
-import { Stack, useRouter, useSegments } from 'expo-router';
+import { useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
-import { recordAppOpen, scheduleOptimalNotification } from '@/services/notificationTiming';
-import {
-  addNotificationResponseListener,
-  removeAllNotificationListeners,
-} from '@/services/notifications';
-import React, { useCallback, useEffect } from 'react';
+import React, { useCallback, useEffect, useRef } from 'react';
 import { StyleSheet } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -38,12 +43,21 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isAnonymous, isLoading, isAuthReady } = useAuth();
   const segments = useSegments();
   const router = useRouter();
+  const hasRedirected = useRef(false);
+
+  // Use string primitive as dep to avoid infinite loop from array identity changes
+  const firstSegment = segments[0] ?? '';
 
   useEffect(() => {
     // Wait until auth state is resolved before redirecting
-    if (!isAuthReady || isLoading) return;
+    if (!isAuthReady || isLoading) {
+      // Reset redirect flag while still loading so we can redirect once resolved
+      hasRedirected.current = false;
+      return;
+    }
 
-    const firstSegment = segments[0] ?? '';
+    // Prevent re-redirecting if we already redirected this auth cycle
+    if (hasRedirected.current) return;
 
     // Screens that don't require authentication
     const publicSegments = ['auth', 'onboarding', 'splash', '+not-found'];
@@ -51,22 +65,33 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
 
     if (!isAuthenticated && !isOnPublicScreen) {
       // Not authenticated and trying to access a protected screen -> onboarding
+      hasRedirected.current = true;
       router.replace('/onboarding');
     } else if (isAuthenticated && !isAnonymous && firstSegment === 'auth') {
       // Authenticated (non-guest) but on auth screens -> home
       // Guest users are allowed on auth screens for account upgrade
+      hasRedirected.current = true;
       router.replace('/');
     }
-  }, [isAuthenticated, isAnonymous, isLoading, isAuthReady, segments, router]);
+  }, [isAuthenticated, isAnonymous, isLoading, isAuthReady, firstSegment, router]);
+
+  // Reset the redirect flag when auth state genuinely changes
+  // (e.g. user signs in or signs out) so new redirects can happen
+  const prevAuthRef = useRef({ isAuthenticated, isAnonymous });
+  useEffect(() => {
+    const prev = prevAuthRef.current;
+    if (prev.isAuthenticated !== isAuthenticated || prev.isAnonymous !== isAnonymous) {
+      hasRedirected.current = false;
+      prevAuthRef.current = { isAuthenticated, isAnonymous };
+    }
+  }, [isAuthenticated, isAnonymous]);
 
   return <>{children}</>;
 }
 
 export default function RootLayout() {
   const rawScheme = useColorScheme();
-  const colorScheme = rawScheme === 'dark' ? 'dark' : 'light';
-  const colors = Colors[colorScheme];
-  const isDark = colorScheme === 'dark';
+  const isDark = rawScheme === 'dark';
 
   const [loaded, error] = useFonts({
     'DM Sans': require('../assets/fonts/DMSans-VariableFont_opsz,wght.ttf'),
@@ -95,15 +120,18 @@ export default function RootLayout() {
     const unsubscribe = addNotificationResponseListener((response) => {
       const data = response.notification.request.content.data;
       if (data?.roomId) {
-        router.push(`/room/${data.roomId}` as any);
-      } else if (data?.category === 'achievement') {
-        router.push('/achievements' as any);
+        router.push(`/room/${String(data.roomId)}`);
+      } else if (data?.category === 'achievement' || data?.achievementId) {
+        router.push('/achievements');
+      } else if (data?.category === 'collectible' || data?.collectibleId) {
+        router.push('/collection');
       }
+      // Other categories (reminder, streak, mascot, focus, motivation)
+      // open the app to the default screen — no explicit navigation needed
     });
 
     return () => {
       unsubscribe();
-      removeAllNotificationListeners();
     };
   }, [router]);
 
@@ -118,42 +146,55 @@ export default function RootLayout() {
               <AuthProvider>
                 <AuthGuard>
                 <DeclutterProvider>
-                  <MascotProvider>
-                    <FocusProvider>
                       <StatusBar style={isDark ? 'light' : 'dark'} animated />
-                      <ErrorBoundary>
-                      <Stack
+                      <OfflineIndicator />
+                      <RouteErrorBoundary>
+                      <TransitionStack
                         screenOptions={{
-                          headerShown: false,
-                          contentStyle: { backgroundColor: colors.background },
-                          animation: 'ios_from_right',
-                          animationDuration: 350,
-                          gestureEnabled: true,
-                          gestureDirection: 'horizontal',
+                          ...SlideFromRight(),
                         }}
                       >
-                        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-                        <Stack.Screen name="splash" options={{ headerShown: false, animation: 'fade', gestureEnabled: false }} />
-                        <Stack.Screen name="auth" options={{ headerShown: false, animation: 'fade' }} />
-                        <Stack.Screen name="onboarding" options={{ headerShown: false, animation: 'fade' }} />
-                        <Stack.Screen name="paywall" options={{ headerShown: false, animation: 'fade', gestureEnabled: false }} />
-                        <Stack.Screen name="notification-permission" options={{ headerShown: false, animation: 'fade', gestureEnabled: false }} />
-                        <Stack.Screen name="camera" options={{ headerShown: false, presentation: 'fullScreenModal' }} />
-                        <Stack.Screen name="focus" options={{ headerShown: false, presentation: 'modal' }} />
-                        <Stack.Screen name="room/[id]" options={{ headerShown: false, animation: 'ios_from_right' }} />
-                        <Stack.Screen name="settings" options={{ headerShown: false }} />
-                        <Stack.Screen name="achievements" options={{ headerShown: false }} />
-                        <Stack.Screen name="insights" options={{ headerShown: false }} />
-                        <Stack.Screen name="mascot" options={{ headerShown: false, presentation: 'modal' }} />
-                        <Stack.Screen name="analysis" options={{ headerShown: false, animation: 'fade' }} />
-                        <Stack.Screen name="social" options={{ headerShown: false }} />
-                        <Stack.Screen name="accountability" options={{ headerShown: false }} />
-                        <Stack.Screen name="collection" options={{ headerShown: false }} />
-                        <Stack.Screen name="+not-found" options={{ headerShown: false }} />
-                      </Stack>
-                      </ErrorBoundary>
-                    </FocusProvider>
-                  </MascotProvider>
+                        {/* ── Tabs ─────────────────────────────────────────── */}
+                        <TransitionStack.Screen name="(tabs)" />
+
+                        {/* ── Auth / Onboarding (fade + scale) ─────────────── */}
+                        <TransitionStack.Screen name="splash" options={{ ...FadeScale(), gestureEnabled: false }} />
+                        <TransitionStack.Screen name="auth" options={{ ...FadeScale() }} />
+                        <TransitionStack.Screen name="onboarding" options={{ ...FadeScale(), gestureEnabled: false }} />
+                        <TransitionStack.Screen name="notification-permission" options={{ ...FadeScale(), gestureEnabled: false }} />
+
+                        {/* ── Push screens (slide from right) ──────────────── */}
+                        <TransitionStack.Screen name="room/[id]" options={{ ...SlideFromRight() }} />
+                        <TransitionStack.Screen name="settings" options={{ ...SlideFromRight() }} />
+                        <TransitionStack.Screen name="achievements" options={{ ...SlideFromRight() }} />
+                        <TransitionStack.Screen name="insights" options={{ ...SlideFromRight() }} />
+                        <TransitionStack.Screen name="social" options={{ ...SlideFromRight() }} />
+                        <TransitionStack.Screen name="accountability" options={{ ...SlideFromRight() }} />
+                        <TransitionStack.Screen name="collection" options={{ ...SlideFromRight() }} />
+                        <TransitionStack.Screen name="challenge/[id]" options={{ ...SlideFromRight() }} />
+                        <TransitionStack.Screen name="task-customize" options={{ ...SlideFromRight() }} />
+                        <TransitionStack.Screen name="today-tasks" options={{ ...SlideFromRight() }} />
+
+                        {/* ── Modals (slide from bottom) ───────────────────── */}
+                        <TransitionStack.Screen name="camera" options={{ ...ModalSlideUp(), gestureEnabled: true }} />
+                        <TransitionStack.Screen name="focus" options={{ ...ModalSlideUp() }} />
+                        <TransitionStack.Screen name="blitz" options={{ ...ModalSlideUp(), gestureEnabled: false }} />
+                        <TransitionStack.Screen name="single-task" options={{ ...ModalSlideUp(), gestureEnabled: false }} />
+
+                        {/* ── Bottom sheets ────────────────────────────────── */}
+                        <TransitionStack.Screen name="mascot" options={{ ...BottomSheet() }} />
+                        <TransitionStack.Screen name="join" options={{ ...BottomSheet() }} />
+                        <TransitionStack.Screen name="task-detail" options={{ ...BottomSheet() }} />
+
+                        {/* ── Special transitions ──────────────────────────── */}
+                        <TransitionStack.Screen name="paywall" options={{ ...DraggableCard() }} />
+                        <TransitionStack.Screen name="analysis" options={{ ...FadeScale() }} />
+                        <TransitionStack.Screen name="session-complete" options={{ ...ZoomIn() }} />
+                        <TransitionStack.Screen name="room-complete" options={{ ...ZoomIn() }} />
+
+                        <TransitionStack.Screen name="+not-found" options={{ ...FadeScale() }} />
+                      </TransitionStack>
+                      </RouteErrorBoundary>
                 </DeclutterProvider>
                 </AuthGuard>
               </AuthProvider>

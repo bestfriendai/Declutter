@@ -1,10 +1,8 @@
 import { api } from '@/convex/_generated/api';
 import { useAuth } from '@/context/AuthContext';
 import { useDeclutter } from '@/context/DeclutterContext';
-import { AmbientBackdrop } from '@/components/ui/AmbientBackdrop';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
-import { PRODUCT_IDS, useRevenueCat } from '@/hooks/useRevenueCat';
 import {
   LivingSituation,
   MascotPersonality,
@@ -12,445 +10,422 @@ import {
   OnboardingEnergyLevel,
   UserProfile,
 } from '@/types/declutter';
-import { Ionicons } from '@expo/vector-icons';
+import { Heart, Camera, ChevronLeft, Check, CheckCircle, Zap, BatteryLow, BatteryMedium, BatteryFull, Home, Building, BedDouble, Users, Play, Flag, Layers, Box, BarChart3, Award, Sparkles } from 'lucide-react-native';
 import { useMutation } from 'convex/react';
 import * as Haptics from 'expo-haptics';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Redirect, router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  ActivityIndicator,
-  Alert,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
-import Animated, { FadeInDown, FadeOutUp } from 'react-native-reanimated';
+import Animated, { FadeInDown, FadeOutUp, useAnimatedStyle, useSharedValue, withRepeat, withTiming, Easing } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-type StepKind =
+// ─── V1 Color Palette ────────────────────────────────────────────────────────
+const V1 = {
+  coral: '#FF6B6B',
+  green: '#66BB6A',
+  amber: '#FFB74D',
+  gold: '#FFD54F',
+  blue: '#64B5F6',
+  indigo: '#6366F1',
+  dark: {
+    bg: '#0C0C0C',
+    card: '#1A1A1A',
+    border: 'rgba(255,255,255,0.08)',
+    text: '#FFFFFF',
+    textSecondary: 'rgba(255,255,255,0.5)',
+    textMuted: 'rgba(255,255,255,0.3)',
+  },
+  light: {
+    bg: '#FAFAFA',
+    card: '#F6F7F8',
+    border: '#E5E7EB',
+    text: '#1A1A1A',
+    textSecondary: '#6B7280',
+    textMuted: '#9CA3AF',
+  },
+};
+
+// ─── Step definitions ────────────────────────────────────────────────────────
+type StepId =
   | 'welcome'
-  | 'intro'
-  | 'single'
-  | 'multi'
-  | 'guide'
-  | 'loading'
+  | 'problem'
+  | 'energy'
+  | 'living'
+  | 'struggle'
+  | 'time'
+  | 'motivation'
+  | 'scan'
+  | 'mascot'
+  | 'building'
   | 'preview'
-  | 'commitment'
-  | 'paywall';
-
-type OptionValue = string | number;
-
-interface StepOption<T extends OptionValue = string> {
-  value: T;
-  title: string;
-  subtitle: string;
-  emoji?: string;
-}
-
-interface OnboardingStep {
-  id: string;
-  kind: StepKind;
-  kicker: string;
-  title: string;
-  description: string;
-  accent: string;
-}
+  | 'commitment';
 
 interface OnboardingSelections {
+  mascotName?: string;
   livingSituation?: LivingSituation;
   cleaningStruggles: string[];
   energyLevel?: OnboardingEnergyLevel;
   timeAvailability?: number;
   motivationStyle?: string;
   guidePersonality?: MascotPersonality;
-  commitment?: string;
+  commitment?: boolean;
 }
 
-const BODY_FONT = 'DM Sans';
-const DISPLAY_FONT = 'Bricolage Grotesque';
-
-const STEP_SEQUENCE: OnboardingStep[] = [
-  {
-    id: 'welcome',
-    kind: 'welcome',
-    kicker: 'Step 1 of 12',
-    title: 'Your space deserves to feel calm.',
-    description:
-      'Declutterly builds a plan around how your brain actually works -- not how a productivity app wishes it did.',
-    accent: '#FFB547',
-  },
-  {
-    id: 'problem',
-    kind: 'intro',
-    kicker: 'Step 2 of 12',
-    title: 'Clutter is a systems problem, not a character flaw.',
-    description:
-      'In 2 minutes, we will build a plan around your space, your energy, and the kind of support that keeps you moving -- even on hard days.',
-    accent: '#E85A4F',
-  },
-  {
-    id: 'living',
-    kind: 'single',
-    kicker: 'Step 3 of 12',
-    title: 'What kind of space are you managing?',
-    description: 'Your plan should match the amount of visual noise and shared chaos around you.',
-    accent: '#6366F1',
-  },
-  {
-    id: 'struggles',
-    kind: 'multi',
-    kicker: 'Step 4 of 12',
-    title: 'What gets you stuck most often?',
-    description: 'Pick every one that feels true. No judgment -- we are building around the pattern, not blaming it.',
-    accent: '#E85A4F',
-  },
-  {
-    id: 'energy',
-    kind: 'single',
-    kicker: 'Step 5 of 12',
-    title: 'How much energy do you realistically have today?',
-    description: 'We will size your next actions to your real energy, not your aspirational energy.',
-    accent: '#32D583',
-  },
-  {
-    id: 'time',
-    kind: 'single',
-    kicker: 'Step 6 of 12',
-    title: 'How much time can you reliably give this?',
-    description: 'Consistency matters more than heroic clean-up bursts.',
-    accent: '#FFB547',
-  },
-  {
-    id: 'motivation',
-    kind: 'single',
-    kicker: 'Step 7 of 12',
-    title: 'What kind of motivation actually works on you?',
-    description: 'The app will lean into the tone that helps you start and stay with it.',
-    accent: '#6366F1',
-  },
-  {
-    id: 'guide',
-    kind: 'guide',
-    kicker: 'Step 8 of 12',
-    title: 'Choose the guide you want in your corner.',
-    description: 'Different kinds of encouragement feel right to different brains. Pick the one you would actually listen to.',
-    accent: '#32D583',
-  },
-  {
-    id: 'building',
-    kind: 'loading',
-    kicker: 'Step 9 of 12',
-    title: 'Building your personal rhythm...',
-    description: 'Matching tasks to your energy, sizing sessions to your time, and keeping it all doable.',
-    accent: '#FFB547',
-  },
-  {
-    id: 'preview',
-    kind: 'preview',
-    kicker: 'Step 10 of 12',
-    title: 'Here is your starting plan.',
-    description: 'This is designed to feel possible on your hardest days, not just your best ones.',
-    accent: '#6366F1',
-  },
-  {
-    id: 'commitment',
-    kind: 'commitment',
-    kicker: 'Step 11 of 12',
-    title: 'Pick the promise you can actually keep.',
-    description: 'A smaller promise you keep beats a bigger promise you resent.',
-    accent: '#32D583',
-  },
-  {
-    id: 'paywall',
-    kind: 'paywall',
-    kicker: 'Step 12 of 12',
-    title: 'Lock in momentum while it is fresh.',
-    description:
-      'Get the full guided plan, streak support, and room-by-room coaching. You can absolutely continue without upgrading.',
-    accent: '#FFB547',
-  },
+const STEP_IDS: StepId[] = [
+  'welcome',
+  'problem',
+  'energy',
+  'living',
+  'struggle',
+  'time',
+  'motivation',
+  'scan',
+  'mascot',
+  'building',
+  'preview',
+  'commitment',
 ];
 
-const LIVING_OPTIONS: StepOption<LivingSituation>[] = [
-  { value: 'studio', title: 'Studio or one-room space', subtitle: 'Everything is visible all at once', emoji: '🛋️' },
-  { value: 'apartment', title: 'Apartment', subtitle: 'A few zones, limited storage, fast clutter spread', emoji: '🏢' },
-  { value: 'house', title: 'House', subtitle: 'Multiple rooms, multiple mess hotspots', emoji: '🏠' },
-  { value: 'dorm', title: 'Dorm or temporary setup', subtitle: 'Tight footprint, high friction, very little room to hide mess', emoji: '🛏️' },
-  { value: 'shared', title: 'Shared home', subtitle: 'Other people affect your systems and surfaces', emoji: '👥' },
+// Steps that show the step indicator (1-10)
+const NUMBERED_STEPS: StepId[] = [
+  'welcome',
+  'problem',
+  'energy',
+  'living',
+  'struggle',
+  'time',
+  'motivation',
+  'scan',
+  'mascot',
+  'building',
 ];
 
-const STRUGGLE_OPTIONS: StepOption<string>[] = [
-  { value: 'overwhelm', title: 'I shut down when it looks too big', subtitle: 'You need smaller entry points', emoji: '🫠' },
-  { value: 'starting', title: 'Starting is the hardest part', subtitle: 'You need activation, not more advice', emoji: '🚀' },
-  { value: 'finishing', title: 'I start strong and then trail off', subtitle: 'You need momentum protection', emoji: '🏃' },
-  { value: 'decision-fatigue', title: 'I get stuck deciding what to do first', subtitle: 'You need clear sequencing', emoji: '🧠' },
-  { value: 'maintenance', title: 'I can reset once, but I cannot keep it going', subtitle: 'You need lighter daily systems', emoji: '♻️' },
-  { value: 'shame', title: 'Mess makes me feel ashamed or behind', subtitle: 'You need encouragement without guilt', emoji: '❤️' },
-];
-
-const ENERGY_OPTIONS: StepOption<OnboardingEnergyLevel>[] = [
-  { value: 'exhausted', title: 'Barely functioning', subtitle: 'Give me the smallest possible wins', emoji: '😮‍💨' },
-  { value: 'low', title: 'Low energy', subtitle: 'I can do a little, but not much', emoji: '🌙' },
-  { value: 'moderate', title: 'Steady enough', subtitle: 'I can follow a focused short plan', emoji: '🌤️' },
-  { value: 'high', title: 'Good energy', subtitle: 'I can make real progress today', emoji: '⚡' },
-  { value: 'hyperfocused', title: 'Locked in', subtitle: 'Give me something meaty while I have the window', emoji: '🔥' },
-];
-
-const TIME_OPTIONS: StepOption<number>[] = [
-  { value: 10, title: '10 minutes', subtitle: 'A quick reset I can actually repeat', emoji: '⏱️' },
-  { value: 20, title: '20 minutes', subtitle: 'Short but meaningful', emoji: '🕒' },
-  { value: 30, title: '30 minutes', subtitle: 'A solid focused block', emoji: '🧹' },
-  { value: 45, title: '45+ minutes', subtitle: 'I can go deeper when needed', emoji: '🏁' },
-];
-
-const MOTIVATION_OPTIONS: StepOption<string>[] = [
-  { value: 'gentle', title: 'Gentle encouragement', subtitle: 'Compassion helps me stay in it', emoji: '🌿' },
-  { value: 'structured', title: 'Clear structure', subtitle: 'Tell me exactly what comes next', emoji: '🧭' },
-  { value: 'celebration', title: 'Visible wins and celebration', subtitle: 'I need momentum and payoff', emoji: '🎯' },
-  { value: 'challenge', title: 'A bit of challenge', subtitle: 'I like goals, streaks, and momentum', emoji: '🏆' },
-];
-
-const COMMITMENT_OPTIONS: StepOption<string>[] = [
-  { value: 'tiny', title: 'I will protect 10 minutes a day.', subtitle: 'Keep the bar low and keep it sacred.' },
-  { value: 'steady', title: 'I will do one guided reset every day.', subtitle: 'Consistency over intensity.' },
-  { value: 'focused', title: 'I will follow the plan this week.', subtitle: 'I want momentum fast.' },
-];
-
-function getTheme(isDark: boolean) {
-  return {
-    background: isDark ? '#09090D' : '#F7F2EB',
-    surface: isDark ? 'rgba(21,21,28,0.94)' : 'rgba(255,255,255,0.86)',
-    elevated: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(244,238,233,0.95)',
-    text: isDark ? '#FAF6F0' : '#111114',
-    textSecondary: isDark ? '#B7B1A8' : '#6D6761',
-    textMuted: isDark ? '#7B766E' : '#9A948F',
-    border: isDark ? 'rgba(255,255,255,0.09)' : 'rgba(52,39,28,0.08)',
-    strongBorder: isDark ? 'rgba(255,255,255,0.18)' : 'rgba(52,39,28,0.16)',
-    primaryButton: isDark ? '#FAF6F0' : '#111114',
-    primaryButtonText: isDark ? '#111114' : '#FAF6F0',
-    secondaryButton: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.72)',
-    secondaryButtonText: isDark ? '#FAF6F0' : '#111114',
-    progressTrack: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(52,39,28,0.10)',
-  };
+function getStepNumber(id: StepId): number | null {
+  const idx = NUMBERED_STEPS.indexOf(id);
+  return idx >= 0 ? idx + 1 : null;
 }
 
-function getAccentGradient(accent: string, isDark: boolean): readonly [string, string, string] {
-  if (accent === '#FFB547') {
-    return isDark
-      ? ['#FFDCA7', '#FFB547', '#FF8C62']
-      : ['#FFD188', '#FFB547', '#FF9667'];
-  }
-
-  if (accent === '#E85A4F') {
-    return isDark
-      ? ['#FFBBB1', '#E85A4F', '#D93B79']
-      : ['#FFB7A9', '#F06C5E', '#DE5C8D'];
-  }
-
-  if (accent === '#32D583') {
-    return isDark
-      ? ['#BDF5D7', '#32D583', '#1DAE8F']
-      : ['#B3F0D0', '#3BCA86', '#29B19C'];
-  }
-
-  return isDark
-    ? ['#D9D2FF', '#8B82FF', '#5B6DFF']
-    : ['#D5CFFF', '#9387FF', '#6572FF'];
-}
-
-function buildPlanSummary(selections: OnboardingSelections) {
-  const roomCopy: Record<LivingSituation, string> = {
-    studio: 'single-zone resets that lower visual chaos fast',
-    apartment: 'surface-first routines that stop clutter from spreading room to room',
-    house: 'rotating room focus so the whole house stops feeling impossible',
-    dorm: 'tight-space systems that reduce friction immediately',
-    shared: 'shared-space boundaries and personal reset anchors',
-  };
-
-  const energyCopy: Record<OnboardingEnergyLevel, string> = {
-    exhausted: 'tiny wins and no-shame entry points',
-    low: 'gentle pacing that still creates visible progress',
-    moderate: 'clear short sessions with satisfying momentum',
-    high: 'deeper blocks that convert energy into relief',
-    hyperfocused: 'structured sprint targets while you have the window',
-  };
-
-  const motivationCopy: Record<string, string> = {
-    gentle: 'warm prompts and low-pressure support',
-    structured: 'clear sequencing and fewer decisions',
-    celebration: 'visible wins, rewards, and momentum markers',
-    challenge: 'streaks, targets, and stronger progress pressure',
-  };
-
-  return {
-    rhythm: `${selections.timeAvailability ?? 10}-minute daily resets`,
-    focus:
-      selections.livingSituation
-        ? roomCopy[selections.livingSituation]
-        : 'calmer room-by-room resets',
-    support:
-      selections.energyLevel
-        ? energyCopy[selections.energyLevel]
-        : 'energy-aware guidance',
-    motivation:
-      selections.motivationStyle
-        ? motivationCopy[selections.motivationStyle]
-        : 'steady accountability',
-  };
-}
-
-function buildPreviewChecklist(selections: OnboardingSelections) {
-  const struggleLead =
-    selections.cleaningStruggles[0] === 'decision-fatigue'
-      ? 'Start with a single obvious surface so there is zero planning friction.'
-      : selections.cleaningStruggles[0] === 'overwhelm'
-        ? 'Start with one micro-zone to get a fast nervous-system win.'
-        : 'Start with the easiest visible win so momentum shows up immediately.';
-
-  return [
-    struggleLead,
-    `Use ${selections.timeAvailability ?? 10}-minute guided sessions until the habit feels automatic.`,
-    selections.energyLevel === 'exhausted'
-      ? 'Default to maintenance mode on hard days. Progress still counts.'
-      : 'Scale the session to your current energy instead of forcing the same plan every day.',
-    selections.motivationStyle === 'celebration'
-      ? 'Lean on streaks, rewards, and before/after progress markers.'
-      : 'Lean on one clear next step instead of a full-room overhaul.',
-  ];
-}
-
-function OnboardingOption({
+// ─── Option pill component ──────────────────────────────────────────────────
+function OptionPill({
+  icon,
   title,
   subtitle,
-  emoji,
   selected,
-  colors,
-  accent,
   onPress,
+  isDark,
 }: {
+  icon?: React.ReactNode;
   title: string;
   subtitle: string;
-  emoji?: string;
   selected: boolean;
-  colors: ReturnType<typeof getTheme>;
-  accent: string;
   onPress: () => void;
+  isDark: boolean;
 }) {
+  const t = isDark ? V1.dark : V1.light;
   return (
     <Pressable
       onPress={onPress}
       style={[
-        styles.optionCard,
+        styles.optionPill,
         {
-          backgroundColor: selected ? `${accent}18` : colors.surface,
-          borderColor: selected ? accent : colors.border,
+          backgroundColor: selected ? `${V1.coral}15` : t.card,
+          borderColor: selected ? V1.coral : t.border,
+          borderWidth: selected ? 1.5 : 1,
         },
       ]}
     >
+      {icon && <View style={styles.optionIcon}>{icon}</View>}
       <View style={styles.optionTextWrap}>
-        <View style={styles.optionTitleRow}>
-          {emoji ? <Text style={styles.optionEmoji}>{emoji}</Text> : null}
-          <Text style={[styles.optionTitle, { color: colors.text }]}>{title}</Text>
-        </View>
-        <Text style={[styles.optionSubtitle, { color: colors.textSecondary }]}>{subtitle}</Text>
-      </View>
-      <View
-        style={[
-          styles.optionCheck,
-          {
-            borderColor: selected ? accent : colors.strongBorder,
-            backgroundColor: selected ? accent : 'transparent',
-          },
-        ]}
-      >
-        {selected ? <Ionicons name="checkmark" size={14} color="#0B0B0E" /> : null}
+        <Text style={[styles.optionTitle, { color: t.text }]}>{title}</Text>
+        <Text style={[styles.optionSubtitle, { color: t.textSecondary }]}>
+          {subtitle}
+        </Text>
       </View>
     </Pressable>
   );
 }
 
+// ─── Time grid option ────────────────────────────────────────────────────────
+function TimeOption({
+  value: _value,
+  label,
+  subtitle,
+  selected,
+  onPress,
+  isDark,
+}: {
+  value: number;
+  label: string;
+  subtitle: string;
+  selected: boolean;
+  onPress: () => void;
+  isDark: boolean;
+}) {
+  const t = isDark ? V1.dark : V1.light;
+  return (
+    <Pressable
+      onPress={onPress}
+      style={[
+        styles.timeOption,
+        {
+          backgroundColor: selected ? `${V1.coral}15` : t.card,
+          borderColor: selected ? V1.coral : t.border,
+          borderWidth: selected ? 1.5 : 1,
+        },
+      ]}
+    >
+      <Text style={[styles.timeValue, { color: t.text }]}>{label}</Text>
+      <Text style={[styles.timeSubtitle, { color: t.textSecondary }]}>
+        {subtitle}
+      </Text>
+    </Pressable>
+  );
+}
+
+// ─── Step dots indicator ─────────────────────────────────────────────────────
+function StepDots({
+  total,
+  current,
+  isDark,
+}: {
+  total: number;
+  current: number;
+  isDark: boolean;
+}) {
+  return (
+    <View style={styles.dotsRow}>
+      {Array.from({ length: total }).map((_, i) => (
+        <View
+          key={i}
+          style={[
+            styles.dot,
+            {
+              backgroundColor:
+                i < current
+                  ? V1.coral
+                  : i === current
+                    ? V1.coral
+                    : isDark
+                      ? 'rgba(255,255,255,0.15)'
+                      : 'rgba(0,0,0,0.12)',
+              width: i === current ? 8 : 6,
+              height: i === current ? 8 : 6,
+            },
+          ]}
+        />
+      ))}
+    </View>
+  );
+}
+
+// ─── Loading spinner with progress steps ─────────────────────────────────────
+function BuildingPlanView({ isDark }: { isDark: boolean }) {
+  const t = isDark ? V1.dark : V1.light;
+  const rotation = useSharedValue(0);
+  const [activeStep, setActiveStep] = useState(0);
+
+  useEffect(() => {
+    rotation.value = withRepeat(
+      withTiming(360, { duration: 2000, easing: Easing.linear }),
+      -1,
+      false
+    );
+    const t1 = setTimeout(() => setActiveStep(1), 800);
+    const t2 = setTimeout(() => setActiveStep(2), 1600);
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
+  }, [rotation]);
+
+  const spinStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${rotation.value}deg` }],
+  }));
+
+  const steps = [
+    'Analyzing preferences',
+    'Building personal plan',
+    'Matching your guide',
+  ];
+
+  return (
+    <View style={styles.buildingWrap}>
+      {/* Spinning pie chart icon */}
+      <Animated.View style={[styles.buildingSpinner, spinStyle]}>
+        <View style={[styles.pieChart, { borderColor: V1.coral }]}>
+          <View style={[styles.pieSlice, { backgroundColor: V1.coral }]} />
+        </View>
+      </Animated.View>
+
+      <Text style={[styles.buildingTitle, { color: t.text }]}>
+        Building your plan...
+      </Text>
+      <Text style={[styles.buildingSubtitle, { color: t.textSecondary }]}>
+        Analyzing your answers
+      </Text>
+
+      <View style={styles.buildingSteps}>
+        {steps.map((step, i) => (
+          <View key={step} style={styles.buildingStepRow}>
+            <View
+              style={[
+                styles.buildingStepDot,
+                {
+                  backgroundColor:
+                    i < activeStep
+                      ? V1.green
+                      : i === activeStep
+                        ? V1.coral
+                        : 'transparent',
+                  borderColor:
+                    i < activeStep
+                      ? V1.green
+                      : i === activeStep
+                        ? V1.coral
+                        : t.textMuted,
+                },
+              ]}
+            >
+              {i < activeStep && <Check size={12} color="#fff" />}
+            </View>
+            <Text
+              style={[
+                styles.buildingStepText,
+                {
+                  color:
+                    i <= activeStep ? t.text : t.textMuted,
+                },
+              ]}
+            >
+              {step}
+            </Text>
+          </View>
+        ))}
+      </View>
+
+      {/* Red progress bar */}
+      <View style={[styles.buildingProgress, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }]}>
+        <Animated.View
+          style={[
+            styles.buildingProgressFill,
+            {
+              backgroundColor: V1.coral,
+              width: `${((activeStep + 1) / 3) * 100}%`,
+            },
+          ]}
+        />
+      </View>
+    </View>
+  );
+}
+
+// ─── Plan preview step card ──────────────────────────────────────────────────
+function PlanStepCard({
+  number,
+  title,
+  description,
+  isDark,
+  delay,
+}: {
+  number: number;
+  title: string;
+  description: string;
+  isDark: boolean;
+  delay: number;
+}) {
+  const t = isDark ? V1.dark : V1.light;
+  return (
+    <Animated.View
+      entering={FadeInDown.delay(delay).duration(350)}
+      style={[styles.planCard, { backgroundColor: t.card, borderColor: t.border }]}
+    >
+      <View style={styles.planCardNumber}>
+        <Text style={styles.planCardNumberText}>{number}</Text>
+      </View>
+      <View style={styles.planCardContent}>
+        <Text style={[styles.planCardTitle, { color: t.text }]}>{title}</Text>
+        <Text style={[styles.planCardDesc, { color: t.textSecondary }]}>
+          {description}
+        </Text>
+      </View>
+    </Animated.View>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MAIN SCREEN
+// ─────────────────────────────────────────────────────────────────────────────
 export default function OnboardingScreen() {
   const rawScheme = useColorScheme();
   const isDark = rawScheme === 'dark';
-  const colors = getTheme(isDark);
+  const t = isDark ? V1.dark : V1.light;
   const insets = useSafeAreaInsets();
   const reducedMotion = useReducedMotion();
   const { isAuthenticated } = useAuth();
   const { user, setUser, createMascot } = useDeclutter();
   const updateUser = useMutation(api.users.update);
-  const {
-    plans,
-    selectedPlan,
-    setSelectedPlan,
-    purchaseSelectedPlan,
-    restorePurchases,
-    isLoading: revenueLoading,
-    error: revenueError,
-  } = useRevenueCat();
 
   const [stepIndex, setStepIndex] = useState(0);
-  const [isFinishing, setIsFinishing] = useState(false);
   const [answers, setAnswers] = useState<OnboardingSelections>({
     cleaningStruggles: [],
+    mascotName: 'Dusty',
+    commitment: false,
   });
 
-  const step = STEP_SEQUENCE[stepIndex];
-  const accentGradient = getAccentGradient(step.accent, isDark);
-  const previewPlan = useMemo(() => buildPlanSummary(answers), [answers]);
-  const previewChecklist = useMemo(() => buildPreviewChecklist(answers), [answers]);
-  const displayPlans = useMemo(() => {
-    const filtered = plans.filter((plan) => plan.tier === 'monthly' || plan.tier === 'annual');
-    return filtered.length > 0 ? filtered : plans;
-  }, [plans]);
+  const stepId = STEP_IDS[stepIndex];
+  const stepNumber = getStepNumber(stepId);
 
+  // Auto-advance from building step
   useEffect(() => {
-    if (selectedPlan) return;
-    setSelectedPlan(PRODUCT_IDS.annual);
-  }, [selectedPlan, setSelectedPlan]);
-
-  useEffect(() => {
-    if (step.kind !== 'loading') return undefined;
-
+    if (stepId !== 'building') return undefined;
     const timer = setTimeout(() => {
-      setStepIndex((current) => Math.min(current + 1, STEP_SEQUENCE.length - 1));
-    }, reducedMotion ? 600 : 1700);
-
+      setStepIndex((c) => Math.min(c + 1, STEP_IDS.length - 1));
+    }, reducedMotion ? 800 : 2400);
     return () => clearTimeout(timer);
-  }, [step.kind, reducedMotion]);
+  }, [stepId, reducedMotion]);
 
   const canContinue = useMemo(() => {
-    switch (step.id) {
-      case 'living':
-        return !!answers.livingSituation;
-      case 'struggles':
-        return answers.cleaningStruggles.length > 0;
+    switch (stepId) {
+      case 'welcome':
+      case 'problem':
+        return true;
       case 'energy':
         return !!answers.energyLevel;
+      case 'living':
+        return !!answers.livingSituation;
+      case 'struggle':
+        return answers.cleaningStruggles.length > 0;
       case 'time':
         return !!answers.timeAvailability;
       case 'motivation':
         return !!answers.motivationStyle;
-      case 'guide':
-        return !!answers.guidePersonality;
+      case 'scan':
+        return true;
+      case 'mascot':
+        return !!answers.mascotName && answers.mascotName.trim().length >= 1;
+      case 'preview':
+        return true;
       case 'commitment':
-        return !!answers.commitment;
-      case 'loading':
-      case 'paywall':
+        return true;
+      case 'building':
         return false;
       default:
         return true;
     }
-  }, [answers, step.id, step.kind]);
+  }, [answers, stepId]);
 
   const persistOnboarding = useCallback(async () => {
     const baseUser: UserProfile = {
       id: user?.id ?? 'local-user',
-      name: user?.name ?? 'Declutterer',
+      name: user?.name || 'Declutterer',
       avatar: user?.avatar,
       createdAt: user?.createdAt ?? new Date(),
       onboardingComplete: true,
@@ -459,7 +434,7 @@ export default function OnboardingScreen() {
       energyLevel: answers.energyLevel,
       timeAvailability: answers.timeAvailability,
       motivationStyle: answers.motivationStyle,
-      guidePersonality: answers.guidePersonality,
+      guidePersonality: answers.guidePersonality ?? 'dusty',
       subscriptionStatus: user?.subscriptionStatus,
       subscriptionTier: user?.subscriptionTier,
       trialEndsAt: user?.trialEndsAt,
@@ -469,10 +444,9 @@ export default function OnboardingScreen() {
 
     setUser(baseUser);
 
-    if (answers.guidePersonality) {
-      const guide = MASCOT_PERSONALITIES[answers.guidePersonality];
-      createMascot(guide.name, answers.guidePersonality);
-    }
+    const personality = answers.guidePersonality ?? 'dusty';
+    const guide = MASCOT_PERSONALITIES[personality];
+    createMascot(answers.mascotName || guide.name, personality);
 
     if (isAuthenticated) {
       try {
@@ -490,998 +464,1150 @@ export default function OnboardingScreen() {
     }
   }, [answers, createMascot, isAuthenticated, setUser, updateUser, user]);
 
-  const finishOnboarding = useCallback(async () => {
-    if (isFinishing) return;
-    setIsFinishing(true);
-    try {
-      await persistOnboarding();
-      router.replace('/notification-permission');
-    } finally {
-      setIsFinishing(false);
-    }
-  }, [isFinishing, persistOnboarding]);
+  // Complete onboarding and navigate to paywall
+  const completeOnboarding = useCallback(async () => {
+    await persistOnboarding();
+    router.push('/paywall');
+  }, [persistOnboarding]);
 
-  const handlePrimaryAction = useCallback(async () => {
-    if (step.kind === 'paywall') {
-      const success = await purchaseSelectedPlan();
-      if (success) {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        await finishOnboarding();
-      } else if (revenueError) {
-        Alert.alert('Subscription unavailable', revenueError);
-      }
-      return;
-    }
-
+  const handleNext = useCallback(() => {
     if (!canContinue) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setStepIndex((current) => Math.min(current + 1, STEP_SEQUENCE.length - 1));
-  }, [canContinue, finishOnboarding, purchaseSelectedPlan, revenueError, step.kind]);
+    setStepIndex((c) => Math.min(c + 1, STEP_IDS.length - 1));
+  }, [canContinue]);
 
   const handleBack = useCallback(() => {
-    if (stepIndex === 0 || step.kind === 'loading') return;
+    if (stepIndex === 0 || stepId === 'building') return;
     Haptics.selectionAsync();
-    setStepIndex((current) => Math.max(current - 1, 0));
-  }, [step.kind, stepIndex]);
+    setStepIndex((c) => Math.max(c - 1, 0));
+  }, [stepId, stepIndex]);
 
-  const toggleStruggle = useCallback((value: string) => {
+  const handleSkip = useCallback(() => {
     Haptics.selectionAsync();
-    setAnswers((current) => ({
-      ...current,
-      cleaningStruggles: current.cleaningStruggles.includes(value)
-        ? current.cleaningStruggles.filter((item) => item !== value)
-        : [...current.cleaningStruggles, value],
-    }));
+    setStepIndex((c) => Math.min(c + 1, STEP_IDS.length - 1));
   }, []);
 
-  const selectGuide = useCallback((value: MascotPersonality) => {
-    Haptics.selectionAsync();
-    setAnswers((current) => ({ ...current, guidePersonality: value }));
-  }, []);
-
-  const planTitle =
-    answers.energyLevel === 'exhausted'
-      ? 'Gentle reset mode'
-      : answers.energyLevel === 'hyperfocused'
-        ? 'Momentum sprint mode'
-        : 'Steady reset mode';
-
-  if (user?.onboardingComplete) {
+  // Redirect if already onboarded
+  if (user?.onboardingComplete && isAuthenticated) {
     return <Redirect href="/(tabs)" />;
   }
 
-  const headerRight =
-    stepIndex === 0 ? (
-      <View style={styles.authShortcuts}>
-        <Pressable
-          onPress={() => router.push('/auth/login')}
-          style={[styles.shortcutButton, { borderColor: colors.border }]}
-        >
-          <Text style={[styles.shortcutLabel, { color: colors.textSecondary }]}>Log In</Text>
-        </Pressable>
-        <Pressable
-          onPress={() => router.push('/auth/signup')}
-          style={[styles.shortcutButton, { borderColor: colors.border }]}
-        >
-          <Text style={[styles.shortcutLabel, { color: colors.textSecondary }]}>Sign Up</Text>
-        </Pressable>
-      </View>
-    ) : (
-      <Text style={[styles.progressLabel, { color: colors.textMuted }]}>
-        {STEP_SEQUENCE.length - stepIndex} left
-      </Text>
-    );
+  // ─── Step header with back + step counter ──────────────────────────────────
+  const showBackButton = stepIndex > 0 && stepId !== 'building';
+  const showSkip =
+    stepId === 'living' ||
+    stepId === 'struggle' ||
+    stepId === 'time' ||
+    stepId === 'motivation';
 
-  return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <StatusBar style={isDark ? 'light' : 'dark'} />
-      <AmbientBackdrop isDark={isDark} variant="onboarding" />
-      <LinearGradient
-        colors={
-          isDark
-            ? ['rgba(255,181,71,0.14)', 'rgba(99,102,241,0.10)', 'rgba(11,11,14,0)']
-            : ['rgba(255,181,71,0.18)', 'rgba(99,102,241,0.10)', 'rgba(247,242,235,0)']
-        }
-        start={{ x: 0.5, y: 0 }}
-        end={{ x: 0.5, y: 1 }}
-        style={StyleSheet.absoluteFill}
-      />
+  const renderHeader = () => {
+    if (stepId === 'welcome' || stepId === 'building' || stepId === 'preview' || stepId === 'commitment') {
+      return null;
+    }
 
-      <View
-        style={[
-          styles.shell,
-          {
-            paddingTop: insets.top + 12,
-            paddingBottom: Math.max(insets.bottom, 18),
-          },
-        ]}
-      >
-        <View style={styles.headerRow}>
-          <Pressable
-            onPress={handleBack}
-            disabled={stepIndex === 0 || step.kind === 'loading'}
-            style={[
-              styles.backButton,
-              {
-                opacity: stepIndex === 0 || step.kind === 'loading' ? 0.35 : 1,
-                borderColor: colors.border,
-                backgroundColor: colors.surface,
-              },
-            ]}
-          >
-            <Ionicons name="chevron-back" size={18} color={colors.text} />
+    return (
+      <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
+        {showBackButton ? (
+          <Pressable onPress={handleBack} style={styles.backBtn} hitSlop={12}>
+            <ChevronLeft size={22} color={t.text} />
           </Pressable>
+        ) : (
+          <View style={{ width: 32 }} />
+        )}
 
-          <View style={styles.progressTrack}>
-            <View
-              style={[
-                styles.progressBar,
-                {
-                  width: `${((stepIndex + 1) / STEP_SEQUENCE.length) * 100}%`,
-                  backgroundColor: step.accent,
-                },
-              ]}
-            />
-          </View>
-
-          <View style={styles.headerRight}>{headerRight}</View>
+        <View style={styles.headerCenter}>
+          {stepNumber !== null && (
+            <>
+              <Text style={[styles.stepLabel, { color: V1.coral }]}>
+                STEP {stepNumber} OF 10
+              </Text>
+              <StepDots total={10} current={stepNumber - 1} isDark={isDark} />
+            </>
+          )}
         </View>
 
-        <ScrollView
-          style={styles.scrollView}
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
-        >
-          <Animated.View
-            key={step.id}
-            entering={FadeInDown.duration(reducedMotion ? 120 : 280)}
-            exiting={FadeOutUp.duration(reducedMotion ? 120 : 180)}
-            style={[styles.heroCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
-          >
-            <View
-              style={[
-                styles.heroGlow,
-                { backgroundColor: isDark ? `${step.accent}20` : `${step.accent}22` },
-              ]}
-            />
-            <LinearGradient
-              colors={[
-                isDark ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.76)',
-                'rgba(255,255,255,0)',
-              ]}
-              start={{ x: 0.2, y: 0 }}
-              end={{ x: 0.8, y: 1 }}
-              style={styles.heroSheen}
-            />
+        {showSkip ? (
+          <Pressable onPress={handleSkip} hitSlop={12}>
+            <Text style={[styles.skipText, { color: t.textSecondary }]}>
+              Skip
+            </Text>
+          </Pressable>
+        ) : (
+          <View style={{ width: 32 }} />
+        )}
+      </View>
+    );
+  };
 
-            <View style={styles.heroTopRow}>
-              <LinearGradient colors={accentGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.kickerPill}>
-                <Text style={styles.kickerText}>{step.kicker}</Text>
-              </LinearGradient>
-              {step.id === 'welcome' ? (
-                <View
-                  style={[
-                    styles.heroMicroChip,
-                    {
-                      backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.72)',
-                      borderColor: colors.border,
-                    },
-                  ]}
-                >
-                  <Ionicons name="checkmark-circle-outline" size={14} color={isDark ? '#FFEBD0' : '#6B4B24'} />
-                  <Text style={[styles.heroMicroChipText, { color: isDark ? '#E8DDD0' : '#6D5B49' }]}>
-                    built around real energy
-                  </Text>
-                </View>
-              ) : null}
+  // ─── Step content ──────────────────────────────────────────────────────────
+  const renderStep = () => {
+    switch (stepId) {
+      // ── WELCOME ──────────────────────────────────────────────────────
+      case 'welcome':
+        return (
+          <View style={[styles.centerContent, { paddingTop: insets.top + 60 }]}>
+            {/* Mascot circle */}
+            <View style={styles.mascotCircle}>
+              <Text style={styles.mascotEmoji}>🐹</Text>
             </View>
 
-            <Text style={[styles.title, { color: colors.text }]}>{step.title}</Text>
-            <Text style={[styles.description, { color: colors.textSecondary }]}>{step.description}</Text>
+            <Text style={[styles.appTitle, { color: t.text }]}>Declutter</Text>
+            <Text style={[styles.appSubtitle, { color: t.textSecondary }]}>
+              Your ADHD-friendly cleaning companion
+            </Text>
 
-            {step.kind === 'welcome' ? (
-              <View style={styles.stack}>
-                <View style={[styles.calloutCard, { backgroundColor: colors.elevated, borderColor: colors.border }]}>
-                  <Text style={[styles.calloutTitle, { color: colors.text }]}>What happens next</Text>
-                  <Text style={[styles.calloutBody, { color: colors.textSecondary }]}>
-                    You will answer six short questions, choose your guide, preview your first plan,
-                    and decide how you want to start.
-                  </Text>
-                </View>
+            <View style={styles.welcomeActions}>
+              <Pressable onPress={handleNext} style={styles.coralButton}>
+                <Text style={styles.coralButtonText}>Get Started</Text>
+              </Pressable>
 
-                <View style={styles.metricRow}>
-                  {[
-                    { label: 'Questions', value: '6' },
-                    { label: 'Plan preview', value: '1' },
-                    { label: 'Time needed', value: '2 min' },
-                  ].map((item) => (
-                    <View
-                      key={item.label}
-                      style={[styles.metricCard, { backgroundColor: colors.elevated, borderColor: colors.border }]}
-                    >
-                      <LinearGradient
-                        colors={[
-                          isDark ? `${step.accent}1E` : `${step.accent}26`,
-                          'rgba(255,255,255,0)',
-                        ]}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 1 }}
-                        style={StyleSheet.absoluteFill}
-                      />
-                      <Text style={[styles.metricValue, { color: colors.text }]}>{item.value}</Text>
-                      <Text style={[styles.metricLabel, { color: colors.textMuted }]}>{item.label}</Text>
-                    </View>
-                  ))}
-                </View>
+              <Pressable
+                onPress={() => router.push('/auth/login')}
+                hitSlop={12}
+              >
+                <Text style={[styles.linkText, { color: t.textMuted }]}>
+                  I already have an account
+                </Text>
+              </Pressable>
+            </View>
+
+            <StepDots total={6} current={0} isDark={isDark} />
+          </View>
+        );
+
+      // ── PROBLEM ──────────────────────────────────────────────────────
+      case 'problem':
+        return (
+          <View style={styles.stepContent}>
+            <View style={styles.iconCircle}>
+              <Heart size={32} color={V1.coral} />
+            </View>
+
+            <Text style={[styles.stepTitle, { color: t.text }]}>
+              Cleaning feels impossible sometimes
+            </Text>
+
+            <Text style={[styles.stepDesc, { color: t.textSecondary }]}>
+              And that's okay. You're not lazy {'\u2014'} your brain just works
+              differently. We're here to help, not judge.
+            </Text>
+
+            <View style={{ flex: 1 }} />
+
+            <Pressable onPress={handleNext} style={styles.coralButton}>
+              <Text style={styles.coralButtonText}>That's me</Text>
+            </Pressable>
+          </View>
+        );
+
+      // ── ENERGY ───────────────────────────────────────────────────────
+      case 'energy':
+        return (
+          <View style={styles.stepContent}>
+            <Text style={[styles.stepTitle, { color: t.text }]}>
+              How's your energy right now?
+            </Text>
+            <Text style={[styles.stepSubhead, { color: t.textSecondary }]}>
+              This helps us suggest the right tasks
+            </Text>
+
+            <View style={styles.optionsList}>
+              <OptionPill
+                icon={<BatteryLow size={20} color={V1.coral} />}
+                title="Exhausted"
+                subtitle="Just basics today"
+                selected={answers.energyLevel === 'exhausted'}
+                onPress={() =>
+                  setAnswers((c) => ({ ...c, energyLevel: 'exhausted' }))
+                }
+                isDark={isDark}
+              />
+              <OptionPill
+                icon={<BatteryMedium size={20} color={V1.coral} />}
+                title="Low Energy"
+                subtitle="Small wins only"
+                selected={answers.energyLevel === 'low'}
+                onPress={() =>
+                  setAnswers((c) => ({ ...c, energyLevel: 'low' }))
+                }
+                isDark={isDark}
+              />
+              <OptionPill
+                icon={<Zap size={20} color={V1.coral} />}
+                title="Feeling Okay"
+                subtitle="Ready for a session"
+                selected={answers.energyLevel === 'moderate'}
+                onPress={() =>
+                  setAnswers((c) => ({ ...c, energyLevel: 'moderate' }))
+                }
+                isDark={isDark}
+              />
+              <OptionPill
+                icon={<BatteryFull size={20} color={V1.coral} />}
+                title="Good Energy!"
+                subtitle="Let's get stuff done"
+                selected={answers.energyLevel === 'high'}
+                onPress={() =>
+                  setAnswers((c) => ({ ...c, energyLevel: 'high' }))
+                }
+                isDark={isDark}
+              />
+            </View>
+
+            <View style={{ flex: 1 }} />
+
+            <Pressable
+              onPress={handleNext}
+              style={[styles.coralButton, { opacity: canContinue ? 1 : 0.4 }]}
+              disabled={!canContinue}
+            >
+              <Text style={styles.coralButtonText}>Next</Text>
+            </Pressable>
+          </View>
+        );
+
+      // ── LIVING ───────────────────────────────────────────────────────
+      case 'living':
+        return (
+          <View style={styles.stepContent}>
+            <Text style={[styles.stepTitle, { color: t.text }]}>
+              What's your space?
+            </Text>
+            <Text style={[styles.stepSubhead, { color: t.textSecondary }]}>
+              This helps us tailor tasks to your home
+            </Text>
+
+            <View style={styles.optionsList}>
+              <OptionPill
+                icon={<Building size={20} color={V1.coral} />}
+                title="Apartment"
+                subtitle="Compact living"
+                selected={answers.livingSituation === 'apartment'}
+                onPress={() =>
+                  setAnswers((c) => ({ ...c, livingSituation: 'apartment' }))
+                }
+                isDark={isDark}
+              />
+              <OptionPill
+                icon={<Home size={20} color={V1.coral} />}
+                title="House"
+                subtitle="Multiple rooms"
+                selected={answers.livingSituation === 'house'}
+                onPress={() =>
+                  setAnswers((c) => ({ ...c, livingSituation: 'house' }))
+                }
+                isDark={isDark}
+              />
+              <OptionPill
+                icon={<BedDouble size={20} color={V1.coral} />}
+                title="Single Room"
+                subtitle="One space to manage"
+                selected={
+                  answers.livingSituation === 'studio' ||
+                  answers.livingSituation === 'dorm'
+                }
+                onPress={() =>
+                  setAnswers((c) => ({ ...c, livingSituation: 'studio' }))
+                }
+                isDark={isDark}
+              />
+              <OptionPill
+                icon={<Users size={20} color={V1.coral} />}
+                title="Shared Space"
+                subtitle="Living with others"
+                selected={answers.livingSituation === 'shared'}
+                onPress={() =>
+                  setAnswers((c) => ({ ...c, livingSituation: 'shared' }))
+                }
+                isDark={isDark}
+              />
+            </View>
+
+            <View style={{ flex: 1 }} />
+
+            <Pressable
+              onPress={handleNext}
+              style={[styles.coralButton, { opacity: canContinue ? 1 : 0.4 }]}
+              disabled={!canContinue}
+            >
+              <Text style={styles.coralButtonText}>Next</Text>
+            </Pressable>
+          </View>
+        );
+
+      // ── STRUGGLE ─────────────────────────────────────────────────────
+      case 'struggle':
+        return (
+          <View style={styles.stepContent}>
+            <Text style={[styles.stepTitle, { color: t.text }]}>
+              What feels hardest?
+            </Text>
+            <Text style={[styles.stepSubhead, { color: t.textSecondary }]}>
+              No judgment. Just so we know where to start.
+            </Text>
+
+            <View style={styles.optionsList}>
+              <OptionPill
+                icon={<Play size={20} color={V1.coral} />}
+                title="Starting"
+                subtitle="Getting going is the hardest part"
+                selected={answers.cleaningStruggles.includes('starting')}
+                onPress={() => {
+                  Haptics.selectionAsync();
+                  setAnswers((c) => ({
+                    ...c,
+                    cleaningStruggles: c.cleaningStruggles.includes('starting')
+                      ? c.cleaningStruggles.filter((s) => s !== 'starting')
+                      : [...c.cleaningStruggles, 'starting'],
+                  }));
+                }}
+                isDark={isDark}
+              />
+              <OptionPill
+                icon={<Flag size={20} color={V1.coral} />}
+                title="Finishing"
+                subtitle="I start but never complete"
+                selected={answers.cleaningStruggles.includes('finishing')}
+                onPress={() => {
+                  Haptics.selectionAsync();
+                  setAnswers((c) => ({
+                    ...c,
+                    cleaningStruggles: c.cleaningStruggles.includes('finishing')
+                      ? c.cleaningStruggles.filter((s) => s !== 'finishing')
+                      : [...c.cleaningStruggles, 'finishing'],
+                  }));
+                }}
+                isDark={isDark}
+              />
+              <OptionPill
+                icon={<Layers size={20} color={V1.coral} />}
+                title="Staying Organized"
+                subtitle="It gets messy again fast"
+                selected={answers.cleaningStruggles.includes('maintenance')}
+                onPress={() => {
+                  Haptics.selectionAsync();
+                  setAnswers((c) => ({
+                    ...c,
+                    cleaningStruggles: c.cleaningStruggles.includes(
+                      'maintenance'
+                    )
+                      ? c.cleaningStruggles.filter((s) => s !== 'maintenance')
+                      : [...c.cleaningStruggles, 'maintenance'],
+                  }));
+                }}
+                isDark={isDark}
+              />
+              <OptionPill
+                icon={<Box size={20} color={V1.coral} />}
+                title="Everything"
+                subtitle="It all feels overwhelming"
+                selected={answers.cleaningStruggles.includes('overwhelm')}
+                onPress={() => {
+                  Haptics.selectionAsync();
+                  setAnswers((c) => ({
+                    ...c,
+                    cleaningStruggles: c.cleaningStruggles.includes('overwhelm')
+                      ? c.cleaningStruggles.filter((s) => s !== 'overwhelm')
+                      : [...c.cleaningStruggles, 'overwhelm'],
+                  }));
+                }}
+                isDark={isDark}
+              />
+            </View>
+
+            <View style={{ flex: 1 }} />
+
+            <Pressable
+              onPress={handleNext}
+              style={[styles.coralButton, { opacity: canContinue ? 1 : 0.4 }]}
+              disabled={!canContinue}
+            >
+              <Text style={styles.coralButtonText}>Next</Text>
+            </Pressable>
+          </View>
+        );
+
+      // ── TIME ─────────────────────────────────────────────────────────
+      case 'time':
+        return (
+          <View style={styles.stepContent}>
+            <Text style={[styles.stepTitle, { color: t.text }]}>
+              How much time do you have?
+            </Text>
+            <Text style={[styles.stepSubhead, { color: t.textSecondary }]}>
+              Even 5 minutes can make a difference
+            </Text>
+
+            <View style={styles.timeGrid}>
+              <View style={styles.timeRow}>
+                <TimeOption
+                  value={5}
+                  label="5 min"
+                  subtitle="Quick tidy"
+                  selected={answers.timeAvailability === 5}
+                  onPress={() =>
+                    setAnswers((c) => ({ ...c, timeAvailability: 5 }))
+                  }
+                  isDark={isDark}
+                />
+                <TimeOption
+                  value={15}
+                  label="15 min"
+                  subtitle="Power session"
+                  selected={answers.timeAvailability === 15}
+                  onPress={() =>
+                    setAnswers((c) => ({ ...c, timeAvailability: 15 }))
+                  }
+                  isDark={isDark}
+                />
               </View>
-            ) : null}
-
-            {step.kind === 'intro' ? (
-              <View style={styles.stack}>
-                {[
-                  'No giant checklists when your energy is low.',
-                  'No guilt spiral when life gets messy again.',
-                  'No guessing what to do first when everything feels urgent.',
-                ].map((item) => (
-                  <View
-                    key={item}
-                    style={[styles.bulletRow, { backgroundColor: colors.elevated, borderColor: colors.border }]}
-                  >
-                    <View style={[styles.bulletDot, { backgroundColor: step.accent }]} />
-                    <Text style={[styles.bulletText, { color: colors.textSecondary }]}>{item}</Text>
-                  </View>
-                ))}
+              <View style={styles.timeRow}>
+                <TimeOption
+                  value={30}
+                  label="30 min"
+                  subtitle="Deep clean"
+                  selected={answers.timeAvailability === 30}
+                  onPress={() =>
+                    setAnswers((c) => ({ ...c, timeAvailability: 30 }))
+                  }
+                  isDark={isDark}
+                />
+                <TimeOption
+                  value={60}
+                  label="60 min"
+                  subtitle="Full reset"
+                  selected={answers.timeAvailability === 60}
+                  onPress={() =>
+                    setAnswers((c) => ({ ...c, timeAvailability: 60 }))
+                  }
+                  isDark={isDark}
+                />
               </View>
-            ) : null}
+            </View>
 
-            {step.id === 'living' ? (
-              <View style={styles.stack}>
-                {LIVING_OPTIONS.map((option) => (
-                  <OnboardingOption
-                    key={option.value}
-                    {...option}
-                    colors={colors}
-                    accent={step.accent}
-                    selected={answers.livingSituation === option.value}
-                    onPress={() =>
-                      setAnswers((current) => ({ ...current, livingSituation: option.value }))
-                    }
-                  />
-                ))}
-              </View>
-            ) : null}
+            <View style={{ flex: 1 }} />
 
-            {step.id === 'struggles' ? (
-              <View style={styles.stack}>
-                {STRUGGLE_OPTIONS.map((option) => (
-                  <OnboardingOption
-                    key={option.value}
-                    {...option}
-                    colors={colors}
-                    accent={step.accent}
-                    selected={answers.cleaningStruggles.includes(option.value)}
-                    onPress={() => toggleStruggle(option.value)}
-                  />
-                ))}
-              </View>
-            ) : null}
+            <Pressable
+              onPress={handleNext}
+              style={[styles.coralButton, { opacity: canContinue ? 1 : 0.4 }]}
+              disabled={!canContinue}
+            >
+              <Text style={styles.coralButtonText}>Next</Text>
+            </Pressable>
+          </View>
+        );
 
-            {step.id === 'energy' ? (
-              <View style={styles.stack}>
-                {ENERGY_OPTIONS.map((option) => (
-                  <OnboardingOption
-                    key={option.value}
-                    {...option}
-                    colors={colors}
-                    accent={step.accent}
-                    selected={answers.energyLevel === option.value}
-                    onPress={() =>
-                      setAnswers((current) => ({ ...current, energyLevel: option.value }))
-                    }
-                  />
-                ))}
-              </View>
-            ) : null}
+      // ── MOTIVATION ───────────────────────────────────────────────────
+      case 'motivation':
+        return (
+          <View style={styles.stepContent}>
+            <Text style={[styles.stepTitle, { color: t.text }]}>
+              What keeps you going?
+            </Text>
+            <Text style={[styles.stepSubhead, { color: t.textSecondary }]}>
+              We'll focus on what motivates you most
+            </Text>
 
-            {step.id === 'time' ? (
-              <View style={styles.stack}>
-                {TIME_OPTIONS.map((option) => (
-                  <OnboardingOption
-                    key={option.value}
-                    {...option}
-                    colors={colors}
-                    accent={step.accent}
-                    selected={answers.timeAvailability === option.value}
-                    onPress={() =>
-                      setAnswers((current) => ({ ...current, timeAvailability: option.value }))
-                    }
-                  />
-                ))}
-              </View>
-            ) : null}
+            <View style={styles.optionsList}>
+              <OptionPill
+                icon={<BarChart3 size={20} color={V1.coral} />}
+                title="Visual Progress"
+                subtitle="Seeing bars fill up and stats grow"
+                selected={answers.motivationStyle === 'celebration'}
+                onPress={() =>
+                  setAnswers((c) => ({ ...c, motivationStyle: 'celebration' }))
+                }
+                isDark={isDark}
+              />
+              <OptionPill
+                icon={<Award size={20} color={V1.coral} />}
+                title="Rewards & Streaks"
+                subtitle="Earning badges and keeping streaks"
+                selected={answers.motivationStyle === 'challenge'}
+                onPress={() =>
+                  setAnswers((c) => ({ ...c, motivationStyle: 'challenge' }))
+                }
+                isDark={isDark}
+              />
+              <OptionPill
+                icon={<Users size={20} color={V1.coral} />}
+                title="Accountability"
+                subtitle="Knowing someone's counting on me"
+                selected={answers.motivationStyle === 'structured'}
+                onPress={() =>
+                  setAnswers((c) => ({ ...c, motivationStyle: 'structured' }))
+                }
+                isDark={isDark}
+              />
+              <OptionPill
+                icon={<Sparkles size={20} color={V1.coral} />}
+                title="A Clean Space"
+                subtitle="The feeling of a tidy room"
+                selected={answers.motivationStyle === 'gentle'}
+                onPress={() =>
+                  setAnswers((c) => ({ ...c, motivationStyle: 'gentle' }))
+                }
+                isDark={isDark}
+              />
+            </View>
 
-            {step.id === 'motivation' ? (
-              <View style={styles.stack}>
-                {MOTIVATION_OPTIONS.map((option) => (
-                  <OnboardingOption
-                    key={option.value}
-                    {...option}
-                    colors={colors}
-                    accent={step.accent}
-                    selected={answers.motivationStyle === option.value}
-                    onPress={() =>
-                      setAnswers((current) => ({ ...current, motivationStyle: option.value }))
-                    }
-                  />
-                ))}
-              </View>
-            ) : null}
+            <View style={{ flex: 1 }} />
 
-            {step.kind === 'guide' ? (
-              <View style={styles.stack}>
-                {(Object.keys(MASCOT_PERSONALITIES) as MascotPersonality[]).map((personality) => {
-                  const guide = MASCOT_PERSONALITIES[personality];
-                  const selected = answers.guidePersonality === personality;
-                  return (
-                    <Pressable
-                      key={personality}
-                      onPress={() => selectGuide(personality)}
-                      style={[
-                        styles.guideCard,
-                        {
-                          backgroundColor: selected ? `${step.accent}15` : colors.surface,
-                          borderColor: selected ? step.accent : colors.border,
-                        },
-                      ]}
-                    >
-                      <View style={styles.guideHeader}>
-                        <Text style={styles.guideEmoji}>{guide.emoji}</Text>
-                        <View style={styles.guideTextWrap}>
-                          <Text style={[styles.guideTitle, { color: colors.text }]}>{guide.name}</Text>
-                          <Text style={[styles.guideSubtitle, { color: colors.textSecondary }]}>
-                            {guide.description}
-                          </Text>
-                        </View>
-                      </View>
-                      <Text style={[styles.guideBody, { color: colors.textSecondary }]}>
-                        {personality === 'dusty'
-                          ? 'Steady, reassuring, and ideal when shame shows up fast.'
-                          : personality === 'spark'
-                            ? 'High-energy momentum for when you want a push.'
-                            : personality === 'bubbles'
-                              ? 'Playful encouragement that makes the work feel lighter.'
-                              : 'Calm structure that keeps decisions simple.'}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
-            ) : null}
+            <Pressable
+              onPress={handleNext}
+              style={[styles.coralButton, { opacity: canContinue ? 1 : 0.4 }]}
+              disabled={!canContinue}
+            >
+              <Text style={styles.coralButtonText}>Next</Text>
+            </Pressable>
+          </View>
+        );
 
-            {step.kind === 'loading' ? (
-              <View style={styles.loadingWrap}>
-                <ActivityIndicator size="large" color={step.accent} />
-                <View style={styles.loadingBars}>
-                  {['Your space profile', 'Task pacing', 'Motivation style'].map((label, index) => (
-                    <View key={label} style={styles.loadingBarRow}>
-                      <Text style={[styles.loadingLabel, { color: colors.textSecondary }]}>{label}</Text>
-                      <View style={[styles.loadingTrack, { backgroundColor: colors.progressTrack }]}>
-                        <View
-                          style={[
-                            styles.loadingFill,
-                            {
-                              width: `${55 + index * 18}%`,
-                              backgroundColor: step.accent,
-                            },
-                          ]}
-                        />
-                      </View>
-                    </View>
-                  ))}
-                </View>
-              </View>
-            ) : null}
+      // ── SCAN INTRO ───────────────────────────────────────────────────
+      case 'scan':
+        return (
+          <View style={styles.stepContent}>
+            <View style={[styles.iconCircleLarge, { borderColor: V1.coral }]}>
+              <Camera size={36} color={V1.coral} />
+            </View>
 
-            {step.kind === 'preview' ? (
-              <View style={styles.stack}>
-                <View style={[styles.planHero, { backgroundColor: `${step.accent}14`, borderColor: colors.border }]}>
-                  <Text style={[styles.planHeroTitle, { color: colors.text }]}>{planTitle}</Text>
-                  <Text style={[styles.planHeroBody, { color: colors.textSecondary }]}>
-                    {previewPlan.rhythm} with {previewPlan.support}.
-                  </Text>
-                </View>
+            <Text style={[styles.stepTitle, { color: t.text }]}>
+              Let's see your space
+            </Text>
 
-                {[
-                  { label: 'Focus', value: previewPlan.focus },
-                  { label: 'Support style', value: previewPlan.motivation },
-                  { label: 'Daily rhythm', value: previewPlan.rhythm },
-                ].map((item) => (
-                  <View
-                    key={item.label}
-                    style={[styles.previewRow, { backgroundColor: colors.elevated, borderColor: colors.border }]}
-                  >
-                    <Text style={[styles.previewLabel, { color: colors.textMuted }]}>{item.label}</Text>
-                    <Text style={[styles.previewValue, { color: colors.text }]}>{item.value}</Text>
-                  </View>
-                ))}
+            <Text style={[styles.stepDesc, { color: t.textSecondary }]}>
+              Take a photo of any room. Our AI will spot what needs attention
+              {' \u2014 '}no judgment, just a gentle starting point.
+            </Text>
 
-                <View style={[styles.checklistCard, { backgroundColor: colors.elevated, borderColor: colors.border }]}>
-                  <Text style={[styles.checklistTitle, { color: colors.text }]}>Your first-week checklist</Text>
-                  {previewChecklist.map((item) => (
-                    <View key={item} style={styles.checklistRow}>
-                      <Ionicons name="checkmark-circle" size={14} color={step.accent} />
-                      <Text style={[styles.checklistText, { color: colors.textSecondary }]}>{item}</Text>
-                    </View>
-                  ))}
-                </View>
-              </View>
-            ) : null}
+            <View style={{ flex: 1 }} />
 
-            {step.kind === 'commitment' ? (
-              <View style={styles.stack}>
-                {COMMITMENT_OPTIONS.map((option) => (
-                  <OnboardingOption
-                    key={option.value}
-                    {...option}
-                    colors={colors}
-                    accent={step.accent}
-                    selected={answers.commitment === option.value}
-                    onPress={() =>
-                      setAnswers((current) => ({ ...current, commitment: option.value }))
-                    }
-                  />
-                ))}
+            <Pressable
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                router.push('/camera');
+              }}
+              style={styles.coralButton}
+            >
+              <Text style={styles.coralButtonText}>Open Camera</Text>
+            </Pressable>
 
-                <View style={[styles.calloutCard, { backgroundColor: colors.elevated, borderColor: colors.border }]}>
-                  <Text style={[styles.calloutTitle, { color: colors.text }]}>Why this matters</Text>
-                  <Text style={[styles.calloutBody, { color: colors.textSecondary }]}>
-                    The app will shape reminders, streak pressure, and task pacing around the promise you choose here.
-                  </Text>
-                </View>
-              </View>
-            ) : null}
-
-            {step.kind === 'paywall' ? (
-              <View style={styles.stack}>
-                <View style={[styles.calloutCard, { backgroundColor: colors.elevated, borderColor: colors.border }]}>
-                  <Text style={[styles.calloutTitle, { color: colors.text }]}>Included with Pro</Text>
-                  {[
-                    'Personalized room plans based on your answers',
-                    'Guided streak support and accountability',
-                    'Better AI breakdowns and progress nudges',
-                  ].map((item) => (
-                    <View key={item} style={styles.checklistRow}>
-                      <Ionicons name="checkmark-circle" size={16} color={step.accent} />
-                      <Text style={[styles.checklistText, { color: colors.textSecondary }]}>{item}</Text>
-                    </View>
-                  ))}
-                </View>
-
-                {displayPlans.map((plan) => {
-                  const selected = selectedPlan === plan.id;
-                  return (
-                    <Pressable
-                      key={plan.id}
-                      onPress={() => setSelectedPlan(plan.id)}
-                      style={[
-                        styles.planCard,
-                        {
-                          backgroundColor: selected ? `${step.accent}16` : colors.surface,
-                          borderColor: selected ? step.accent : colors.border,
-                        },
-                      ]}
-                    >
-                      <View style={styles.planCardHeader}>
-                        <View>
-                          <Text style={[styles.planCardTitle, { color: colors.text }]}>{plan.title}</Text>
-                          <Text style={[styles.planCardSubtitle, { color: colors.textSecondary }]}>
-                            {plan.subtitle}
-                          </Text>
-                        </View>
-                        {plan.badge ? (
-                          <View style={[styles.planBadge, { backgroundColor: `${step.accent}20` }]}>
-                            <Text style={[styles.planBadgeText, { color: step.accent }]}>{plan.badge}</Text>
-                          </View>
-                        ) : null}
-                      </View>
-                      <Text style={[styles.planPrice, { color: colors.text }]}>{plan.price}</Text>
-                      <Text style={[styles.planPriceMeta, { color: colors.textMuted }]}>
-                        {plan.hasTrial ? `${plan.trialDays}-day free trial` : plan.pricePerMonth}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-
-                <Pressable onPress={handlePrimaryAction} style={styles.primaryButton}>
-                  <LinearGradient colors={accentGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.primaryButtonFill}>
-                    <Text style={[styles.primaryButtonText, { color: '#111114' }]}>
-                      {revenueLoading ? 'Starting...' : 'Start my trial'}
-                    </Text>
-                    <Text style={styles.primaryButtonHint}>Unlock the full guided plan while momentum is fresh.</Text>
-                  </LinearGradient>
-                </Pressable>
-
-                <Pressable
-                  onPress={finishOnboarding}
-                  style={[styles.secondaryButton, { backgroundColor: colors.secondaryButton, borderColor: colors.border }]}
-                >
-                  <Text style={[styles.secondaryButtonText, { color: colors.secondaryButtonText }]}>
-                    Continue without upgrading
-                  </Text>
-                </Pressable>
-
-                <Pressable
-                  onPress={async () => {
-                    const restored = await restorePurchases();
-                    if (restored) {
-                      await finishOnboarding();
-                    } else if (revenueError) {
-                      Alert.alert('Restore unavailable', revenueError);
-                    }
-                  }}
-                >
-                  <Text style={[styles.restoreLabel, { color: colors.textMuted }]}>Restore purchases</Text>
-                </Pressable>
-              </View>
-            ) : null}
-          </Animated.View>
-        </ScrollView>
-
-        {step.kind !== 'paywall' ? (
-          <Pressable
-            disabled={!canContinue || step.kind === 'loading'}
-            onPress={handlePrimaryAction}
-            style={[
-              styles.primaryButton,
-              {
-                opacity: canContinue && step.kind !== 'loading' ? 1 : 0.45,
-              },
-            ]}
-          >
-            <LinearGradient colors={accentGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.primaryButtonFill}>
-              <Text style={[styles.primaryButtonText, { color: '#111114' }]}>
-                {step.kind === 'commitment' ? 'Lock in my plan' : 'Continue'}
+            <Pressable onPress={handleNext} hitSlop={12} style={styles.skipLink}>
+              <Text style={[styles.linkText, { color: t.textMuted }]}>
+                Skip for now
               </Text>
-              <Text style={styles.primaryButtonHint}>
-                {step.kind === 'commitment' ? 'This becomes your default rhythm.' : 'Takes about two minutes to finish.'}
+            </Pressable>
+          </View>
+        );
+
+      // ── MEET MASCOT ──────────────────────────────────────────────────
+      case 'mascot':
+        return (
+          <View style={styles.stepContent}>
+            <View style={styles.mascotCircleLarge}>
+              <Text style={{ fontSize: 80 }}>🐹</Text>
+            </View>
+
+            <Text style={[styles.stepTitle, { color: t.text }]}>
+              Meet Dusty!
+            </Text>
+            <Text style={[styles.stepSubhead, { color: t.textSecondary }]}>
+              Your cleaning companion
+            </Text>
+
+            <View style={[styles.nameInput, { borderColor: t.border, backgroundColor: t.card }]}>
+              <Text style={{ fontSize: 16, marginRight: 8, color: t.textMuted }}>
+                {'\u270F\uFE0F'}
               </Text>
-            </LinearGradient>
-          </Pressable>
-        ) : null}
-      </View>
+              <TextInput
+                style={[styles.nameInputText, { color: t.text }]}
+                value={answers.mascotName}
+                onChangeText={(text) =>
+                  setAnswers((c) => ({ ...c, mascotName: text }))
+                }
+                placeholder="Dusty"
+                placeholderTextColor={t.textMuted}
+                autoCapitalize="words"
+              />
+            </View>
+            <Text style={[styles.helperText, { color: t.textMuted }]}>
+              You can always change this later
+            </Text>
+
+            <View style={{ flex: 1 }} />
+
+            <Pressable
+              onPress={handleNext}
+              style={[styles.coralButton, { opacity: canContinue ? 1 : 0.4 }]}
+              disabled={!canContinue}
+            >
+              <Text style={styles.coralButtonText}>Let's clean together!</Text>
+            </Pressable>
+          </View>
+        );
+
+      // ── BUILDING PLAN ────────────────────────────────────────────────
+      case 'building':
+        return (
+          <View style={[styles.centerContent, { paddingTop: insets.top + 80 }]}>
+            <BuildingPlanView isDark={isDark} />
+          </View>
+        );
+
+      // ── PLAN PREVIEW ─────────────────────────────────────────────────
+      case 'preview':
+        return (
+          <View style={[styles.stepContent, { paddingTop: insets.top + 20 }]}>
+            <Text style={[styles.stepTitle, { color: t.text }]}>
+              Here's your path
+            </Text>
+            <Text style={[styles.stepTitleAccent, { color: V1.coral }]}>
+              to a clearer mind
+            </Text>
+            <Text style={[styles.stepSubhead, { color: t.textSecondary }]}>
+              Your personalized 3-step plan
+            </Text>
+
+            <View style={styles.planCards}>
+              <PlanStepCard
+                number={1}
+                title="Scan your space"
+                description="Take a photo and let AI find what needs attention"
+                isDark={isDark}
+                delay={200}
+              />
+              <PlanStepCard
+                number={2}
+                title="Follow bite-sized tasks"
+                description="Short, doable tasks matched to your energy level"
+                isDark={isDark}
+                delay={400}
+              />
+              <PlanStepCard
+                number={3}
+                title="Celebrate your wins"
+                description="Watch your space transform with Dusty cheering you on"
+                isDark={isDark}
+                delay={600}
+              />
+            </View>
+
+            <View style={{ flex: 1 }} />
+
+            <Pressable onPress={handleNext} style={styles.coralButton}>
+              <Text style={styles.coralButtonText}>Looks great!</Text>
+            </Pressable>
+          </View>
+        );
+
+      // ── COMMITMENT ───────────────────────────────────────────────────
+      case 'commitment':
+        return (
+          <View style={[styles.stepContent, { paddingTop: insets.top + 40 }]}>
+            <View style={[styles.commitCheck, { borderColor: V1.green }]}>
+              <CheckCircle size={48} color={V1.green} />
+            </View>
+
+            <Text style={[styles.stepTitle, { color: t.text, textAlign: 'center' }]}>
+              I'm ready to organize my space and my mind.
+            </Text>
+
+            {/* Commitment checkbox */}
+            <Pressable
+              onPress={() => {
+                Haptics.selectionAsync();
+                setAnswers((c) => ({ ...c, commitment: !c.commitment }));
+              }}
+              style={[
+                styles.commitRow,
+                {
+                  backgroundColor: t.card,
+                  borderColor: answers.commitment ? V1.coral : t.border,
+                },
+              ]}
+            >
+              <View
+                style={[
+                  styles.commitCheckbox,
+                  {
+                    backgroundColor: answers.commitment
+                      ? V1.coral
+                      : 'transparent',
+                    borderColor: answers.commitment ? V1.coral : t.textMuted,
+                  },
+                ]}
+              >
+                {answers.commitment && <Check size={14} color="#fff" />}
+              </View>
+              <Text style={[styles.commitText, { color: t.text }]}>
+                I commit to showing up for myself
+              </Text>
+            </Pressable>
+
+            {/* Social proof */}
+            <View
+              style={[
+                styles.socialProof,
+                { backgroundColor: t.card, borderColor: t.border },
+              ]}
+            >
+              <Text style={[styles.proofNumber, { color: V1.coral }]}>
+                92%
+              </Text>
+              <Text style={[styles.proofText, { color: t.textSecondary }]}>
+                of users feel calmer after their first session
+              </Text>
+            </View>
+
+            <View style={{ flex: 1 }} />
+
+            <Pressable
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                completeOnboarding();
+              }}
+              style={styles.coralButton}
+            >
+              <Text style={styles.coralButtonText}>Let's do this</Text>
+            </Pressable>
+          </View>
+        );
+
+      default:
+        return null;
+    }
+  };
+
+  return (
+    <View style={[styles.container, { backgroundColor: t.bg }]}>
+      <StatusBar style={isDark ? 'light' : 'dark'} />
+
+      {renderHeader()}
+
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
+        <Animated.View
+          key={stepId}
+          entering={FadeInDown.duration(reducedMotion ? 120 : 300)}
+          exiting={FadeOutUp.duration(reducedMotion ? 120 : 200)}
+        >
+          {renderStep()}
+        </Animated.View>
+      </ScrollView>
     </View>
   );
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Styles
+// ─────────────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  },
-  shell: {
-    flex: 1,
-    paddingHorizontal: 20,
-  },
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-  },
-  progressTrack: {
-    flex: 1,
-    height: 8,
-    borderRadius: 999,
-    backgroundColor: 'rgba(127,127,127,0.18)',
-    overflow: 'hidden',
-  },
-  progressBar: {
-    height: '100%',
-    borderRadius: 999,
-  },
-  headerRight: {
-    minWidth: 92,
-    alignItems: 'flex-end',
-  },
-  authShortcuts: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  shortcutButton: {
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    borderRadius: 999,
-    borderWidth: 1,
-  },
-  shortcutLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  progressLabel: {
-    fontSize: 12,
-    fontWeight: '600',
   },
   scrollView: {
     flex: 1,
   },
   scrollContent: {
-    paddingTop: 20,
-    paddingBottom: 16,
+    flexGrow: 1,
+    paddingHorizontal: 24,
+    paddingBottom: 40,
   },
-  heroCard: {
-    overflow: 'hidden',
-    borderRadius: 32,
-    borderWidth: 1,
-    padding: 24,
-    gap: 18,
-  },
-  heroGlow: {
-    position: 'absolute',
-    top: -36,
-    right: -24,
-    width: 168,
-    height: 168,
-    borderRadius: 84,
-  },
-  heroSheen: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 140,
-  },
-  heroTopRow: {
+
+  // ── Header ──
+  header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 12,
+    paddingHorizontal: 20,
+    paddingBottom: 8,
   },
-  kickerPill: {
-    alignSelf: 'flex-start',
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 999,
+  backBtn: {
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  heroMicroChip: {
-    flexDirection: 'row',
+  headerCenter: {
     alignItems: 'center',
     gap: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    borderRadius: 999,
-    borderWidth: 1,
   },
-  heroMicroChipText: {
-    fontFamily: BODY_FONT,
+  stepLabel: {
     fontSize: 11,
-    fontWeight: '600',
-    letterSpacing: 0.2,
-  },
-  kickerText: {
-    fontFamily: BODY_FONT,
-    fontSize: 12,
     fontWeight: '700',
-    letterSpacing: 0.3,
-    color: '#17120B',
+    letterSpacing: 1,
   },
-  title: {
-    fontFamily: DISPLAY_FONT,
+  skipText: {
+    fontSize: 15,
+    fontWeight: '500',
+  },
+
+  // ── Dots ──
+  dotsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    marginTop: 4,
+  },
+  dot: {
+    borderRadius: 10,
+  },
+
+  // ── Center content (welcome, building) ──
+  centerContent: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingBottom: 60,
+    gap: 16,
+  },
+
+  // ── Step content ──
+  stepContent: {
+    flex: 1,
+    minHeight: 500,
+    paddingTop: 20,
+  },
+
+  // ── Mascot ──
+  mascotCircle: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+  },
+  mascotCircleLarge: {
+    width: 160,
+    height: 160,
+    borderRadius: 80,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'center',
+    marginBottom: 20,
+  },
+  mascotEmoji: {
+    fontSize: 60,
+  },
+
+  // ── Welcome ──
+  appTitle: {
     fontSize: 32,
-    lineHeight: 38,
-    fontWeight: '800',
+    fontWeight: '700',
     letterSpacing: -0.8,
   },
-  description: {
-    fontFamily: BODY_FONT,
+  appSubtitle: {
+    fontSize: 15,
+    lineHeight: 22,
+    textAlign: 'center',
+  },
+  welcomeActions: {
+    width: '100%',
+    gap: 16,
+    marginTop: 32,
+    marginBottom: 24,
+    paddingHorizontal: 20,
+  },
+
+  // ── Step text ──
+  stepTitle: {
+    fontSize: 28,
+    fontWeight: '800',
+    letterSpacing: -0.6,
+    marginBottom: 8,
+  },
+  stepTitleAccent: {
+    fontSize: 28,
+    fontWeight: '800',
+    letterSpacing: -0.6,
+    marginTop: -8,
+    marginBottom: 8,
+  },
+  stepSubhead: {
+    fontSize: 15,
+    lineHeight: 22,
+    marginBottom: 20,
+  },
+  stepDesc: {
     fontSize: 15,
     lineHeight: 23,
+    textAlign: 'center',
+    paddingHorizontal: 12,
+    marginTop: 12,
   },
-  stack: {
+
+  // ── Icon circles ──
+  iconCircle: {
+    alignSelf: 'center',
+    marginBottom: 24,
+    marginTop: 40,
+  },
+  iconCircleLarge: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'center',
+    marginBottom: 24,
+    marginTop: 40,
+  },
+
+  // ── Options list ──
+  optionsList: {
     gap: 12,
   },
-  calloutCard: {
-    borderWidth: 1,
-    borderRadius: 24,
-    padding: 18,
-    gap: 8,
-  },
-  calloutTitle: {
-    fontFamily: BODY_FONT,
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  calloutBody: {
-    fontFamily: BODY_FONT,
-    fontSize: 14,
-    lineHeight: 21,
-  },
-  metricRow: {
+  optionPill: {
     flexDirection: 'row',
-    gap: 10,
-  },
-  metricCard: {
-    flex: 1,
-    borderRadius: 20,
-    borderWidth: 1,
-    padding: 14,
-    gap: 6,
-  },
-  metricValue: {
-    fontFamily: DISPLAY_FONT,
-    fontSize: 20,
-    fontWeight: '800',
-  },
-  metricLabel: {
-    fontFamily: BODY_FONT,
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  bulletRow: {
-    flexDirection: 'row',
-    gap: 10,
     alignItems: 'center',
-    borderWidth: 1,
-    borderRadius: 20,
+    borderRadius: 16,
     padding: 16,
+    gap: 14,
   },
-  bulletDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-  },
-  bulletText: {
-    fontFamily: BODY_FONT,
-    flex: 1,
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  optionCard: {
-    borderRadius: 24,
-    borderWidth: 1,
-    padding: 18,
-    flexDirection: 'row',
+  optionIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,107,107,0.1)',
     alignItems: 'center',
-    gap: 16,
+    justifyContent: 'center',
   },
   optionTextWrap: {
     flex: 1,
-    gap: 6,
-  },
-  optionTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  optionEmoji: {
-    fontSize: 18,
+    gap: 2,
   },
   optionTitle: {
-    fontFamily: BODY_FONT,
-    flex: 1,
     fontSize: 16,
-    fontWeight: '700',
+    fontWeight: '600',
   },
   optionSubtitle: {
-    fontFamily: BODY_FONT,
     fontSize: 13,
-    lineHeight: 19,
   },
-  optionCheck: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    borderWidth: 1.5,
+
+  // ── Time grid ──
+  timeGrid: {
+    gap: 12,
+    marginTop: 4,
+  },
+  timeRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  timeOption: {
+    flex: 1,
+    borderRadius: 16,
+    padding: 20,
+    alignItems: 'center',
+    gap: 6,
+  },
+  timeValue: {
+    fontSize: 24,
+    fontWeight: '700',
+  },
+  timeSubtitle: {
+    fontSize: 13,
+  },
+
+  // ── Coral button ──
+  coralButton: {
+    backgroundColor: V1.coral,
+    borderRadius: 28,
+    height: 56,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  coralButtonText: {
+    color: '#FFFFFF',
+    fontSize: 17,
+    fontWeight: '700',
+  },
+
+  // ── Link text ──
+  linkText: {
+    fontSize: 14,
+    textAlign: 'center',
+  },
+  skipLink: {
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+
+  // ── Name input ──
+  nameInput: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    height: 52,
+    marginTop: 16,
+  },
+  nameInputText: {
+    flex: 1,
+    fontSize: 16,
+  },
+  helperText: {
+    fontSize: 13,
+    textAlign: 'center',
+    marginTop: 8,
+  },
+
+  // ── Building plan ──
+  buildingWrap: {
+    alignItems: 'center',
+    gap: 16,
+  },
+  buildingSpinner: {
+    marginBottom: 16,
+  },
+  pieChart: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    borderWidth: 4,
+    overflow: 'hidden',
+    backgroundColor: 'transparent',
+  },
+  pieSlice: {
+    width: '50%',
+    height: '50%',
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    borderBottomRightRadius: 0,
+  },
+  buildingTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+  },
+  buildingSubtitle: {
+    fontSize: 15,
+  },
+  buildingSteps: {
+    gap: 16,
+    marginTop: 20,
+    width: '100%',
+    paddingHorizontal: 20,
+  },
+  buildingStepRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  buildingStepDot: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 2,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  guideCard: {
-    borderRadius: 24,
-    borderWidth: 1,
-    padding: 18,
+  buildingStepText: {
+    fontSize: 15,
+    fontWeight: '500',
+  },
+  buildingProgress: {
+    width: '80%',
+    height: 4,
+    borderRadius: 2,
+    marginTop: 24,
+    overflow: 'hidden',
+  },
+  buildingProgressFill: {
+    height: '100%',
+    borderRadius: 2,
+  },
+
+  // ── Plan preview cards ──
+  planCards: {
     gap: 12,
+    marginTop: 16,
   },
-  guideHeader: {
+  planCard: {
     flexDirection: 'row',
-    alignItems: 'center',
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 16,
     gap: 14,
+    alignItems: 'flex-start',
   },
-  guideEmoji: {
-    fontSize: 32,
+  planCardNumber: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: V1.coral,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  guideTextWrap: {
+  planCardNumberText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  planCardContent: {
     flex: 1,
     gap: 4,
   },
-  guideTitle: {
-    fontFamily: BODY_FONT,
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  guideSubtitle: {
-    fontFamily: BODY_FONT,
-    fontSize: 13,
-  },
-  guideBody: {
-    fontFamily: BODY_FONT,
-    fontSize: 14,
-    lineHeight: 21,
-  },
-  loadingWrap: {
-    alignItems: 'center',
-    gap: 20,
-    paddingVertical: 28,
-  },
-  loadingBars: {
-    width: '100%',
-    gap: 12,
-  },
-  loadingBarRow: {
-    gap: 6,
-  },
-  loadingLabel: {
-    fontFamily: BODY_FONT,
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  loadingTrack: {
-    height: 10,
-    borderRadius: 999,
-    overflow: 'hidden',
-  },
-  loadingFill: {
-    height: '100%',
-    borderRadius: 999,
-  },
-  planHero: {
-    borderRadius: 24,
-    borderWidth: 1,
-    padding: 18,
-    gap: 8,
-  },
-  planHeroTitle: {
-    fontFamily: DISPLAY_FONT,
-    fontSize: 18,
-    fontWeight: '800',
-  },
-  planHeroBody: {
-    fontFamily: BODY_FONT,
-    fontSize: 14,
-    lineHeight: 21,
-  },
-  previewRow: {
-    borderRadius: 20,
-    borderWidth: 1,
-    padding: 16,
-    gap: 6,
-  },
-  previewLabel: {
-    fontFamily: BODY_FONT,
-    fontSize: 12,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  previewValue: {
-    fontFamily: BODY_FONT,
-    fontSize: 15,
-    lineHeight: 21,
-    fontWeight: '600',
-  },
-  checklistCard: {
-    borderRadius: 24,
-    borderWidth: 1,
-    padding: 18,
-    gap: 12,
-  },
-  checklistTitle: {
-    fontFamily: BODY_FONT,
+  planCardTitle: {
     fontSize: 16,
     fontWeight: '700',
   },
-  checklistRow: {
-    flexDirection: 'row',
-    gap: 10,
-    alignItems: 'flex-start',
-  },
-  checklistText: {
-    fontFamily: BODY_FONT,
-    flex: 1,
+  planCardDesc: {
     fontSize: 14,
     lineHeight: 20,
   },
-  planCard: {
-    borderRadius: 24,
+
+  // ── Commitment ──
+  commitCheck: {
+    alignSelf: 'center',
+    marginBottom: 24,
+  },
+  commitRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    borderRadius: 16,
     borderWidth: 1,
     padding: 18,
-    gap: 10,
+    marginTop: 16,
   },
-  planCardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-  planCardTitle: {
-    fontFamily: BODY_FONT,
-    fontSize: 16,
-    fontWeight: '800',
-  },
-  planCardSubtitle: {
-    fontFamily: BODY_FONT,
-    fontSize: 13,
-    marginTop: 4,
-    lineHeight: 18,
-  },
-  planBadge: {
-    alignSelf: 'flex-start',
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
-  planBadgeText: {
-    fontFamily: BODY_FONT,
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 0.3,
-  },
-  planPrice: {
-    fontFamily: DISPLAY_FONT,
-    fontSize: 22,
-    fontWeight: '800',
-  },
-  planPriceMeta: {
-    fontFamily: BODY_FONT,
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  primaryButton: {
-    marginTop: 12,
-    minHeight: 56,
-    borderRadius: 28,
-    overflow: 'hidden',
-  },
-  primaryButtonFill: {
-    minHeight: 60,
+  commitCheckbox: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 2,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 18,
-    paddingVertical: 12,
   },
-  primaryButtonText: {
-    fontFamily: BODY_FONT,
+  commitText: {
     fontSize: 16,
-    fontWeight: '800',
-    letterSpacing: -0.2,
+    fontWeight: '500',
+    flex: 1,
   },
-  primaryButtonHint: {
-    marginTop: 2,
-    fontFamily: BODY_FONT,
-    fontSize: 12,
-    color: 'rgba(17,17,20,0.66)',
-  },
-  secondaryButton: {
-    minHeight: 52,
-    borderRadius: 26,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 18,
+  socialProof: {
+    borderRadius: 16,
     borderWidth: 1,
+    padding: 20,
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 16,
   },
-  secondaryButtonText: {
-    fontFamily: BODY_FONT,
-    fontSize: 15,
-    fontWeight: '700',
+  proofNumber: {
+    fontSize: 36,
+    fontWeight: '800',
   },
-  restoreLabel: {
+  proofText: {
+    fontSize: 14,
     textAlign: 'center',
-    fontFamily: BODY_FONT,
-    fontSize: 13,
-    fontWeight: '600',
-    marginTop: 4,
   },
 });

@@ -361,7 +361,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
   },
   placeholderPhoto: {
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
     alignItems: 'center',
     justifyContent: 'center',
   },

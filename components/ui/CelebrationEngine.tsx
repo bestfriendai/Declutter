@@ -22,7 +22,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { Dimensions, StyleSheet, View } from 'react-native';
+import { Dimensions, StyleSheet, useWindowDimensions, View } from 'react-native';
 import Animated, {
   Easing,
   FadeIn,
@@ -90,13 +90,13 @@ interface ConfettiParticle {
   delay: number;
 }
 
-function generateParticles(count: number): ConfettiParticle[] {
+function generateParticles(count: number, screenW: number = SCREEN_WIDTH, screenH: number = SCREEN_HEIGHT): ConfettiParticle[] {
   const particles: ConfettiParticle[] = [];
   for (let i = 0; i < count; i++) {
     particles.push({
       id: i,
-      startX: SCREEN_WIDTH * 0.3 + Math.random() * SCREEN_WIDTH * 0.4,
-      startY: SCREEN_HEIGHT * 0.35,
+      startX: screenW * 0.3 + Math.random() * screenW * 0.4,
+      startY: screenH * 0.35,
       color: CONFETTI_COLORS[Math.floor(Math.random() * CONFETTI_COLORS.length)],
       size: 6 + Math.random() * 8,
       angle: -Math.PI / 2 + (Math.random() - 0.5) * Math.PI * 0.8,
@@ -162,7 +162,8 @@ function ConfettiPiece({ p, duration }: { p: ConfettiParticle; duration: number 
 }
 
 function ConfettiBurst({ count = 60, duration = 2500 }: { count?: number; duration?: number }) {
-  const particles = useMemo(() => generateParticles(count), [count]);
+  const { width: sw, height: sh } = useWindowDimensions();
+  const particles = useMemo(() => generateParticles(count, sw, sh), [count, sw, sh]);
 
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="none">
@@ -753,7 +754,7 @@ const styles = StyleSheet.create({
   // Checkmark
   checkContainer: {
     position: 'absolute',
-    top: SCREEN_HEIGHT * 0.38,
+    top: '38%',
     left: 0,
     right: 0,
     alignItems: 'center',
@@ -870,7 +871,7 @@ const styles = StyleSheet.create({
   // Daily goal ring
   ringCenter: {
     position: 'absolute',
-    top: SCREEN_HEIGHT * 0.3,
+    top: '30%',
     left: 0,
     right: 0,
     alignItems: 'center',
@@ -895,7 +896,7 @@ const styles = StyleSheet.create({
   },
   dailyGoalTextContainer: {
     position: 'absolute',
-    top: SCREEN_HEIGHT * 0.3 + 130,
+    top: '50%',
     left: 0,
     right: 0,
     alignItems: 'center',

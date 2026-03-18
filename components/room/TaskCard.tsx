@@ -5,8 +5,8 @@
  * - Unfilled circle checkbox on the left
  * - Task title
  * - Estimated time in muted text on the right
- * - Dark: #141414 bg, white text, #808080 time
- * - Light: #FFFFFF bg, #1A1A1A text, subtle shadow
+ * - Dark: colors.card bg, colors.text, colors.textMuted time
+ * - Light: colors.card bg, colors.text, subtle shadow
  *
  * Retains all existing business logic:
  * - Swipe-to-delete gesture
@@ -220,6 +220,7 @@ export function AnimatedCheckbox({
   return (
     <AnimatedPressable
       onPress={handlePress}
+      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
       accessibilityRole="checkbox"
       accessibilityState={{ checked: completed }}
       accessibilityLabel={completed ? 'Task completed' : 'Task not completed'}
@@ -298,12 +299,12 @@ export default function TaskCard({
     ? undefined
     : SlideInRight.delay(index * 50).duration(350);
 
-  // Card background: Dark = #141414, Light = #FFFFFF
-  const cardBg = isDark ? '#141414' : '#FFFFFF';
-  // Text color: Dark = white, Light = #1A1A1A
-  const textColor = isDark ? '#FFFFFF' : '#1A1A1A';
-  // Time color: muted gray
-  const timeColor = '#808080';
+  // Card background from color tokens
+  const cardBg = colors.card;
+  // Text color from color tokens
+  const textColor = colors.text;
+  // Time color: muted gray from tokens
+  const timeColor = colors.textMuted;
 
   // Priority left-border color
   const priorityBorderColor = task.difficulty === 'challenging'
@@ -329,7 +330,7 @@ export default function TaskCard({
               styles.taskCard,
               {
                 backgroundColor: cardBg,
-                opacity: task.completed ? 0.5 : 1,
+                opacity: task.completed ? 0.65 : 1,
                 borderLeftWidth: 3,
                 borderLeftColor: priorityBorderColor,
                 // Light mode: stronger shadow + subtle border
@@ -378,8 +379,8 @@ export default function TaskCard({
                   }}>
                     {task.estimatedMinutes} min
                   </Text>
-                  {/* Quick win badge for tasks under 5 min -- ADHD loves knowing it is fast */}
-                  {!task.completed && task.estimatedMinutes <= 5 && task.difficulty === 'quick' && (
+                  {/* Quick win badge for tasks under 10 min -- ADHD loves knowing it is fast */}
+                  {!task.completed && task.estimatedMinutes <= 10 && task.difficulty === 'quick' && (
                     <View style={{
                       backgroundColor: isDark ? 'rgba(52,211,153,0.12)' : 'rgba(34,197,94,0.10)',
                       paddingHorizontal: 6,
@@ -419,7 +420,7 @@ export default function TaskCard({
 
               {/* Expand arrow — styled chevron container */}
               <View style={{
-                backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)',
+                backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)',
                 borderRadius: 12,
                 padding: 6,
                 marginLeft: 8,
@@ -434,7 +435,7 @@ export default function TaskCard({
 
             {/* Expanded content */}
             {expanded && (
-              <View style={[styles.expandedContent, { borderTopColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)' }]}>
+              <View style={[styles.expandedContent, { borderTopColor: isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)' }]}>
                 {task.description && (
                   <Text style={[Typography.subheadline, { color: isDark ? '#ABABAB' : '#666666', marginBottom: 12 }]}>
                     {task.description}
@@ -650,9 +651,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   checkbox: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     borderWidth: 2,
     alignItems: 'center',
     justifyContent: 'center',
@@ -661,7 +662,7 @@ const styles = StyleSheet.create({
   },
   checkboxFill: {
     ...StyleSheet.absoluteFillObject,
-    borderRadius: 13,
+    borderRadius: 14,
   },
   checkmark: {
     fontSize: 14,
@@ -712,6 +713,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 8,
+    minHeight: 44,
   },
   subtaskCheckbox: {
     width: 18,
@@ -731,11 +733,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     alignItems: 'center',
     borderRadius: 10,
+    minHeight: 44,
+    justifyContent: 'center',
   },
   deleteTaskButton: {
     paddingVertical: 10,
     paddingHorizontal: 16,
     alignItems: 'center',
     borderRadius: 10,
+    minHeight: 44,
+    justifyContent: 'center',
   },
 });

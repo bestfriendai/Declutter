@@ -13,6 +13,7 @@
 
 import { useQuery, useMutation, useAction, useConvexAuth } from "convex/react";
 import { api } from "../convex/_generated/api";
+import { toConvexId } from "@/utils/convexIds";
 
 // Re-export auth hook
 export { useConvexAuth };
@@ -49,7 +50,7 @@ export function useRooms() {
 export function useRoom(roomId: string | undefined) {
   return useQuery(
     api.rooms.get,
-    roomId ? { id: roomId as any } : "skip" // `as any` needed: string → Id<"rooms"> coercion
+    roomId ? { id: toConvexId<'rooms'>(roomId) } : "skip"
   );
 }
 
@@ -72,7 +73,7 @@ export function useDeleteRoom() {
 export function useTasks(roomId: string | undefined) {
   return useQuery(
     api.tasks.listByRoom,
-    roomId ? { roomId: roomId as any } : "skip" // `as any` needed: string → Id<"rooms"> coercion
+    roomId ? { roomId: toConvexId<'rooms'>(roomId) } : "skip"
   );
 }
 
@@ -103,7 +104,7 @@ export function useDeleteTask() {
 export function usePhotos(roomId: string | undefined) {
   return useQuery(
     api.photos.listByRoom,
-    roomId ? { roomId: roomId as any } : "skip" // `as any` needed: string → Id<"rooms"> coercion
+    roomId ? { roomId: toConvexId<'rooms'>(roomId) } : "skip"
   );
 }
 
@@ -174,10 +175,6 @@ export function useUpsertSettings() {
 // ==================
 // MASCOT HOOKS
 // ==================
-
-export function useMascot() {
-  return useQuery(api.mascots.get);
-}
 
 export function useCreateMascot() {
   return useMutation(api.mascots.create);
@@ -398,4 +395,3 @@ export function useReorderTasks() {
 export function useResetStats() {
   return useMutation(api.stats.reset);
 }
-

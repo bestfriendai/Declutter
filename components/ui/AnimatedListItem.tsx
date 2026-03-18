@@ -288,7 +288,7 @@ export function GroupedList({ children, header, footer }: GroupedListProps) {
               ? 'rgba(255, 255, 255, 0.05)'
               : '#FFFFFF',
             borderColor: colorScheme === 'dark'
-              ? 'rgba(255, 255, 255, 0.08)'
+              ? 'rgba(255, 255, 255, 0.06)'
               : 'rgba(0, 0, 0, 0.08)',
           },
         ]}
@@ -302,7 +302,7 @@ export function GroupedList({ children, header, footer }: GroupedListProps) {
                   styles.separator,
                   {
                     backgroundColor: colorScheme === 'dark'
-                      ? 'rgba(255, 255, 255, 0.08)'
+                      ? 'rgba(255, 255, 255, 0.06)'
                       : 'rgba(0, 0, 0, 0.08)',
                   },
                 ]}

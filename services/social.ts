@@ -5,6 +5,8 @@
 
 import { api } from '@/convex/_generated/api';
 import { convex } from '@/config/convex';
+import { logger } from '@/services/logger';
+import { toConvexId } from '@/utils/convexIds';
 
 export type ChallengeType =
   | 'tasks_count'
@@ -78,6 +80,14 @@ type ConvexChallengeDoc = {
   }>;
 };
 
+type ConvexConnectionDoc = {
+  _id: string;
+  userId: string;
+  friendId: string;
+  status: 'pending' | 'accepted' | 'blocked';
+  createdAt: number;
+};
+
 function toDate(value?: number): Date | undefined {
   return value === undefined ? undefined : new Date(value);
 }
@@ -110,9 +120,7 @@ function mapChallenge(challenge: ConvexChallengeDoc | null): Challenge | null {
 }
 
 function logHandledSocialError(message: string, error: unknown) {
-  if (__DEV__) {
-    console.info(message, error);
-  }
+  logger.info(message, error);
 }
 
 export async function createChallenge(
@@ -161,7 +169,7 @@ export async function updateChallengeProgress(
 ): Promise<boolean> {
   try {
     await convex.mutation(api.social.updateChallengeProgress, {
-      id: challengeId as any,
+      id: toConvexId<'challenges'>(challengeId),
       progress,
       completed: progress >= 100,
     });
@@ -177,7 +185,7 @@ export async function getChallengeById(
 ): Promise<Challenge | null> {
   try {
     const challenge = await convex.query(api.social.getChallenge, {
-      id: challengeId as any,
+      id: toConvexId<'challenges'>(challengeId),
     });
     return mapChallenge(challenge as ConvexChallengeDoc | null);
   } catch (error) {
@@ -201,7 +209,7 @@ export async function getMyChallenges(): Promise<Challenge[]> {
 export async function addConnection(targetUserId: string): Promise<boolean> {
   try {
     await convex.mutation(api.social.addConnection, {
-      friendId: targetUserId as any,
+      friendId: toConvexId<'users'>(targetUserId),
     });
     return true;
   } catch (error) {
@@ -213,7 +221,7 @@ export async function addConnection(targetUserId: string): Promise<boolean> {
 export async function getConnections(): Promise<Connection[]> {
   try {
     const connections = await convex.query(api.social.listConnections, {});
-    return (connections as Array<any>).map((connection) => {
+    return (connections as ConvexConnectionDoc[]).map((connection) => {
       const otherUserId =
         typeof connection.friendId === 'string'
           ? connection.friendId
@@ -235,8 +243,6 @@ export async function getConnections(): Promise<Connection[]> {
 export async function removeConnection(_targetUserId: string): Promise<boolean> {
   // TODO: Implement removeConnection mutation in Convex backend (api.social.removeConnection)
   // For now, this is a no-op since the backend mutation doesn't exist yet.
-  if (__DEV__) {
-    console.info('removeConnection: not yet implemented on the backend');
-  }
+  logger.info('removeConnection: not yet implemented on the backend');
   return false;
 }

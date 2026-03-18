@@ -161,20 +161,28 @@ export function useRevenueCat(): UseRevenueCatReturn {
         const apiKey = Platform.OS === 'ios' ? REVENUECAT_IOS_KEY : REVENUECAT_ANDROID_KEY;
 
         if (!apiKey) {
-          if (__DEV__) console.warn('RevenueCat API key not configured');
           setIsLoading(false);
           return;
         }
 
-        // Configure RevenueCat
-        if (__DEV__) {
-          Purchases.setLogLevel(LOG_LEVEL.DEBUG);
-        }
-
+        // Configure RevenueCat (setLogLevel must be called AFTER configure in newer SDK versions)
         await Purchases.configure({ apiKey });
+
+        if (__DEV__ && Purchases.setLogLevel) {
+          try { Purchases.setLogLevel(LOG_LEVEL.DEBUG); } catch { /* ignore */ }
+        }
 
         if (isSubscribed) {
           setIsInitialized(true);
+
+          // Listen for subscription changes (must be after configure)
+          if (Purchases?.addCustomerInfoUpdateListener) {
+            Purchases.addCustomerInfoUpdateListener((info: CustomerInfo) => {
+              if (isSubscribed) {
+                updateSubscriptionState(info);
+              }
+            });
+          }
 
           // Fetch initial data
           await Promise.all([
@@ -195,15 +203,6 @@ export function useRevenueCat(): UseRevenueCatReturn {
     };
 
     init();
-
-    // Listen for subscription changes
-    if (Purchases?.addCustomerInfoUpdateListener) {
-      Purchases.addCustomerInfoUpdateListener((info: CustomerInfo) => {
-        if (isSubscribed) {
-          updateSubscriptionState(info);
-        }
-      });
-    }
 
     return () => {
       isSubscribed = false;

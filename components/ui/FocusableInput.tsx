@@ -21,7 +21,8 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { BlurView } from 'expo-blur';
-import { Ionicons } from '@expo/vector-icons';
+import { Eye, EyeOff, AlertCircle, Mail, Lock, User, Search } from 'lucide-react-native';
+import type { LucideIcon } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { Colors, InteractiveStates } from '@/constants/Colors';
 import { Typography } from '@/theme/typography';
@@ -37,7 +38,7 @@ export interface FocusableInputRef {
 
 interface FocusableInputProps extends Omit<TextInputProps, 'style'> {
   label?: string;
-  icon?: keyof typeof Ionicons.glyphMap;
+  icon?: LucideIcon;
   error?: string;
   hint?: string;
   showPasswordToggle?: boolean;
@@ -176,13 +177,11 @@ export const FocusableInput = forwardRef<FocusableInputRef, FocusableInputProps>
           >
             {/* Icon */}
             {icon && (
-              <Ionicons
-                name={icon}
-                size={20}
-                color={hasError ? colors.error : colors.textSecondary}
-                style={styles.icon}
-                accessibilityElementsHidden
-              />
+              React.createElement(icon, {
+                size: 20,
+                color: hasError ? colors.error : colors.textSecondary,
+                style: styles.icon,
+              })
             )}
 
             {/* Text Input */}
@@ -212,11 +211,7 @@ export const FocusableInput = forwardRef<FocusableInputRef, FocusableInputProps>
                   isPasswordVisible ? 'Hide password' : 'Show password'
                 }
               >
-                <Ionicons
-                  name={isPasswordVisible ? 'eye-outline' : 'eye-off-outline'}
-                  size={20}
-                  color={colors.textSecondary}
-                />
+                {isPasswordVisible ? <Eye size={20} color={colors.textSecondary} /> : <EyeOff size={20} color={colors.textSecondary} />}
               </Pressable>
             )}
           </AnimatedBlurView>
@@ -225,7 +220,7 @@ export const FocusableInput = forwardRef<FocusableInputRef, FocusableInputProps>
         {/* Error Message */}
         {hasError && (
           <Animated.View style={styles.errorContainer}>
-            <Ionicons name="alert-circle" size={14} color={colors.error} />
+            <AlertCircle size={14} color={colors.error} />
             <Text style={[Typography.caption1, styles.errorText, { color: colors.error }]}>
               {error}
             </Text>

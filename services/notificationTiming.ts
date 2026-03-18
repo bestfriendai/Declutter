@@ -38,7 +38,14 @@ export async function recordAppOpen(): Promise<void> {
     };
 
     const stored = await AsyncStorage.getItem(STORAGE_KEY);
-    const sessions: SessionTimeEntry[] = stored ? JSON.parse(stored) : [];
+    let sessions: SessionTimeEntry[] = [];
+    if (stored) {
+      try {
+        sessions = JSON.parse(stored);
+      } catch {
+        // Corrupted data — start fresh
+      }
+    }
     sessions.push(entry);
 
     // Keep only last N
@@ -59,7 +66,12 @@ export async function getOptimalNotificationTime(): Promise<{ hour: number; minu
     const stored = await AsyncStorage.getItem(STORAGE_KEY);
     if (!stored) return null;
 
-    const sessions: SessionTimeEntry[] = JSON.parse(stored);
+    let sessions: SessionTimeEntry[];
+    try {
+      sessions = JSON.parse(stored);
+    } catch {
+      return null;
+    }
     if (sessions.length < 3) return null; // Need at least 3 data points
 
     const now = new Date();
@@ -172,7 +184,14 @@ export async function getNotificationStats(): Promise<{
   isEnabled: boolean;
 }> {
   const stored = await AsyncStorage.getItem(STORAGE_KEY);
-  const sessions: SessionTimeEntry[] = stored ? JSON.parse(stored) : [];
+  let sessions: SessionTimeEntry[] = [];
+  if (stored) {
+    try {
+      sessions = JSON.parse(stored);
+    } catch {
+      // Corrupted data — return empty
+    }
+  }
   const timing = await getOptimalNotificationTime();
   const existingId = await AsyncStorage.getItem('optimal-notification-id');
 

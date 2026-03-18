@@ -49,7 +49,11 @@ export async function getUserCleaningProfile(): Promise<UserCleaningProfile> {
   try {
     const stored = await AsyncStorage.getItem(PROFILE_STORAGE_KEY);
     if (stored) {
-      return { ...defaultProfile, ...JSON.parse(stored) };
+      try {
+        return { ...defaultProfile, ...JSON.parse(stored) };
+      } catch {
+        return defaultProfile;
+      }
     }
   } catch (error) {
     if (__DEV__) console.error('Error loading user cleaning profile:', error);
@@ -88,7 +92,14 @@ export async function recordTaskCompletion(
 
   try {
     const historyRaw = await AsyncStorage.getItem(TASK_HISTORY_KEY);
-    const history: TaskCompletionEvent[] = historyRaw ? JSON.parse(historyRaw) : [];
+    let history: TaskCompletionEvent[] = [];
+    if (historyRaw) {
+      try {
+        history = JSON.parse(historyRaw);
+      } catch {
+        // Corrupted history — start fresh
+      }
+    }
     
     history.push(event);
     

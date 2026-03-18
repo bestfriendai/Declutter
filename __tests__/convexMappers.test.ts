@@ -11,6 +11,8 @@ describe('convex mappers', () => {
       reminderTime: '08:30',
       theme: 'dark',
       hapticFeedback: false,
+      soundFX: false,
+      reducedMotion: true,
       encouragementLevel: 'maximum',
       taskBreakdownLevel: 'ultra',
       focusDefaultDuration: 45,
@@ -30,6 +32,8 @@ describe('convex mappers', () => {
       reminderTime: '08:30',
       theme: 'dark',
       hapticFeedback: false,
+      soundFX: false,
+      reducedMotion: true,
       encouragementLevel: 'maximum',
       taskBreakdownLevel: 'ultra',
       focusMode: {

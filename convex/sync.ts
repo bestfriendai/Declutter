@@ -1,5 +1,6 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
-import { mutation, query } from "./_generated/server";
+import { mutation, query, type MutationCtx } from "./_generated/server";
+import type { Id } from "./_generated/dataModel";
 import { v } from "convex/values";
 
 function toTimestamp(value: unknown, fallback = Date.now()): number {
@@ -16,22 +17,22 @@ function toTimestamp(value: unknown, fallback = Date.now()): number {
 }
 
 
-async function clearUserState(ctx: any, userId: any) {
+async function clearUserState(ctx: MutationCtx, userId: Id<"users">) {
   const rooms = await ctx.db
     .query("rooms")
-    .withIndex("by_userId", (q: any) => q.eq("userId", userId))
+    .withIndex("by_userId", (q) => q.eq("userId", userId))
     .collect();
 
   for (const room of rooms) {
     const tasks = await ctx.db
       .query("tasks")
-      .withIndex("by_roomId", (q: any) => q.eq("roomId", room._id))
+      .withIndex("by_roomId", (q) => q.eq("roomId", room._id))
       .collect();
 
     for (const task of tasks) {
       const subtasks = await ctx.db
         .query("subtasks")
-        .withIndex("by_taskId", (q: any) => q.eq("taskId", task._id))
+        .withIndex("by_taskId", (q) => q.eq("taskId", task._id))
         .collect();
 
       for (const subtask of subtasks) {
@@ -43,7 +44,7 @@ async function clearUserState(ctx: any, userId: any) {
 
     const photos = await ctx.db
       .query("photos")
-      .withIndex("by_roomId", (q: any) => q.eq("roomId", room._id))
+      .withIndex("by_roomId", (q) => q.eq("roomId", room._id))
       .collect();
 
     for (const photo of photos) {
@@ -58,7 +59,7 @@ async function clearUserState(ctx: any, userId: any) {
 
   const stats = await ctx.db
     .query("stats")
-    .withIndex("by_userId", (q: any) => q.eq("userId", userId))
+    .withIndex("by_userId", (q) => q.eq("userId", userId))
     .first();
   if (stats) {
     await ctx.db.delete(stats._id);
@@ -66,7 +67,7 @@ async function clearUserState(ctx: any, userId: any) {
 
   const settings = await ctx.db
     .query("settings")
-    .withIndex("by_userId", (q: any) => q.eq("userId", userId))
+    .withIndex("by_userId", (q) => q.eq("userId", userId))
     .first();
   if (settings) {
     await ctx.db.delete(settings._id);
@@ -74,7 +75,7 @@ async function clearUserState(ctx: any, userId: any) {
 
   const mascot = await ctx.db
     .query("mascots")
-    .withIndex("by_userId", (q: any) => q.eq("userId", userId))
+    .withIndex("by_userId", (q) => q.eq("userId", userId))
     .first();
   if (mascot) {
     await ctx.db.delete(mascot._id);
@@ -82,7 +83,7 @@ async function clearUserState(ctx: any, userId: any) {
 
   const badges = await ctx.db
     .query("badges")
-    .withIndex("by_userId", (q: any) => q.eq("userId", userId))
+    .withIndex("by_userId", (q) => q.eq("userId", userId))
     .collect();
   for (const badge of badges) {
     await ctx.db.delete(badge._id);
@@ -90,7 +91,7 @@ async function clearUserState(ctx: any, userId: any) {
 
   const collectedItems = await ctx.db
     .query("collectedItems")
-    .withIndex("by_userId", (q: any) => q.eq("userId", userId))
+    .withIndex("by_userId", (q) => q.eq("userId", userId))
     .collect();
   for (const item of collectedItems) {
     await ctx.db.delete(item._id);
@@ -98,7 +99,7 @@ async function clearUserState(ctx: any, userId: any) {
 
   const collectionStats = await ctx.db
     .query("collectionStats")
-    .withIndex("by_userId", (q: any) => q.eq("userId", userId))
+    .withIndex("by_userId", (q) => q.eq("userId", userId))
     .first();
   if (collectionStats) {
     await ctx.db.delete(collectionStats._id);
@@ -190,6 +191,8 @@ export const replaceUserState = mutation({
       ...(settings.reminderTime ? { reminderTime: settings.reminderTime } : {}),
       theme: settings.theme ?? "auto",
       hapticFeedback: settings.hapticFeedback ?? true,
+      soundFX: settings.soundFX ?? true,
+      reducedMotion: settings.reducedMotion ?? false,
       encouragementLevel: settings.encouragementLevel ?? "moderate",
       taskBreakdownLevel: settings.taskBreakdownLevel ?? "detailed",
       focusDefaultDuration: focusMode.defaultDuration ?? 25,
@@ -515,6 +518,8 @@ export const getUserState = query({
             reminderTime: settings.reminderTime,
             theme: settings.theme,
             hapticFeedback: settings.hapticFeedback,
+            soundFX: settings.soundFX,
+            reducedMotion: settings.reducedMotion,
             encouragementLevel: settings.encouragementLevel,
             taskBreakdownLevel: settings.taskBreakdownLevel,
             focusMode: {

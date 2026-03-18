@@ -208,13 +208,10 @@ export default function FocusScreen() {
   // Pro gate -- focus timer is Pro-only
   if (!isPro) {
     return (
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <LinearGradient
-          colors={isDark
-            ? ['#000000', '#0A0A14', '#000000']
-            : ['#F2F2F7', '#FFFFFF', '#F2F2F7']}
-          style={StyleSheet.absoluteFill}
-        />
+      <LinearGradient
+        colors={isDark ? ['#0A0A0A', '#131313', '#141414'] : ['#FAFAFA', '#F7F7F7', '#F5F5F5']}
+        style={styles.container}
+      >
         <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
           <Pressable
             onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.back(); }}
@@ -256,25 +253,21 @@ export default function FocusScreen() {
                 alignItems: 'center',
               }}
             >
-              <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '700' }}>
+              <Text style={{ color: isDark ? '#0A0A0A' : '#FFFFFF', fontSize: 16, fontWeight: '700' }}>
                 Upgrade to Pro
               </Text>
             </LinearGradient>
           </Pressable>
         </View>
-      </View>
+      </LinearGradient>
     );
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* Background gradient */}
-      <LinearGradient
-        colors={isDark
-          ? ['#000000', '#0A0A14', '#000000']
-          : ['#F2F2F7', '#FFFFFF', '#F2F2F7']}
-        style={StyleSheet.absoluteFill}
-      />
+    <LinearGradient
+      colors={isDark ? ['#0A0A0A', '#131313', '#141414'] : ['#FAFAFA', '#F7F7F7', '#F5F5F5']}
+      style={styles.container}
+    >
 
       {/* Header */}
       <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
@@ -303,7 +296,7 @@ export default function FocusScreen() {
       <ScrollView
         contentContainerStyle={[
           styles.scrollContent,
-          { paddingBottom: insets.bottom + 40 },
+          { flexGrow: 1, paddingBottom: insets.bottom + 16 },
         ]}
         showsVerticalScrollIndicator={false}
       >
@@ -315,7 +308,7 @@ export default function FocusScreen() {
               size={RING_SIZE}
               strokeWidth={RING_STROKE}
               color={ringColor}
-              trackColor={isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'}
+              trackColor={isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'}
             />
 
             {/* Center content */}
@@ -473,7 +466,7 @@ export default function FocusScreen() {
           </GlassCard>
         </Animated.View>
       </ScrollView>
-    </View>
+    </LinearGradient>
   );
 }
 

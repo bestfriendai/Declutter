@@ -12,7 +12,8 @@ import { useTheme } from '@/theme/ThemeProvider';
 import { Typography } from '@/theme/typography';
 import { Spacing, BorderRadius } from '@/theme/spacing';
 import { RARITY_COLORS } from '@/types/declutter';
-import { Ionicons } from '@expo/vector-icons';
+import { ChevronLeft, CheckCheck, Flame, Clock, Star, TrendingUp, TrendingDown, Lightbulb, Home } from 'lucide-react-native';
+import type { LucideIcon } from 'lucide-react-native';
 import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -90,7 +91,7 @@ function StatTile({
   color,
   delay,
 }: {
-  icon: keyof typeof Ionicons.glyphMap;
+  icon: LucideIcon;
   label: string;
   value: string | number;
   change?: { value: number; positive: boolean };
@@ -110,17 +111,13 @@ function StatTile({
         style={[styles.statTileInner, { borderColor: colors.border }]}
       >
         <View style={[styles.statIcon, { backgroundColor: color + '20' }]}>
-          <Ionicons name={icon} size={20} color={color} />
+          {React.createElement(icon, { size: 20, color: color })}
         </View>
         <Text style={[styles.statValue, { color: colors.text }]}>{value}</Text>
         <Text style={[styles.statLabel, { color: colors.textSecondary }]}>{label}</Text>
         {change && (
           <View style={styles.changeContainer}>
-            <Ionicons
-              name={change.positive ? 'trending-up' : 'trending-down'}
-              size={12}
-              color={change.positive ? colors.success : colors.error}
-            />
+            {change.positive ? <TrendingUp size={12} color={colors.success} /> : <TrendingDown size={12} color={colors.error} />}
             <Text
               style={[
                 styles.changeText,
@@ -284,12 +281,11 @@ export default function InsightsScreen() {
   }, [rooms, stats, collectionStats]);
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <LinearGradient
+      colors={isDark ? ['#0A0A0A', '#131313', '#141414'] : ['#FAFAFA', '#F7F7F7', '#F5F5F5']}
+      style={styles.container}
+    >
       <AmbientBackdrop isDark={isDark} variant="progress" />
-      <LinearGradient
-        colors={colors.backgroundGradient}
-        style={StyleSheet.absoluteFill}
-      />
 
       {/* Header */}
       <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
@@ -300,7 +296,7 @@ export default function InsightsScreen() {
             router.back();
           }}
         >
-          <Ionicons name="chevron-back" size={24} color={colors.text} />
+          <ChevronLeft size={24} color={colors.text} />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: colors.text }]}>
           Insights
@@ -311,7 +307,7 @@ export default function InsightsScreen() {
       <ScrollView
         contentContainerStyle={[
           styles.scrollContent,
-          { paddingBottom: insets.bottom + 20 },
+          { flexGrow: 1, paddingBottom: insets.bottom + 16 },
         ]}
         contentInsetAdjustmentBehavior="automatic"
         showsVerticalScrollIndicator={false}
@@ -389,14 +385,14 @@ export default function InsightsScreen() {
         {/* Overview Stats */}
         <View style={styles.statsGrid}>
           <StatTile
-            icon="checkmark-done"
+            icon={CheckCheck}
             label="Tasks Done"
             value={stats.totalTasksCompleted}
             color={colors.success}
             delay={200}
           />
           <StatTile
-            icon="flame"
+            icon={Flame}
             label="Day Streak"
             value={stats.currentStreak}
             change={{ value: 15, positive: true }}
@@ -404,14 +400,14 @@ export default function InsightsScreen() {
             delay={250}
           />
           <StatTile
-            icon="time"
+            icon={Clock}
             label="Hours Cleaned"
             value={Math.round(stats.totalMinutesCleaned / 60)}
             color={colors.info}
             delay={300}
           />
           <StatTile
-            icon="star"
+            icon={Star}
             label="Level"
             value={stats.level}
             color={colors.primary}
@@ -423,7 +419,7 @@ export default function InsightsScreen() {
         <Animated.View entering={FadeInDown.delay(400).duration(350)}>
           <GlassCard style={styles.chartCard}>
             <View style={styles.chartHeader}>
-              <Text style={styles.chartTitle}>
+              <Text style={[styles.chartTitle, { color: isDark ? 'rgba(255,255,255,0.21)' : 'rgba(0,0,0,0.25)' }]}>
                 WEEKLY ACTIVITY
               </Text>
               <View style={styles.chartLegend}>
@@ -462,7 +458,7 @@ export default function InsightsScreen() {
             style={styles.progressCard}
             accessibilityLabel={`Overall progress: Task completion ${Math.round(insights.taskCompletionRate)}%, Streak goal ${Math.min(stats.currentStreak * 10, 100)}%, Collection ${Math.round(insights.collectionProgress)}%`}
           >
-            <Text style={styles.sectionTitle}>
+            <Text style={[styles.sectionTitle, { color: isDark ? 'rgba(255,255,255,0.21)' : 'rgba(0,0,0,0.25)' }]}>
               OVERALL PROGRESS
             </Text>
             <View style={styles.progressRings} accessibilityElementsHidden={true}>
@@ -494,7 +490,7 @@ export default function InsightsScreen() {
         {/* Room Performance */}
         <Animated.View entering={FadeInDown.delay(600).duration(350)}>
           <GlassCard style={styles.roomsCard}>
-            <Text style={styles.sectionTitle}>
+            <Text style={[styles.sectionTitle, { color: isDark ? 'rgba(255,255,255,0.21)' : 'rgba(0,0,0,0.25)' }]}>
               ROOM PERFORMANCE
             </Text>
             {insights.roomCompletionRates.length > 0 ? (
@@ -542,7 +538,7 @@ export default function InsightsScreen() {
         {/* Collection Stats */}
         <Animated.View entering={FadeInDown.delay(700).duration(350)}>
           <GlassCard style={styles.collectionCard}>
-            <Text style={styles.sectionTitle}>
+            <Text style={[styles.sectionTitle, { color: isDark ? 'rgba(255,255,255,0.21)' : 'rgba(0,0,0,0.25)' }]}>
               COLLECTION STATS
             </Text>
             <View style={styles.collectionGrid}>
@@ -629,15 +625,15 @@ export default function InsightsScreen() {
         <Animated.View entering={FadeInDown.delay(800).duration(350)}>
           <GlassCard style={styles.tipsCard}>
             <View style={styles.tipsHeader}>
-              <Ionicons name="bulb" size={24} color="#F59E0B" />
-              <Text style={[styles.sectionTitle, { marginLeft: 8 }]}>
+              <Lightbulb size={24} color="#F59E0B" />
+              <Text style={[styles.sectionTitle, { marginLeft: 8, color: isDark ? 'rgba(255,255,255,0.21)' : 'rgba(0,0,0,0.25)' }]}>
                 PERSONALIZED TIPS
               </Text>
             </View>
             <View style={styles.tipsList}>
               {stats.currentStreak < 3 && (
                 <View style={styles.tipItem}>
-                  <Ionicons name="flame-outline" size={16} color={colors.warning} />
+                  <Flame size={16} color={colors.warning} />
                   <Text style={[styles.tipText, { color: colors.textSecondary }]}>
                     ADHD tip: Just do one tiny task today. Consistency beats intensity. Even 2 minutes counts.
                   </Text>
@@ -645,7 +641,7 @@ export default function InsightsScreen() {
               )}
               {stats.currentStreak >= 3 && stats.currentStreak < 7 && (
                 <View style={styles.tipItem}>
-                  <Ionicons name="flame-outline" size={16} color={colors.warning} />
+                  <Flame size={16} color={colors.warning} />
                   <Text style={[styles.tipText, { color: colors.textSecondary }]}>
                     {7 - stats.currentStreak} more days to a 7-day streak badge! You are building real momentum.
                   </Text>
@@ -653,14 +649,14 @@ export default function InsightsScreen() {
               )}
               {insights.roomCompletionRates.some(r => r.progress < 50) && (
                 <View style={styles.tipItem}>
-                  <Ionicons name="home-outline" size={16} color={colors.info} />
+                  <Home size={16} color={colors.info} />
                   <Text style={[styles.tipText, { color: colors.textSecondary }]}>
                     ADHD-friendly approach: finish one room before starting the next. Visible progress keeps you motivated.
                   </Text>
                 </View>
               )}
               <View style={styles.tipItem}>
-                <Ionicons name="time-outline" size={16} color={colors.success} />
+                <Clock size={16} color={colors.success} />
                 <Text style={[styles.tipText, { color: colors.textSecondary }]}>
                   Try a 5-minute focus session if 25 feels too long. Short wins build confidence for longer ones.
                 </Text>
@@ -671,7 +667,7 @@ export default function InsightsScreen() {
         </>
         )}
       </ScrollView>
-    </View>
+    </LinearGradient>
   );
 }
 
@@ -773,7 +769,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     letterSpacing: 1.5,
     textTransform: 'uppercase',
-    color: '#808080',
   },
   chartLegend: {
     flexDirection: 'row',
@@ -827,7 +822,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     letterSpacing: 1.5,
     textTransform: 'uppercase',
-    color: '#808080',
     marginBottom: Spacing.md,
   },
   progressRings: {

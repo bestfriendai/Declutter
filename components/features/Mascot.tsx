@@ -3,7 +3,7 @@
  * Animated tamagotchi-style cleaning companion with rich animations
  */
 
-import { Colors } from '@/constants/Colors';
+import { Colors, MascotColors } from '@/constants/Colors';
 import { useDeclutter } from '@/context/DeclutterContext';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
@@ -99,21 +99,21 @@ function getSpeechBubbleText(mood: MascotMood, activity: MascotActivity, _name: 
 function getMoodColor(mood: MascotMood): string {
   switch (mood) {
     case 'ecstatic':
-      return '#FFD700';
+      return MascotColors.ecstatic;
     case 'happy':
-      return '#22C55E';
+      return MascotColors.happy;
     case 'excited':
-      return '#3B82F6';
+      return MascotColors.excited;
     case 'content':
-      return '#10B981';
+      return MascotColors.happy; // Fallback to happy
     case 'neutral':
-      return '#6B7280';
+      return MascotColors.neutral;
     case 'sad':
-      return '#EF4444';
+      return MascotColors.sad;
     case 'sleepy':
-      return '#8B5CF6';
+      return MascotColors.sleepy;
     default:
-      return '#22C55E';
+      return MascotColors.happy;
   }
 }
 
@@ -327,15 +327,16 @@ export function Mascot({
       cancelAnimation(glowScale);
       cancelAnimation(glowOpacity);
       cancelAnimation(eyeScale);
+      cancelAnimation(speechOpacity);
     };
-  }, [mascot?.activity, bounceY, rotation, scale, glowScale, glowOpacity, eyeScale, prefersReducedMotion]);
+  }, [mascot?.activity, bounceY, rotation, scale, glowScale, glowOpacity, eyeScale, prefersReducedMotion, speechOpacity]);
 
   // Show speech bubble on mood change
   useEffect(() => {
     if (mascot) {
       speechOpacity.value = withSequence(
         withTiming(1, { duration: 200 }),
-        withTiming(1, { duration: 2500 }),
+        withTiming(1, { duration: 3100 }),
         withTiming(0, { duration: 200 })
       );
     }
@@ -620,7 +621,8 @@ const styles = StyleSheet.create({
   },
   statsContainer: {
     marginTop: 14,
-    width: 140,
+    width: '100%',
+    maxWidth: 180,
     gap: 10,
   },
   compactStats: {

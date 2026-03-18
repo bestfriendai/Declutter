@@ -129,7 +129,7 @@ export const Colors = {
 
     // ── Overlays ──────────────────────────────────────────────────────────
     cardOverlay:    'rgba(0, 0, 0, 0.03)',
-    cardBorder:     'rgba(0, 0, 0, 0.08)',
+    cardBorder:     'rgba(0, 0, 0, 0.06)',
     avatarBorder:   '#FFFFFF',
     modalOverlay:   'rgba(0, 0, 0, 0.40)',
 
@@ -233,7 +233,7 @@ export const Colors = {
 
     // ── Overlays ──────────────────────────────────────────────────────────
     cardOverlay:    'rgba(255, 255, 255, 0.06)',
-    cardBorder:     'rgba(255, 255, 255, 0.10)',
+    cardBorder:     'rgba(255, 255, 255, 0.07)',
     avatarBorder:   '#000000',
     modalOverlay:   'rgba(0, 0, 0, 0.60)',
 
@@ -549,5 +549,35 @@ export const CalmPalette = {
     textSecondary:   '#9AA0A6',
     success:         '#81C995',
     border:          '#5F6368',
+  },
+} as const;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Pencil Design Tokens — exact spec values from Pencil designs
+// ─────────────────────────────────────────────────────────────────────────────
+export const DesignTokens = {
+  dark: {
+    background: ['#0A0A0A', '#131313', '#141414'] as const,
+    cardFill: 'rgba(255,255,255,0.06)',
+    cardBorder: 'rgba(255,255,255,0.07)',
+    textPrimary: '#FFFFFF',
+    textSecondary: '#707070',
+    textMuted: '#888888',
+    sectionLabel: 'rgba(255,255,255,0.21)',
+    goldAccent: '#C4A87A',
+    buttonPrimary: '#FFFFFF',
+    buttonSecondary: 'rgba(255,255,255,0.08)',
+  },
+  light: {
+    background: ['#FAFAFA', '#F7F7F7', '#F5F5F5'] as const,
+    cardFill: 'rgba(0,0,0,0.03)',
+    cardBorder: 'rgba(0,0,0,0.06)',
+    textPrimary: '#1A1A1A',
+    textSecondary: '#707070',
+    textMuted: '#888888',
+    sectionLabel: 'rgba(0,0,0,0.25)',
+    goldAccent: '#C4A87A',
+    buttonPrimary: '#1A1A1A',
+    buttonSecondary: 'rgba(0,0,0,0.04)',
   },
 } as const;

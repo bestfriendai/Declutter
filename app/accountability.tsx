@@ -9,7 +9,7 @@ import { AmbientBackdrop } from '@/components/ui/AmbientBackdrop';
 import { ExpressiveStateView } from '@/components/ui/ExpressiveStateView';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
-import { Ionicons } from '@expo/vector-icons';
+import { Users } from 'lucide-react-native';
 import { useAuth } from '@/context/AuthContext';
 import { useDeclutter } from '@/context/DeclutterContext';
 import { Connection, getConnections } from '@/services/social';
@@ -114,11 +114,11 @@ function CheckInCard({ isDark, checkItems, onToggle }: {
   return (
     <View style={[styles.checkInCard, {
       backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : '#FFFFFF',
-      borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+      borderColor: isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)',
     }]}>
       {/* Header */}
       <View style={styles.checkInHeader}>
-        <Text style={styles.checkInTitle}>
+        <Text style={[styles.checkInTitle, { color: isDark ? 'rgba(255,255,255,0.21)' : 'rgba(0,0,0,0.25)' }]}>
           WEEKLY CHECK-IN
         </Text>
         <Text style={[styles.checkInDue, {
@@ -188,7 +188,7 @@ function CheckInHistory({ isDark, currentStreak }: { isDark: boolean; currentStr
 
   return (
     <View style={styles.historySection}>
-      <Text style={styles.historyTitle}>
+      <Text style={[styles.historyTitle, { color: isDark ? 'rgba(255,255,255,0.21)' : 'rgba(0,0,0,0.25)' }]}>
         CHECK-IN HISTORY
       </Text>
 
@@ -356,12 +356,11 @@ export default function AccountabilityScreen() {
   // Show sign-in prompt for unauthenticated users
   if (!isAuthenticated) {
     return (
-      <View style={[styles.container, { backgroundColor: isDark ? '#0A0A0A' : '#FAFAFA' }]}>
+      <LinearGradient
+        colors={isDark ? ['#0A0A0A', '#131313', '#141414'] : ['#FAFAFA', '#F7F7F7', '#F5F5F5']}
+        style={styles.container}
+      >
         <AmbientBackdrop isDark={isDark} variant="profile" />
-        <LinearGradient
-          colors={isDark ? ['rgba(10,10,10,0.78)', 'rgba(20,20,20,0.96)'] as const : ['rgba(250,250,250,0.42)', 'rgba(245,245,245,0.92)'] as const}
-          style={StyleSheet.absoluteFill}
-        />
         <View style={[styles.emptyState, { paddingTop: insets.top + 80 }]}>
           <ExpressiveStateView
             isDark={isDark}
@@ -371,29 +370,25 @@ export default function AccountabilityScreen() {
             description="Pair up with a friend for gentle check-ins, shared momentum, and shame-free consistency."
             primaryLabel="Sign In"
             onPrimary={handleOpenAuth}
-            accentColors={isDark ? ['#FFD9A1', '#FFB547', '#FF8C63'] as const : ['#FFD39A', '#FFB547', '#FF9B71'] as const}
+            accentColors={isDark ? ['#D9C9A8', '#C4A87A', '#A8895C'] as const : ['#D4BD96', '#C4A87A', '#9E8260'] as const}
             style={styles.expressiveEmptyState}
           />
         </View>
-      </View>
+      </LinearGradient>
     );
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: isDark ? '#0A0A0A' : '#FAFAFA' }]}>
-      <LinearGradient
-        colors={isDark
-          ? ['#0A0A0A', '#141414'] as const
-          : ['#FAFAFA', '#F5F5F5'] as const
-        }
-        style={StyleSheet.absoluteFill}
-      />
+    <LinearGradient
+      colors={isDark ? ['#0A0A0A', '#131313', '#141414'] : ['#FAFAFA', '#F7F7F7', '#F5F5F5']}
+      style={styles.container}
+    >
 
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={[styles.scrollContent, {
           paddingTop: insets.top + 16,
-          paddingBottom: insets.bottom + 100,
+          paddingBottom: insets.bottom + 16,
         }]}
         showsVerticalScrollIndicator={false}
       >
@@ -405,13 +400,12 @@ export default function AccountabilityScreen() {
           <Pressable
             onPress={handleOpenSocial}
             style={[styles.headerIconBtn, {
-              backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)',
+              backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)',
             }]}
             accessibilityRole="button"
             accessibilityLabel="Partner settings"
           >
-            <Ionicons
-              name="people-outline"
+            <Users
               size={20}
               color={isDark ? '#FFFFFF' : '#1A1A1A'}
             />
@@ -463,7 +457,7 @@ export default function AccountabilityScreen() {
           <CheckInHistory isDark={isDark} currentStreak={stats?.currentStreak ?? 0} />
         </Animated.View>
       </ScrollView>
-    </View>
+    </LinearGradient>
   );
 }
 
@@ -473,7 +467,7 @@ export default function AccountabilityScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   scrollView: { flex: 1 },
-  scrollContent: { paddingHorizontal: 20 },
+  scrollContent: { flexGrow: 1, paddingHorizontal: 20 },
   section: { marginBottom: 20 },
 
   // ── Header ──
@@ -560,7 +554,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     letterSpacing: 1.5,
     textTransform: 'uppercase',
-    color: '#808080',
   },
   checkInDue: {
     fontSize: 12,
@@ -603,7 +596,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     letterSpacing: 1.5,
     textTransform: 'uppercase',
-    color: '#808080',
   },
   historyRow: {
     flexDirection: 'row',

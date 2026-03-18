@@ -848,8 +848,13 @@ Be very encouraging! Focus on what WAS accomplished, not what wasn't. Name speci
     const responseText = data.choices?.[0]?.message?.content;
 
     const jsonStr = extractJsonFromResponse(responseText);
-    const rawParsed = JSON.parse(jsonStr);
-    
+    let rawParsed;
+    try {
+      rawParsed = JSON.parse(jsonStr);
+    } catch {
+      throw new Error('Failed to parse progress analysis response');
+    }
+
     const validationResult = ProgressAnalysisResponseSchema.safeParse(rawParsed);
     const validated = validationResult.success ? validationResult.data : rawParsed;
 
@@ -971,8 +976,12 @@ Example:
     const data = await response.json();
     const responseText = data.choices?.[0]?.message?.content;
     const jsonStr = extractJsonFromResponse(responseText);
-    
-    return JSON.parse(jsonStr);
+
+    try {
+      return JSON.parse(jsonStr);
+    } catch {
+      return [];
+    }
   } catch (error) {
     if (__DEV__) {
       console.error('Object detection error:', error);

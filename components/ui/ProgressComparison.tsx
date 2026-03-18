@@ -115,7 +115,11 @@ function AnimatedProgressCounter({
 
   return (
     <View style={styles.progressCounterContainer}>
-      <Text style={[styles.progressNumber, { color: progressColor }]}>
+      <Text
+        style={[styles.progressNumber, { color: progressColor }]}
+        numberOfLines={1}
+        adjustsFontSizeToFit
+      >
         {displayValue}
         <Text style={styles.progressPercent}>%</Text>
       </Text>
@@ -281,7 +285,7 @@ export function ProgressComparison({
               </Text>
             </View>
             <Text style={[Typography.body, { color: colors.textSecondary, marginTop: Spacing.sm }]}>
-              "{mascotMessage}"
+              &ldquo;{mascotMessage}&rdquo;
             </Text>
           </GlassCard>
         </Animated.View>
@@ -342,14 +346,14 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.md,
   },
   progressEmoji: {
-    fontSize: 48,
+    fontSize: 40,
     marginBottom: Spacing.sm,
   },
   progressCounterContainer: {
     alignItems: 'center',
   },
   progressNumber: {
-    fontSize: 64,
+    fontSize: 56,
     fontWeight: '800',
     letterSpacing: -2,
     fontVariant: ['tabular-nums'],

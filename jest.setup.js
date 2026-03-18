@@ -10,9 +10,11 @@ jest.mock('@react-native-async-storage/async-storage', () =>
 );
 
 jest.mock('expo-secure-store', () => ({
+  isAvailableAsync: jest.fn().mockResolvedValue(true),
   getItemAsync: jest.fn().mockResolvedValue(null),
   setItemAsync: jest.fn().mockResolvedValue(undefined),
   deleteItemAsync: jest.fn().mockResolvedValue(undefined),
+  WHEN_UNLOCKED_THIS_DEVICE_ONLY: 'WHEN_UNLOCKED_THIS_DEVICE_ONLY',
 }));
 
 jest.mock('@react-native-community/netinfo', () => ({

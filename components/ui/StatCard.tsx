@@ -82,21 +82,21 @@ export function StatCard({
     switch (size) {
       case 'small':
         return {
-          container: { minWidth: 100 },
+          container: { minWidth: 80, flexShrink: 1 },
           value: Typography.title3,
           label: Typography.caption1,
           padding: 12,
         };
       case 'large':
         return {
-          container: { minWidth: 160 },
+          container: { minWidth: 120, flexShrink: 1 },
           value: Typography.displayMedium,
           label: Typography.subheadline,
           padding: 24,
         };
       default:
         return {
-          container: { minWidth: 130 },
+          container: { minWidth: 100, flexShrink: 1 },
           value: Typography.title1,
           label: Typography.caption1,
           padding: 16,
@@ -279,6 +279,7 @@ const styles = StyleSheet.create({
   bentoGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
+    width: '100%',
   },
   heroCard: {
     minHeight: 160,

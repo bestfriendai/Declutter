@@ -38,7 +38,7 @@ export default function FilterPill({
         {
           backgroundColor: active
             ? colors.primary
-            : isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.05)',
+            : isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.05)',
           borderColor: active
             ? colors.primary
             : isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.10)',

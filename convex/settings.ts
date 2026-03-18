@@ -6,6 +6,8 @@ const DEFAULT_SETTINGS = {
   notifications: true,
   theme: "auto" as const,
   hapticFeedback: true,
+  soundFX: true,
+  reducedMotion: false,
   encouragementLevel: "moderate" as const,
   taskBreakdownLevel: "detailed" as const,
   focusDefaultDuration: 25,
@@ -46,6 +48,8 @@ export const upsert = mutation({
       v.union(v.literal("light"), v.literal("dark"), v.literal("auto"))
     ),
     hapticFeedback: v.optional(v.boolean()),
+    soundFX: v.optional(v.boolean()),
+    reducedMotion: v.optional(v.boolean()),
     encouragementLevel: v.optional(
       v.union(
         v.literal("minimal"),
@@ -92,6 +96,8 @@ export const upsert = mutation({
       notifications: args.notifications ?? existing?.notifications ?? DEFAULT_SETTINGS.notifications,
       theme: args.theme ?? existing?.theme ?? DEFAULT_SETTINGS.theme,
       hapticFeedback: args.hapticFeedback ?? existing?.hapticFeedback ?? DEFAULT_SETTINGS.hapticFeedback,
+      soundFX: args.soundFX ?? existing?.soundFX ?? DEFAULT_SETTINGS.soundFX,
+      reducedMotion: args.reducedMotion ?? existing?.reducedMotion ?? DEFAULT_SETTINGS.reducedMotion,
       encouragementLevel: args.encouragementLevel ?? existing?.encouragementLevel ?? DEFAULT_SETTINGS.encouragementLevel,
       taskBreakdownLevel: args.taskBreakdownLevel ?? existing?.taskBreakdownLevel ?? DEFAULT_SETTINGS.taskBreakdownLevel,
       focusDefaultDuration: args.focusDefaultDuration ?? existing?.focusDefaultDuration ?? DEFAULT_SETTINGS.focusDefaultDuration,

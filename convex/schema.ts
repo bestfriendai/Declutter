@@ -208,6 +208,8 @@ export default defineSchema({
       v.literal("auto")
     ),
     hapticFeedback: v.boolean(),
+    soundFX: v.boolean(),
+    reducedMotion: v.boolean(),
     encouragementLevel: v.union(
       v.literal("minimal"),
       v.literal("moderate"),

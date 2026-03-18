@@ -116,40 +116,14 @@ function getOrbs(isDark: boolean, variant: AmbientVariant): Orb[] {
       ];
 }
 
-export function AmbientBackdrop({ isDark, variant }: AmbientBackdropProps) {
-  const baseOverlay = isDark ? 'rgba(8,8,12,0.26)' : 'rgba(255,255,255,0.12)';
-  const orbs = getOrbs(isDark, variant);
-
-  return (
-    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-      {orbs.map((orb, index) => (
-        <LinearGradient
-          key={`${variant}-${index}`}
-          colors={orb.colors}
-          style={[
-            styles.orb,
-            {
-              width: orb.size,
-              height: orb.size,
-              borderRadius: orb.size / 2,
-              top: orb.top,
-              left: orb.left,
-              right: orb.right,
-              bottom: orb.bottom,
-            },
-          ]}
-          start={{ x: 0.15, y: 0.15 }}
-          end={{ x: 0.85, y: 0.85 }}
-        />
-      ))}
-      <LinearGradient
-        colors={[baseOverlay, 'transparent']}
-        start={{ x: 0.5, y: 0 }}
-        end={{ x: 0.5, y: 0.7 }}
-        style={styles.topFade}
-      />
-    </View>
-  );
+/**
+ * AmbientBackdrop is intentionally disabled.
+ * The decorative gradient orbs/blobs do not match the Pencil V1 designs,
+ * which call for clean, flat backgrounds (#FAFAFA light / #0C0C0C dark).
+ * Keeping the export so existing imports do not break.
+ */
+export function AmbientBackdrop(_props: AmbientBackdropProps) {
+  return null;
 }
 
 const styles = StyleSheet.create({

@@ -3,16 +3,17 @@
  * Handles local and push notifications for reminders and achievements
  */
 
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as Device from 'expo-device';
-import { Platform } from 'react-native';
-import type {
-  EventSubscription,
-  Notification,
-  NotificationRequest,
-  NotificationResponse,
-} from 'expo-notifications';
 import { Notifications, notificationsAvailable } from '@/services/notificationsRuntime';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import Constants from 'expo-constants';
+import * as Device from 'expo-device';
+import type {
+    EventSubscription,
+    Notification,
+    NotificationRequest,
+    NotificationResponse,
+} from 'expo-notifications';
+import { Platform } from 'react-native';
 
 // Configure notification behavior
 if (notificationsAvailable) {
@@ -51,30 +52,40 @@ export interface NotificationData extends Record<string, unknown> {
 
 // Register for push notifications
 export async function registerForPushNotifications(): Promise<string | null> {
-  if (!Device.isDevice) {
-    if (__DEV__) console.log('Push notifications require a physical device');
+  if (__DEV__) console.log('[Notifications] Device.isDevice:', Device.isDevice, 'Platform:', Platform.OS);
+
+  // On iOS dev client builds, Device.isDevice may be false even on real devices.
+  // Only skip on web platform.
+  if (Platform.OS === 'web') {
+    if (__DEV__) console.log('[Notifications] Web platform, skipping push registration');
     return null;
   }
 
   try {
     // Check existing permission
     const { status: existingStatus } = await Notifications.getPermissionsAsync();
+    if (__DEV__) console.log('[Notifications] Existing permission status:', existingStatus);
     let finalStatus = existingStatus;
 
     // Request permission if not granted
     if (existingStatus !== 'granted') {
+      if (__DEV__) console.log('[Notifications] Requesting permissions...');
       const { status } = await Notifications.requestPermissionsAsync();
       finalStatus = status;
+      if (__DEV__) console.log('[Notifications] New permission status:', finalStatus);
     }
 
     if (finalStatus !== 'granted') {
-      if (__DEV__) console.log('Push notification permission not granted');
+      if (__DEV__) console.log('[Notifications] Permission not granted, final status:', finalStatus);
       return null;
     }
 
-    // Get push token - projectId is required for Expo push notifications
-    // If not configured, skip push token registration but continue with local notifications
-    const projectId = process.env.EXPO_PUBLIC_PROJECT_ID;
+    // Get push token - projectId is required for Expo push notifications.
+    // Prefer EAS runtime config and keep env var as fallback.
+    const projectId =
+      Constants.easConfig?.projectId ??
+      Constants.expoConfig?.extra?.eas?.projectId ??
+      process.env.EXPO_PUBLIC_PROJECT_ID;
     if (!projectId) {
       if (__DEV__) console.log('EXPO_PUBLIC_PROJECT_ID not set, skipping push token registration. Local notifications will still work.');
       // Configure Android channel even without push token
@@ -484,6 +495,8 @@ export async function cancelAllNotifications(): Promise<void> {
     await AsyncStorage.multiRemove([
       'daily-reminder-id',
       'streak-reminder-id',
+      'grace-reminder-id',
+      'optimal-notification-id',
     ]);
   } catch (error) {
     if (__DEV__) console.error('Error canceling all notifications:', error);

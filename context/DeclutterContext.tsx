@@ -4,40 +4,57 @@
  */
 
 import { api } from '@/convex/_generated/api';
+import type { Id } from '@/convex/_generated/dataModel';
 import { convex } from '@/config/convex';
+import { defaultCollectionStats, defaultSettings, defaultStats } from '@/constants/defaultState';
+import { Time } from '@/constants/time';
 import { SyncData, useAuth } from '@/context/AuthContext';
 import { setForcedColorScheme } from '@/hooks/useColorScheme';
 import { setHapticsEnabled } from '@/services/haptics';
+import {
+  hydrateCloudState,
+  hydrateCollection,
+  hydrateCollectionStats,
+  hydrateMascot,
+  hydrateRooms,
+  hydrateSettings,
+  hydrateStats,
+  hydrateUserProfile,
+} from '@/services/hydration';
 import { persistPhotoLocally } from '@/services/localPhotos';
 import {
-    AppSettings,
-    Badge,
-    BADGES,
-    CleaningSession,
-    CleaningTask,
-    CollectedItem,
-    COLLECTIBLES,
-    CollectionStats,
-    DeclutterState,
-    DEFAULT_FOCUS_SETTINGS,
-    FocusSession,
-    LivingSituation,
-    Mascot,
-    MascotMood,
-    MascotPersonality,
-    OnboardingEnergyLevel,
-    PhotoCapture,
-    Room,
-    SpawnEvent,
-    UserProfile,
-    UserStats,
+  deleteSecureValue,
+  loadSecureJson,
+  saveSecureJson,
+  SECURE_KEYS,
+} from '@/services/secureStorage';
+import { AppBootstrapScreen } from '@/components/ui/AppBootstrapScreen';
+import {
+  AppSettings,
+  Badge,
+  BADGES,
+  CleaningSession,
+  CleaningTask,
+  CollectedItem,
+  COLLECTIBLES,
+  CollectionStats,
+  DeclutterState,
+  FocusSession,
+  Mascot,
+  MascotMood,
+  MascotPersonality,
+  PhotoCapture,
+  Room,
+  SpawnEvent,
+  UserProfile,
+  UserStats,
 } from '@/types/declutter';
+import { toConvexId } from '@/utils/convexIds';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, ReactNode, useCallback, useContext, useEffect, useRef, useState } from 'react';
 
 // Storage keys
 const STORAGE_KEYS = {
-  USER: '@declutterly_user',
   ROOMS: '@declutterly_rooms',
   STATS: '@declutterly_stats',
   SETTINGS: '@declutterly_settings',
@@ -47,140 +64,12 @@ const STORAGE_KEYS = {
   COLLECTION_STATS: '@declutterly_collection_stats',
 };
 
-// Default stats
-const defaultStats: UserStats = {
-  totalTasksCompleted: 0,
-  totalRoomsCleaned: 0,
-  currentStreak: 0,
-  longestStreak: 0,
-  totalMinutesCleaned: 0,
-  level: 1,
-  xp: 0,
-  badges: [],
-};
-
-// Default settings
-const defaultSettings: AppSettings = {
-  notifications: true,
-  theme: 'auto',
-  hapticFeedback: true,
-  soundFX: true,
-  reducedMotion: false,
-  encouragementLevel: 'moderate',
-  taskBreakdownLevel: 'detailed',
-  focusMode: DEFAULT_FOCUS_SETTINGS,
-  arCollectionEnabled: true,
-  collectibleNotifications: true,
-};
-
-// Default collection stats
-const defaultCollectionStats: CollectionStats = {
-  totalCollected: 0,
-  uniqueCollected: 0,
-  commonCount: 0,
-  uncommonCount: 0,
-  rareCount: 0,
-  epicCount: 0,
-  legendaryCount: 0,
-};
-
 // Create context
 export const DeclutterContext = createContext<DeclutterState | null>(null);
 
 // Generate unique ID
 function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
-}
-
-function asDate(value: unknown): Date {
-  if (value instanceof Date) return value;
-  if (typeof value === 'number' || typeof value === 'string') {
-    return new Date(value);
-  }
-  return new Date();
-}
-
-function hydrateUserProfile(profile: any): UserProfile | null {
-  if (!profile) return null;
-  return {
-    id: String(profile.id),
-    name: profile.name ?? 'Declutterer',
-    avatar: profile.avatar,
-    createdAt: asDate(profile.createdAt),
-    onboardingComplete: !!profile.onboardingComplete,
-    livingSituation: profile.livingSituation as LivingSituation | undefined,
-    cleaningStruggles: profile.cleaningStruggles ?? undefined,
-    energyLevel: profile.energyLevel as OnboardingEnergyLevel | undefined,
-    timeAvailability: profile.timeAvailability ?? undefined,
-    motivationStyle: profile.motivationStyle ?? undefined,
-    guidePersonality: profile.guidePersonality as MascotPersonality | undefined,
-  };
-}
-
-function hydrateTask(task: any): CleaningTask {
-  return {
-    ...task,
-    id: String(task.id),
-    completedAt: task.completedAt ? asDate(task.completedAt) : undefined,
-    subtasks: (task.subtasks ?? []).map((subtask: any) => ({
-      ...subtask,
-      id: String(subtask.id),
-    })),
-  };
-}
-
-function hydrateRoom(room: any): Room {
-  return {
-    ...room,
-    id: String(room.id),
-    createdAt: asDate(room.createdAt),
-    lastAnalyzedAt: room.lastAnalyzedAt ? asDate(room.lastAnalyzedAt) : undefined,
-    photos: (room.photos ?? []).map((photo: any) => ({
-      ...photo,
-      id: String(photo.id),
-      timestamp: asDate(photo.timestamp),
-    })),
-    tasks: (room.tasks ?? []).map(hydrateTask),
-  };
-}
-
-function hydrateStats(stats: any): UserStats {
-  if (!stats) return defaultStats;
-
-  return {
-    ...defaultStats,
-    ...stats,
-    badges: (stats.badges ?? []).map((badge: Badge) => ({
-      ...badge,
-      unlockedAt: badge.unlockedAt ? asDate(badge.unlockedAt) : undefined,
-    })),
-  };
-}
-
-function hydrateMascot(mascot: any): Mascot | null {
-  if (!mascot) return null;
-  return {
-    ...mascot,
-    lastFed: asDate(mascot.lastFed),
-    lastInteraction: asDate(mascot.lastInteraction),
-    createdAt: asDate(mascot.createdAt),
-  };
-}
-
-function hydrateCollection(items: any[]): CollectedItem[] {
-  return (items ?? []).map((item) => ({
-    ...item,
-    collectedAt: asDate(item.collectedAt),
-  }));
-}
-
-function hydrateCollectionStatsData(stats: any): CollectionStats {
-  if (!stats) return defaultCollectionStats;
-  return {
-    ...defaultCollectionStats,
-    ...stats,
-    lastCollected: stats.lastCollected ? asDate(stats.lastCollected) : undefined,
-  };
 }
 
 // Provider component
@@ -213,15 +102,20 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
   // Sync error state
   const [syncError, setSyncError] = useState<string | null>(null);
   const [isHydratingCloud, setIsHydratingCloud] = useState(false);
+  // Ref-based hydration guard: ensures the sync effect never fires in the same
+  // React commit that applyCloudData set new state values, even if React
+  // batches the setState(false) together with the data updates.
+  const isHydratingCloudRef = useRef(false);
 
   // Load data from storage on mount
   useEffect(() => {
     loadData();
   }, []);
 
-  // Save data when it changes
+  // Save data when it changes (skip during cloud hydration to avoid
+  // writing partially-applied cloud state to disk)
   useEffect(() => {
-    if (isLoaded) {
+    if (isLoaded && !isHydratingCloudRef.current) {
       saveData();
     }
   }, [user, rooms, stats, settings, mascot, collection, collectionStats, isLoaded]);
@@ -254,36 +148,29 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const applyCloudData = useCallback((cloudData: any) => {
-    if (!cloudData) return;
+  const applyCloudData = useCallback((cloudData: unknown) => {
+    const hydrated = hydrateCloudState(cloudData);
 
-    const hydratedUser = hydrateUserProfile(cloudData.profile);
-    const hydratedRooms = (cloudData.rooms ?? []).map(hydrateRoom);
-    const hydratedStats = hydrateStats(cloudData.stats);
-    const hydratedSettings = cloudData.settings
-      ? { ...defaultSettings, ...cloudData.settings }
-      : defaultSettings;
-    const hydratedMascot = hydrateMascot(cloudData.mascot);
-    const hydratedCollection = hydrateCollection(cloudData.collection ?? []);
-
-    setUser(hydratedUser);
-    setRooms(hydratedRooms);
-    setStats(hydratedStats);
-    setSettingsState(hydratedSettings);
-    setHapticsEnabled(hydratedSettings.hapticFeedback);
-    setMascot(hydratedMascot);
-    setCollection(hydratedCollection);
-    setCollectionStats(hydrateCollectionStatsData(cloudData.collectionStats));
+    setUser(hydrated.user);
+    setRooms(hydrated.rooms);
+    setStats(hydrated.stats);
+    setSettingsState(hydrated.settings);
+    setHapticsEnabled(hydrated.settings.hapticFeedback);
+    setMascot(hydrated.mascot);
+    setCollection(hydrated.collection);
+    setCollectionStats(hydrated.collectionStats);
     setSyncError(null);
   }, []);
 
   useEffect(() => {
     if (!isLoaded || !isAuthenticated || isAnonymous) {
+      isHydratingCloudRef.current = false;
       setIsHydratingCloud(false);
       return;
     }
 
     let cancelled = false;
+    isHydratingCloudRef.current = true;
     setIsHydratingCloud(true);
 
     void (async () => {
@@ -300,6 +187,12 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
       } finally {
         if (!cancelled) {
           setIsHydratingCloud(false);
+          // Delay clearing the ref so the sync effect that runs in the same
+          // React commit (after applyCloudData batched state updates) still
+          // sees hydrating === true and bails out.
+          setTimeout(() => {
+            isHydratingCloudRef.current = false;
+          }, 0);
         }
       }
     })();
@@ -310,16 +203,21 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
   }, [applyCloudData, isAuthenticated, isAnonymous, isLoaded, loadFromCloud]);
 
   useEffect(() => {
-    // Only sync if loaded, authenticated, not anonymous, and not hydrating
-    if (!isLoaded || !isAuthenticated || isAnonymous || isHydratingCloud) return;
-    
+    // Only sync if loaded, authenticated, not anonymous, and not hydrating.
+    // Check both the state flag and the ref — the ref survives React batching
+    // so that cloud-hydration state updates don't immediately trigger a sync.
+    if (!isLoaded || !isAuthenticated || isAnonymous || isHydratingCloud || isHydratingCloudRef.current) return;
+
     // Clear any pending sync
     if (syncTimeoutRef.current) {
       clearTimeout(syncTimeoutRef.current);
     }
-    
+
     // Debounce sync by 5 seconds to avoid excessive API calls
     syncTimeoutRef.current = setTimeout(() => {
+      // Double-check hydration ref inside the timeout as well
+      if (isHydratingCloudRef.current) return;
+
       const syncData: SyncData = {
         profile: user || undefined,
         rooms,
@@ -329,13 +227,13 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
         collection,
         collectionStats,
       };
-      
+
       syncToCloud(syncData).catch(error => {
         if (__DEV__) console.error('Background sync failed:', error);
         setSyncError('Unable to sync your data. Changes saved locally.');
       });
-    }, 5000);
-    
+    }, Time.CLOUD_SYNC_DEBOUNCE_MS);
+
     return () => {
       if (syncTimeoutRef.current) {
         clearTimeout(syncTimeoutRef.current);
@@ -349,8 +247,8 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
     if (!mascot) return;
 
     const now = new Date();
-    const hoursSinceInteraction = (now.getTime() - new Date(mascot.lastInteraction).getTime()) / (1000 * 60 * 60);
-    const hoursSinceFed = (now.getTime() - new Date(mascot.lastFed).getTime()) / (1000 * 60 * 60);
+    const hoursSinceInteraction = (now.getTime() - new Date(mascot.lastInteraction).getTime()) / Time.MS_PER_HOUR;
+    const hoursSinceFed = (now.getTime() - new Date(mascot.lastFed).getTime()) / Time.MS_PER_HOUR;
 
     let newMood: MascotMood = mascot.mood;
     let newHunger = Math.max(0, mascot.hunger - hoursSinceFed * 5);
@@ -386,15 +284,15 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
 
     const interval = setInterval(() => {
       updateMascotStatusRef.current();
-    }, 60000);
+    }, Time.MASCOT_STATUS_INTERVAL_MS);
 
     return () => clearInterval(interval);
   }, [!!mascot]);
 
   async function loadData() {
     try {
-      const [userStr, roomsStr, statsStr, settingsStr, apiKey, mascotStr, collectionStr, collectionStatsStr] = await Promise.all([
-        AsyncStorage.getItem(STORAGE_KEYS.USER),
+      const [secureUser, roomsStr, statsStr, settingsStr, apiKey, mascotStr, collectionStr, collectionStatsStr] = await Promise.all([
+        loadSecureJson<unknown>(SECURE_KEYS.USER_PROFILE),
         AsyncStorage.getItem(STORAGE_KEYS.ROOMS),
         AsyncStorage.getItem(STORAGE_KEYS.STATS),
         AsyncStorage.getItem(STORAGE_KEYS.SETTINGS),
@@ -404,43 +302,24 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
         AsyncStorage.getItem(STORAGE_KEYS.COLLECTION_STATS),
       ]);
 
-      if (userStr) {
-        const userData = JSON.parse(userStr);
-        userData.createdAt = new Date(userData.createdAt);
-        setUser(userData);
+      if (secureUser) {
+        setUser(hydrateUserProfile(secureUser));
       }
 
       if (roomsStr) {
-        const roomsData = JSON.parse(roomsStr);
-        roomsData.forEach((room: Room) => {
-          room.createdAt = new Date(room.createdAt);
-          if (room.lastAnalyzedAt) room.lastAnalyzedAt = new Date(room.lastAnalyzedAt);
-          room.photos.forEach((p: PhotoCapture) => {
-            p.timestamp = new Date(p.timestamp);
-          });
-          room.tasks.forEach((t: CleaningTask) => {
-            if (t.completedAt) t.completedAt = new Date(t.completedAt);
-          });
-        });
-        setRooms(roomsData);
+        try { setRooms(hydrateRooms(JSON.parse(roomsStr))); } catch { /* corrupted */ }
       }
 
       if (statsStr) {
-        const statsData = JSON.parse(statsStr);
-        // Merge with defaults so old data without newer fields doesn't crash
-        const mergedStats = { ...defaultStats, ...statsData };
-        mergedStats.badges = (mergedStats.badges ?? []).map((b: Badge) => ({
-          ...b,
-          unlockedAt: b.unlockedAt ? new Date(b.unlockedAt) : undefined,
-        }));
-        setStats(mergedStats);
+        try { setStats(hydrateStats(JSON.parse(statsStr))); } catch { /* corrupted */ }
       }
 
       if (settingsStr) {
-        const loadedSettings = JSON.parse(settingsStr);
-        const mergedSettings = { ...defaultSettings, ...loadedSettings };
-        setSettingsState(mergedSettings);
-        setHapticsEnabled(mergedSettings.hapticFeedback);
+        try {
+          const mergedSettings = hydrateSettings(JSON.parse(settingsStr));
+          setSettingsState(mergedSettings);
+          setHapticsEnabled(mergedSettings.hapticFeedback);
+        } catch { /* corrupted */ }
       }
 
       // API key is now server-side in Convex env vars — nothing to load here.
@@ -450,23 +329,15 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
       }
 
       if (mascotStr) {
-        const mascotData = JSON.parse(mascotStr);
-        mascotData.lastFed = new Date(mascotData.lastFed);
-        mascotData.lastInteraction = new Date(mascotData.lastInteraction);
-        mascotData.createdAt = new Date(mascotData.createdAt);
-        setMascot(mascotData);
+        try { setMascot(hydrateMascot(JSON.parse(mascotStr))); } catch { /* corrupted */ }
       }
 
       if (collectionStr) {
-        const collectionData = JSON.parse(collectionStr);
-        collectionData.forEach((item: CollectedItem) => {
-          item.collectedAt = new Date(item.collectedAt);
-        });
-        setCollection(collectionData);
+        try { setCollection(hydrateCollection(JSON.parse(collectionStr))); } catch { /* corrupted */ }
       }
 
       if (collectionStatsStr) {
-        setCollectionStats(hydrateCollectionStatsData(JSON.parse(collectionStatsStr)));
+        try { setCollectionStats(hydrateCollectionStats(JSON.parse(collectionStatsStr))); } catch { /* corrupted */ }
       }
     } catch (error) {
       if (__DEV__) console.error('Error loading data:', error);
@@ -478,7 +349,9 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
   async function saveData() {
     try {
       await Promise.all([
-        user ? AsyncStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(user)) : null,
+        user
+          ? saveSecureJson(SECURE_KEYS.USER_PROFILE, user)
+          : deleteSecureValue(SECURE_KEYS.USER_PROFILE),
         AsyncStorage.setItem(STORAGE_KEYS.ROOMS, JSON.stringify(rooms)),
         AsyncStorage.setItem(STORAGE_KEYS.STATS, JSON.stringify(stats)),
         AsyncStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(settings)),
@@ -599,24 +472,43 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
     try {
       const uploadUrl = await convex.mutation(api.photos.generateUploadUrl, {});
       const localResponse = await fetch(persistedUri);
+      if (!localResponse.ok) {
+        if (__DEV__) console.error('Failed to read local photo file');
+        return;
+      }
       const blob = await localResponse.blob();
       const uploadResponse = await fetch(uploadUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'image/jpeg' },
         body: blob,
       });
-      const { storageId } = await uploadResponse.json();
+      if (!uploadResponse.ok) {
+        if (__DEV__) console.error('Photo upload failed with status:', uploadResponse.status);
+        return;
+      }
+      let storageId: string;
+      try {
+        const uploadJson = await uploadResponse.json();
+        storageId = uploadJson.storageId;
+      } catch {
+        if (__DEV__) console.error('Failed to parse photo upload response');
+        return;
+      }
+      if (!storageId) {
+        if (__DEV__) console.error('No storageId returned from upload');
+        return;
+      }
       const remotePhotoId = await convex.mutation(api.photos.create, {
-        roomId: roomId as any,
+        roomId: toConvexId<'rooms'>(roomId),
         uri: persistedUri,
         type: photoData.type,
-        storageId,
+        storageId: storageId as unknown as Id<'_storage'>,
         timestamp: photoData.timestamp.getTime(),
       });
       const remotePhotos = await convex.query(api.photos.listByRoom, {
-        roomId: roomId as any,
+        roomId: toConvexId<'rooms'>(roomId),
       });
-      const remotePhoto = (remotePhotos as Array<any>).find(
+      const remotePhoto = remotePhotos.find(
         (candidate) => String(candidate._id) === String(remotePhotoId)
       );
 
@@ -655,7 +547,7 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
     );
 
     if (isAuthenticated && !isAnonymous) {
-      void convex.mutation(api.photos.remove, { id: photoId as any }).catch((error) => {
+      void convex.mutation(api.photos.remove, { id: toConvexId<'photos'>(photoId) }).catch((error) => {
         if (__DEV__) console.error('Failed to delete photo from Convex:', error);
       });
     }
@@ -707,7 +599,7 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
     clearMascotActivityTimeout();
     mascotActivityTimeoutRef.current = setTimeout(() => {
       setMascot(prev => prev ? { ...prev, activity: 'idle' } : null);
-    }, 2000);
+    }, Time.MASCOT_SHORT_ACTIVITY_MS);
   }, [mascot, clearMascotActivityTimeout]);
 
   // Moved before toggleTask to avoid temporal dead zone
@@ -736,7 +628,7 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
             x: Math.random() * 0.6 + 0.2, // 20-80% of screen
             y: Math.random() * 0.4 + 0.3, // 30-70% of screen
           },
-          expiresAt: new Date(Date.now() + 30000), // 30 seconds to collect
+          expiresAt: new Date(Date.now() + Time.COLLECTIBLE_SPAWN_WINDOW_MS),
           collected: false,
         };
         return spawn;
@@ -859,6 +751,28 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
             tasksCompletedDuringSession: prev.tasksCompletedDuringSession + 1,
           } : null);
         }
+
+        // Record daily activity for analytics (fire and forget)
+        if (isAuthenticated && !isAnonymous) {
+          convex.mutation(api.activityLog.recordDailyActivity, {
+            tasksCompleted: 1,
+            minutesCleaned: taskMinutes || 5,
+          }).catch(() => {});
+        }
+
+        // Check for variable reward every 3rd task (fire and forget)
+        if (isAuthenticated && !isAnonymous) {
+          // Read the latest totalTasksCompleted from the stats update above
+          setStats(prevStats => {
+            const count = prevStats.totalTasksCompleted;
+            if (count > 0 && count % 3 === 0) {
+              convex.mutation(api.variableRewards.checkForReward, {
+                taskCount: count,
+              }).catch(() => {});
+            }
+            return prevStats; // no change, just reading
+          });
+        }
       } else if (taskJustUncompleted) {
         // Decrement stats when uncompleting a task (but never go below 0)
         setStats(prevStats => {
@@ -883,7 +797,7 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
         }
       }
     });
-  }, [mascot, focusSession?.isActive, settings.arCollectionEnabled, feedMascotAction, spawnCollectibleAction, currentSession]);
+  }, [mascot, focusSession?.isActive, settings.arCollectionEnabled, feedMascotAction, spawnCollectibleAction, currentSession, isAuthenticated, isAnonymous]);
 
   const toggleSubTask = useCallback((roomId: string, taskId: string, subTaskId: string) => {
     setRooms(prev =>
@@ -1071,7 +985,7 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
     clearMascotActivityTimeout();
     mascotActivityTimeoutRef.current = setTimeout(() => {
       setMascot(prev => prev ? { ...prev, activity: 'idle' } : null);
-    }, 3000);
+    }, Time.MASCOT_LONG_ACTIVITY_MS);
   }, [mascot, clearMascotActivityTimeout]);
 
   // =====================
@@ -1079,6 +993,19 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
   // =====================
 
   const startFocusSession = useCallback((duration: number, roomId?: string) => {
+    // Validate inputs
+    if (duration <= 0) {
+      if (__DEV__) console.warn('Focus session duration must be > 0');
+      return;
+    }
+    if (roomId !== undefined) {
+      const roomExists = rooms.some(r => r.id === roomId);
+      if (!roomExists) {
+        if (__DEV__) console.warn('Room not found for focus session:', roomId);
+        // Allow starting without a room instead of failing
+      }
+    }
+
     const session: FocusSession = {
       id: generateId(),
       roomId,
@@ -1097,7 +1024,7 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
     if (mascot) {
       setMascot(prev => prev ? { ...prev, activity: 'cleaning' } : null);
     }
-  }, [mascot]);
+  }, [mascot, rooms]);
 
   const pauseFocusSession = useCallback(() => {
     setFocusSession(prev => prev ? {
@@ -1131,8 +1058,8 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
           setMascot(prev => prev ? { ...prev, activity: 'celebrating' } : null);
           clearMascotActivityTimeout();
           mascotActivityTimeoutRef.current = setTimeout(() => {
-            setMascot(prev => prev ? { ...prev, activity: 'idle' } : null);
-          }, 3000);
+          setMascot(prev => prev ? { ...prev, activity: 'idle' } : null);
+          }, Time.MASCOT_LONG_ACTIVITY_MS);
         }
       }
       return null;
@@ -1194,7 +1121,7 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
       clearMascotActivityTimeout();
       mascotActivityTimeoutRef.current = setTimeout(() => {
         setMascot(prev => prev ? { ...prev, activity: 'idle' } : null);
-      }, 2000);
+      }, Time.MASCOT_SHORT_ACTIVITY_MS);
     }
   }, [mascot, clearMascotActivityTimeout]);
 
@@ -1210,7 +1137,7 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
     try {
       // Clear all AsyncStorage keys
       await Promise.all([
-        AsyncStorage.removeItem(STORAGE_KEYS.USER),
+        deleteSecureValue(SECURE_KEYS.USER_PROFILE),
         AsyncStorage.removeItem(STORAGE_KEYS.ROOMS),
         AsyncStorage.removeItem(STORAGE_KEYS.STATS),
         AsyncStorage.removeItem(STORAGE_KEYS.SETTINGS),
@@ -1307,6 +1234,7 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
     resetStats,
     clearCelebration,
     clearSyncError,
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- callbacks are stable useCallback refs
   }), [
     isLoaded,
     user,
@@ -1327,7 +1255,15 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
   ]);
 
   if (!isLoaded) {
-    return null;
+    return (
+      <AppBootstrapScreen
+        message={
+          isAuthenticated && !isAnonymous
+            ? 'Loading your latest rooms, progress, and synced settings…'
+            : 'Loading your rooms, progress, and settings…'
+        }
+      />
+    );
   }
 
   return (

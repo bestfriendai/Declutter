@@ -22,7 +22,7 @@ import Animated, {
   SlideOutLeft,
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
-import { Ionicons } from '@expo/vector-icons';
+import { CircleCheck, ExternalLink, Eye, EyeOff, ShieldCheck, Zap } from 'lucide-react-native';
 import { Colors } from '@/constants/Colors';
 import { Typography } from '@/theme/typography';
 import { BorderRadius, Spacing, TouchTargets } from '@/theme/spacing';
@@ -217,7 +217,7 @@ export function ApiKeySetupWizard({
                 </Text>
               </View>
               {isSelected && (
-                <Ionicons name="checkmark-circle" size={24} color={info.color} />
+                <CircleCheck size={24} color={info.color} />
               )}
             </Pressable>
           );
@@ -243,7 +243,7 @@ export function ApiKeySetupWizard({
           onPress={openInstructions}
           style={[styles.instructionsLink, { backgroundColor: colors.infoMuted }]}
         >
-          <Ionicons name="open-outline" size={18} color={colors.info} />
+          <ExternalLink size={18} color={colors.info} />
           <Text style={[Typography.subheadline, { color: colors.info }]}>
             Get your free API key →
           </Text>
@@ -277,11 +277,7 @@ export function ApiKeySetupWizard({
           onPress={() => setShowApiKey(!showApiKey)}
           style={styles.visibilityToggle}
         >
-          <Ionicons
-            name={showApiKey ? 'eye-outline' : 'eye-off-outline'}
-            size={20}
-            color={colors.textSecondary}
-          />
+          {showApiKey ? <Eye size={20} color={colors.textSecondary} /> : <EyeOff size={20} color={colors.textSecondary} />}
         </Pressable>
       </View>
 
@@ -290,7 +286,7 @@ export function ApiKeySetupWizard({
       )}
 
       <View style={[styles.securityNote, { backgroundColor: colors.surfaceSecondary }]}>
-        <Ionicons name="shield-checkmark" size={18} color={colors.success} />
+        <ShieldCheck size={18} color={colors.success} />
         <Text style={[Typography.caption1, { color: colors.textSecondary, flex: 1 }]}>
           Your API key is stored securely on your device and never sent to our servers.
         </Text>
@@ -333,7 +329,7 @@ export function ApiKeySetupWizard({
           onPress={handleTestKey}
           style={[styles.testButton, { backgroundColor: providerInfo.color }]}
         >
-          <Ionicons name="flash" size={20} color="#FFFFFF" />
+          <Zap size={20} color="#FFFFFF" />
           <Text style={[Typography.buttonMedium, { color: '#FFFFFF' }]}>
             Test Connection
           </Text>

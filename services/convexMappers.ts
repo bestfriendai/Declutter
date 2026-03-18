@@ -14,6 +14,8 @@ type ConvexSettings = {
   reminderTime?: string;
   theme?: 'light' | 'dark' | 'auto';
   hapticFeedback?: boolean;
+  soundFX?: boolean;
+  reducedMotion?: boolean;
   encouragementLevel?: 'minimal' | 'moderate' | 'maximum';
   taskBreakdownLevel?: 'normal' | 'detailed' | 'ultra';
   focusDefaultDuration?: number;
@@ -126,8 +128,8 @@ export function mapConvexSettingsToAppSettings(
     reminderTime: settings?.reminderTime,
     theme: settings?.theme ?? 'auto',
     hapticFeedback: settings?.hapticFeedback ?? true,
-    soundFX: (settings as any)?.soundFX ?? true,
-    reducedMotion: (settings as any)?.reducedMotion ?? false,
+    soundFX: settings?.soundFX ?? true,
+    reducedMotion: settings?.reducedMotion ?? false,
     encouragementLevel: settings?.encouragementLevel ?? 'moderate',
     taskBreakdownLevel: settings?.taskBreakdownLevel ?? 'detailed',
     focusMode: {

@@ -36,10 +36,10 @@ export function Skeleton({
 
   // Base colors for skeleton
   const baseColor = colorScheme === 'dark' 
-    ? 'rgba(255, 255, 255, 0.08)' 
-    : 'rgba(0, 0, 0, 0.08)';
-  const highlightColor = colorScheme === 'dark' 
-    ? 'rgba(255, 255, 255, 0.15)' 
+    ? 'rgba(255, 255, 255, 0.06)'
+    : 'rgba(0, 0, 0, 0.06)';
+  const highlightColor = colorScheme === 'dark'
+    ? 'rgba(255, 255, 255, 0.12)'
     : 'rgba(0, 0, 0, 0.04)';
 
   useEffect(() => {
@@ -171,8 +171,8 @@ export function SkeletonCard({ style }: SkeletonCardProps) {
             ? 'rgba(255, 255, 255, 0.05)'
             : 'rgba(0, 0, 0, 0.02)',
           borderColor: colorScheme === 'dark'
-            ? 'rgba(255, 255, 255, 0.08)'
-            : 'rgba(0, 0, 0, 0.05)',
+            ? 'rgba(255, 255, 255, 0.07)'
+            : 'rgba(0, 0, 0, 0.06)',
         },
         style,
       ]}
@@ -612,7 +612,7 @@ export function InsightsScreenSkeleton() {
       </View>
 
       {/* Weekly Activity Chart */}
-      <View style={[styles.card, { backgroundColor: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.02)', borderColor: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.05)', marginBottom: 16 }]}>
+      <View style={[styles.card, { backgroundColor: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.02)', borderColor: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.07)' : 'rgba(0, 0, 0, 0.05)', marginBottom: 16 }]}>
         <View style={styles.chartHeaderSkeleton}>
           <Skeleton height={16} width={120} borderRadius={4} />
           <Skeleton height={12} width={50} borderRadius={4} />
@@ -632,7 +632,7 @@ export function InsightsScreenSkeleton() {
       </View>
 
       {/* Progress Rings */}
-      <View style={[styles.card, { backgroundColor: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.02)', borderColor: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.05)', marginBottom: 16, padding: 16 }]}>
+      <View style={[styles.card, { backgroundColor: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.02)', borderColor: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.07)' : 'rgba(0, 0, 0, 0.05)', marginBottom: 16, padding: 16 }]}>
         <Skeleton height={16} width={120} borderRadius={4} style={{ marginBottom: 16 }} />
         <View style={{ flexDirection: 'row', justifyContent: 'space-around' }}>
           <View style={{ alignItems: 'center' }}>
@@ -651,7 +651,7 @@ export function InsightsScreenSkeleton() {
       </View>
 
       {/* Room Performance */}
-      <View style={[styles.card, { backgroundColor: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.02)', borderColor: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.05)', padding: 16 }]}>
+      <View style={[styles.card, { backgroundColor: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.02)', borderColor: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.07)' : 'rgba(0, 0, 0, 0.05)', padding: 16 }]}>
         <Skeleton height={16} width={130} borderRadius={4} style={{ marginBottom: 16 }} />
         <InsightsRoomRowSkeleton />
         <InsightsRoomRowSkeleton />

@@ -15,7 +15,8 @@ import { View, Text, Pressable, StyleSheet, Linking } from 'react-native';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import * as Haptics from 'expo-haptics';
 import { Colors } from '@/constants/Colors';
-import { router } from 'expo-router';
+import { router, useSegments } from 'expo-router';
+import { logger } from '@/services/logger';
 
 interface Props {
   children: ReactNode;
@@ -46,7 +47,7 @@ export class ErrorBoundary extends Component<Props, State> {
     this.setState({ errorInfo });
 
     // Log to error reporting service (Sentry, etc.)
-    if (__DEV__) console.error('ErrorBoundary caught an error:', error, errorInfo);
+    logger.error('ErrorBoundary caught an error:', error, errorInfo);
 
     // Call optional error callback
     this.props.onError?.(error, errorInfo);
@@ -192,7 +193,7 @@ interface ScreenErrorBoundaryProps {
 
 export function ScreenErrorBoundary({ children, screenName }: ScreenErrorBoundaryProps) {
   const handleError = (error: Error, errorInfo: React.ErrorInfo) => {
-    if (__DEV__) console.error(`Error in screen ${screenName || 'unknown'}:`, error, errorInfo);
+    logger.error(`Error in screen ${screenName || 'unknown'}:`, error, errorInfo);
     // Log to analytics/error tracking
   };
 
@@ -200,6 +201,17 @@ export function ScreenErrorBoundary({ children, screenName }: ScreenErrorBoundar
     <ErrorBoundary onError={handleError}>
       {children}
     </ErrorBoundary>
+  );
+}
+
+export function RouteErrorBoundary({ children }: { children: ReactNode }) {
+  const segments = useSegments();
+  const screenName = segments.join('/') || 'root';
+
+  return (
+    <ScreenErrorBoundary screenName={screenName}>
+      {children}
+    </ScreenErrorBoundary>
   );
 }
 

@@ -60,13 +60,9 @@
   "submit": {
     "production": {
       "ios": {
-        "appleId": "",
-        "ascAppId": "",
+        "appleId": "theblockbrowser@gmail.com",
+        "ascAppId": "6760730615",
         "appleTeamId": "T2A8YY9YDW"
-      },
-      "android": {
-        "serviceAccountKeyPath": "",
-        "track": "production"
       }
     }
   }

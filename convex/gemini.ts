@@ -780,8 +780,20 @@ ${args.currentStreak && args.currentStreak >= 7
 // --- Helpers ---
 
 function extractJson(text: string): string {
-  const match = text?.match(/```(?:json)?\s*([\s\S]*?)```/);
-  return match ? match[1].trim() : (text || "{}");
+  if (!text) return "{}";
+
+  // Try markdown first
+  const match = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (match) return match[1].trim();
+
+  // Fallback: find first { and last } — helps if model is chatty outside blocks
+  const firstBrace = text.indexOf('{');
+  const lastBrace = text.lastIndexOf('}');
+  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+    return text.substring(firstBrace, lastBrace + 1);
+  }
+
+  return text.trim() || "{}";
 }
 
 function repairJson(jsonStr: string): string {

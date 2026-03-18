@@ -12,6 +12,7 @@ import { MASCOT_PERSONALITIES } from '@/types/declutter';
 import { Mascot } from '@/components/features/Mascot';
 import { Typography } from '@/theme/typography';
 import { Spacing, BorderRadius } from '@/theme/spacing';
+import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import React from 'react';
 import {
@@ -36,7 +37,10 @@ export default function MascotScreen() {
 
   if (!mascot) {
     return (
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <LinearGradient
+        colors={isDark ? ['#0A0A0A', '#131313', '#141414'] : ['#FAFAFA', '#F7F7F7', '#F5F5F5']}
+        style={styles.container}
+      >
         <AmbientBackdrop isDark={isDark} variant="profile" />
         <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
           <Pressable
@@ -57,11 +61,11 @@ export default function MascotScreen() {
             description="Finish onboarding to choose the guide who matches your energy, tone, and cleaning style."
             primaryLabel="Choose Your Buddy"
             onPrimary={() => router.push('/onboarding')}
-            accentColors={['#FFD9A1', '#FFB547', '#FF8C63'] as const}
+            accentColors={['#D9C9A8', '#C4A87A', '#A8895C'] as const}
             style={styles.emptyCard}
           />
         </View>
-      </View>
+      </LinearGradient>
     );
   }
 
@@ -79,7 +83,10 @@ export default function MascotScreen() {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <LinearGradient
+      colors={isDark ? ['#0A0A0A', '#131313', '#141414'] : ['#FAFAFA', '#F7F7F7', '#F5F5F5']}
+      style={styles.container}
+    >
       {/* Header */}
       <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
         <Pressable
@@ -94,7 +101,11 @@ export default function MascotScreen() {
         <View style={styles.placeholder} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.content} contentInsetAdjustmentBehavior="automatic">
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 16 }]}
+        showsVerticalScrollIndicator={false}
+      >
         {/* Mascot Display */}
         <View style={[styles.mascotSection, { backgroundColor: personalityInfo.color + '20' }]}>
           <Mascot size="large" showStats interactive onPress={handlePet} />
@@ -106,9 +117,9 @@ export default function MascotScreen() {
         {/* Stats Card */}
         <Animated.View entering={FadeInDown.delay(60).duration(350)} style={[styles.statsCard, {
           backgroundColor: colors.card,
-          borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+          borderColor: isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)',
         }]}>
-          <RNText style={styles.sectionTitle}>STATS</RNText>
+          <RNText style={[styles.sectionTitle, { color: isDark ? 'rgba(255,255,255,0.21)' : 'rgba(0,0,0,0.25)' }]}>STATS</RNText>
 
           {/* Level Progress */}
           <View style={styles.levelSection}>
@@ -161,7 +172,7 @@ export default function MascotScreen() {
 
         {/* Actions */}
         <Animated.View entering={FadeInDown.delay(120).duration(350)} style={styles.actionsSection}>
-          <RNText style={styles.sectionTitle}>ACTIONS</RNText>
+          <RNText style={[styles.sectionTitle, { color: isDark ? 'rgba(255,255,255,0.21)' : 'rgba(0,0,0,0.25)' }]}>ACTIONS</RNText>
 
           <View style={styles.actionButtons}>
             <Pressable
@@ -205,9 +216,9 @@ export default function MascotScreen() {
         {/* Info Card */}
         <Animated.View entering={FadeInDown.delay(180).duration(350)} style={[styles.infoCard, {
           backgroundColor: colors.card,
-          borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+          borderColor: isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)',
         }]}>
-          <RNText style={styles.sectionTitle}>ABOUT</RNText>
+          <RNText style={[styles.sectionTitle, { color: isDark ? 'rgba(255,255,255,0.21)' : 'rgba(0,0,0,0.25)' }]}>ABOUT</RNText>
           <View style={[styles.infoRow, { borderBottomColor: isDark ? colors.divider : colors.borderLight }]}>
             <RNText style={[styles.infoLabel, { color: colors.textSecondary }]}>
               Personality
@@ -254,7 +265,7 @@ export default function MascotScreen() {
           </RNText>
         </Animated.View>
       </ScrollView>
-    </View>
+    </LinearGradient>
   );
 }
 
@@ -330,8 +341,8 @@ const styles = StyleSheet.create({
     width: 50,
   },
   content: {
+    flexGrow: 1,
     paddingHorizontal: Spacing.md,
-    paddingBottom: 100,
   },
   mascotSection: {
     alignItems: 'center',
@@ -359,7 +370,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     letterSpacing: 1.5,
     textTransform: 'uppercase',
-    color: '#808080',
     marginBottom: Spacing.md,
   },
   levelSection: {

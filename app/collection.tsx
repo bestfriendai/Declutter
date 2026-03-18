@@ -17,7 +17,9 @@ import {
 } from '@/types/declutter';
 import { FlashList } from '@shopify/flash-list';
 import * as Haptics from 'expo-haptics';
+import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
+import { Sparkles } from 'lucide-react-native';
 import React, { useMemo, useState } from 'react';
 import {
     Pressable,
@@ -104,7 +106,22 @@ export default function CollectionScreen() {
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <LinearGradient
+      colors={colorScheme === 'dark' ? ['#0A0A0A', '#131313', '#141414'] : ['#FAFAFA', '#F7F7F7', '#F5F5F5']}
+      style={styles.container}
+    >
+      {/* Decorative sparkles */}
+      <Sparkles
+        size={14}
+        color={colorScheme === 'dark' ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.12)'}
+        style={{ position: 'absolute', top: insets.top + 20, right: 26, zIndex: 1 }}
+      />
+      <Sparkles
+        size={11}
+        color={colorScheme === 'dark' ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.08)'}
+        style={{ position: 'absolute', top: insets.top + 56, left: 22, zIndex: 1 }}
+      />
+
       {/* Header */}
       <Animated.View
         entering={FadeInDown.delay(50).duration(350)}
@@ -130,7 +147,7 @@ export default function CollectionScreen() {
       <Animated.View entering={FadeInDown.delay(100).duration(350)}>
         <View style={[styles.statsCard, {
           backgroundColor: colors.card,
-          borderColor: rawColorScheme === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+          borderColor: rawColorScheme === 'dark' ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)',
         }]}>
           <View style={styles.statsRow} accessibilityRole="summary" accessibilityLabel={`${collectionStats.totalCollected} total collected, ${uniqueOwned} of ${totalCollectibles} unique, ${completionPercent}% complete`}>
             <View style={styles.statItem}>
@@ -252,7 +269,7 @@ export default function CollectionScreen() {
         data={filteredCollectibles}
         numColumns={4}
         keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.gridContent}
+        contentContainerStyle={{ ...styles.gridContent, paddingBottom: insets.bottom + 16 }}
         renderItem={({ item }) => {
             const owned = isOwned(item.id);
             const unlockable = canUnlock(item);
@@ -399,7 +416,7 @@ export default function CollectionScreen() {
           </Pressable>
         </Animated.View>
       )}
-    </View>
+    </LinearGradient>
   );
 }
 
@@ -485,7 +502,6 @@ const styles = StyleSheet.create({
   },
   gridContent: {
     paddingHorizontal: 16,
-    paddingBottom: 100,
     paddingTop: 4,
   },
   grid: {

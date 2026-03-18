@@ -17,8 +17,10 @@ import { useColorScheme } from '@/hooks/useColorScheme';
 import { Colors, RingColors } from '@/constants/Colors';
 import { Typography } from '@/theme/typography';
 
-// Typed as any to avoid reanimated/svg type incompatibilities
-const AnimatedCircle: any = Animated.createAnimatedComponent(Circle as any);
+// Type workaround: reanimated + react-native-svg have incompatible generics
+const AnimatedCircle = Animated.createAnimatedComponent(Circle) as React.ComponentClass<
+  React.ComponentProps<typeof Circle> & { animatedProps?: Record<string, unknown> }
+>;
 
 interface RingData {
   value: number; // 0-100
@@ -94,7 +96,7 @@ export function ActivityRings({
               strokeWidth={strokeWidth}
               progress={ring.value / (ring.maxValue ?? 100)}
               gradientId={`ring-gradient-${index}`}
-              backgroundColor={colorScheme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'}
+              backgroundColor={colorScheme === 'dark' ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'}
               animationDelay={animationDelay + index * 150}
               animationDuration={animationDuration}
             />
@@ -245,7 +247,7 @@ export function SingleRing({
   const colors = Colors[colorScheme];
   const ringColor = color ?? colors.primary;
   const actualValue = value ?? progress ?? 0;
-  const bgColor = backgroundColor ?? (colorScheme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)');
+  const bgColor = backgroundColor ?? (colorScheme === 'dark' ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)');
 
   const center = size / 2;
   const radius = center - strokeWidth / 2;

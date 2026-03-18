@@ -17,7 +17,7 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import { ChevronLeft, Share2, CheckCheck, Clock, Home, Flame, Gem, HelpCircle, Flag, Users, CircleCheck, TrendingUp, Plus } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import Animated, { FadeInDown, SlideInRight } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -38,12 +38,12 @@ import {
 } from '@/services/social';
 
 // Challenge type info
-const CHALLENGE_TYPES: Record<ChallengeType, { icon: string; label: string; unit: string }> = {
-  tasks_count: { icon: 'checkmark-done', label: 'Complete Tasks', unit: 'tasks' },
-  time_spent: { icon: 'time', label: 'Time Spent', unit: 'minutes' },
-  room_complete: { icon: 'home', label: 'Complete Room', unit: 'room' },
-  streak: { icon: 'flame', label: 'Maintain Streak', unit: 'days' },
-  collectibles: { icon: 'diamond', label: 'Collect Items', unit: 'items' },
+const CHALLENGE_TYPES: Record<ChallengeType, { icon: React.FC<{size?: number; color?: string}>; label: string; unit: string }> = {
+  tasks_count: { icon: CheckCheck, label: 'Complete Tasks', unit: 'tasks' },
+  time_spent: { icon: Clock, label: 'Time Spent', unit: 'minutes' },
+  room_complete: { icon: Home, label: 'Complete Room', unit: 'room' },
+  streak: { icon: Flame, label: 'Maintain Streak', unit: 'days' },
+  collectibles: { icon: Gem, label: 'Collect Items', unit: 'items' },
 };
 
 export default function ChallengeDetailScreen() {
@@ -144,12 +144,11 @@ export default function ChallengeDetailScreen() {
   // Loading state
   if (isLoading) {
     return (
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <LinearGradient
+        colors={isDark ? ['#0A0A0A', '#131313', '#141414'] : ['#FAFAFA', '#F7F7F7', '#F5F5F5']}
+        style={styles.container}
+      >
         <AmbientBackdrop isDark={isDark} variant="profile" />
-        <LinearGradient
-          colors={colors.backgroundGradient}
-          style={StyleSheet.absoluteFill}
-        />
         <View style={[styles.stateContainer, { paddingTop: insets.top + 32 }]}>
           <ExpressiveStateView
             isDark={isDark}
@@ -161,19 +160,18 @@ export default function ChallengeDetailScreen() {
             style={styles.stateCard}
           />
         </View>
-      </View>
+      </LinearGradient>
     );
   }
 
   // Error state
   if (error || !challenge) {
     return (
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <LinearGradient
+        colors={isDark ? ['#0A0A0A', '#131313', '#141414'] : ['#FAFAFA', '#F7F7F7', '#F5F5F5']}
+        style={styles.container}
+      >
         <AmbientBackdrop isDark={isDark} variant="profile" />
-        <LinearGradient
-          colors={colors.backgroundGradient}
-          style={StyleSheet.absoluteFill}
-        />
         <View style={[styles.stateContainer, { paddingTop: insets.top + 32 }]}>
           <ExpressiveStateView
             isDark={isDark}
@@ -189,19 +187,18 @@ export default function ChallengeDetailScreen() {
             style={styles.stateCard}
           />
         </View>
-      </View>
+      </LinearGradient>
     );
   }
 
   // Not authenticated state
   if (!isAuthenticated) {
     return (
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <LinearGradient
+        colors={isDark ? ['#0A0A0A', '#131313', '#141414'] : ['#FAFAFA', '#F7F7F7', '#F5F5F5']}
+        style={styles.container}
+      >
         <AmbientBackdrop isDark={isDark} variant="profile" />
-        <LinearGradient
-          colors={colors.backgroundGradient}
-          style={StyleSheet.absoluteFill}
-        />
         <View style={[styles.stateContainer, { paddingTop: insets.top + 32 }]}>
           <ExpressiveStateView
             isDark={isDark}
@@ -217,16 +214,15 @@ export default function ChallengeDetailScreen() {
             style={styles.stateCard}
           />
         </View>
-      </View>
+      </LinearGradient>
     );
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <LinearGradient
-        colors={colors.backgroundGradient}
-        style={StyleSheet.absoluteFill}
-      />
+    <LinearGradient
+      colors={isDark ? ['#0A0A0A', '#131313', '#141414'] : ['#FAFAFA', '#F7F7F7', '#F5F5F5']}
+      style={styles.container}
+    >
 
       {/* Header */}
       <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
@@ -239,7 +235,7 @@ export default function ChallengeDetailScreen() {
           accessibilityRole="button"
           accessibilityLabel="Go back"
         >
-          <Ionicons name="chevron-back" size={24} color={colors.text} />
+          <ChevronLeft size={24} color={colors.text} />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: colors.text }]}>Challenge</Text>
         <TouchableOpacity
@@ -248,12 +244,12 @@ export default function ChallengeDetailScreen() {
           accessibilityRole="button"
           accessibilityLabel="Share challenge"
         >
-          <Ionicons name="share-outline" size={22} color={colors.text} />
+          <Share2 size={22} color={colors.text} />
         </TouchableOpacity>
       </View>
 
       <ScrollView
-        contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 20 }]}
+        contentContainerStyle={[styles.scrollContent, { flexGrow: 1, paddingBottom: insets.bottom + 16 }]}
         contentInsetAdjustmentBehavior="automatic"
         refreshControl={
           <RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} />
@@ -264,7 +260,7 @@ export default function ChallengeDetailScreen() {
           <GlassCard style={styles.challengeCard}>
             <View style={styles.challengeHeader}>
               <View style={[styles.typeIcon, { backgroundColor: colors.primary + '20' }]}>
-                <Ionicons name={typeInfo?.icon as any} size={28} color={colors.primary} />
+                {typeInfo?.icon ? React.createElement(typeInfo.icon, { size: 28, color: colors.primary }) : <HelpCircle size={28} color={colors.primary} />}
               </View>
               <View style={styles.challengeInfo}>
                 <Text style={[styles.challengeTitle, { color: colors.text }]}>
@@ -284,19 +280,19 @@ export default function ChallengeDetailScreen() {
 
             <View style={styles.metaRow}>
               <View style={styles.metaItem}>
-                <Ionicons name="flag" size={16} color={colors.textSecondary} />
+                <Flag size={16} color={colors.textSecondary} />
                 <Text style={[styles.metaText, { color: colors.textSecondary }]}>
                   {challenge.target} {typeInfo?.unit}
                 </Text>
               </View>
               <View style={styles.metaItem}>
-                <Ionicons name="time" size={16} color={daysLeft <= 3 ? colors.warning : colors.textSecondary} />
+                <Clock size={16} color={daysLeft <= 3 ? colors.warning : colors.textSecondary} />
                 <Text style={[styles.metaText, { color: daysLeft <= 3 ? colors.warning : colors.textSecondary }]}>
                   {daysLeft === 0 ? 'Last day!' : daysLeft === 1 ? '1 day left!' : `${daysLeft} days left`}
                 </Text>
               </View>
               <View style={styles.metaItem}>
-                <Ionicons name="people" size={16} color={colors.textSecondary} />
+                <Users size={16} color={colors.textSecondary} />
                 <Text style={[styles.metaText, { color: colors.textSecondary }]}>
                   {challenge.participants.length} participant{challenge.participants.length !== 1 ? 's' : ''}
                 </Text>
@@ -322,7 +318,7 @@ export default function ChallengeDetailScreen() {
                 </View>
                 {myProgress?.completed && (
                   <View style={styles.completedBadge}>
-                    <Ionicons name="checkmark-circle" size={16} color={colors.success} />
+                    <CircleCheck size={16} color={colors.success} />
                     <Text style={[styles.completedText, { color: colors.success }]}>
                       Challenge Complete! You did it!
                     </Text>
@@ -330,7 +326,7 @@ export default function ChallengeDetailScreen() {
                 )}
                 {!myProgress?.completed && progressPercent >= 50 && (
                   <View style={styles.completedBadge}>
-                    <Ionicons name="trending-up" size={16} color={colors.warning} />
+                    <TrendingUp size={16} color={colors.warning} />
                     <Text style={[styles.completedText, { color: colors.warning }]}>
                       Over halfway! Keep pushing!
                     </Text>
@@ -347,7 +343,7 @@ export default function ChallengeDetailScreen() {
                 variant="primary"
                 size="large"
                 disabled={isJoining}
-                icon={<Ionicons name="add" size={20} color={colors.textOnPrimary} />}
+                icon={<Plus size={20} color={colors.textOnPrimary} />}
                 style={styles.joinButton}
               />
             )}
@@ -369,7 +365,7 @@ export default function ChallengeDetailScreen() {
               accessibilityRole="button"
               accessibilityLabel="Share invite code"
             >
-              <Ionicons name="share-social" size={18} color={colors.primary} />
+              <Share2 size={18} color={colors.primary} />
               <Text style={[styles.copyText, { color: colors.primary }]}>Share</Text>
             </TouchableOpacity>
           </GlassCard>
@@ -377,7 +373,7 @@ export default function ChallengeDetailScreen() {
 
         {/* Leaderboard */}
         <Animated.View entering={FadeInDown.delay(300).duration(350)}>
-          <Text style={styles.sectionTitle}>LEADERBOARD</Text>
+          <Text style={[styles.sectionTitle, { color: isDark ? 'rgba(255,255,255,0.21)' : 'rgba(0,0,0,0.25)' }]}>LEADERBOARD</Text>
           {challenge.participants
             .sort((a, b) => b.progress - a.progress)
             .map((participant, index) => (
@@ -421,7 +417,7 @@ export default function ChallengeDetailScreen() {
                     {participant.progress}/{challenge.target}
                   </Text>
                   {participant.completed && (
-                    <Ionicons name="checkmark-circle" size={20} color={colors.success} />
+                    <CircleCheck size={20} color={colors.success} />
                   )}
                 </GlassCard>
               </Animated.View>
@@ -442,7 +438,7 @@ export default function ChallengeDetailScreen() {
           </GlassCard>
         </Animated.View>
       </ScrollView>
-    </View>
+    </LinearGradient>
   );
 }
 
@@ -605,7 +601,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     letterSpacing: 1.5,
     textTransform: 'uppercase',
-    color: '#808080',
     marginBottom: Spacing.sm,
     marginTop: Spacing.xs,
   },

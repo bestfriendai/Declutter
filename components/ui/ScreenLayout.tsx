@@ -253,6 +253,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 2,
+    minHeight: 44,
+    minWidth: 44,
   },
   backChevron: {
     fontSize: 28,

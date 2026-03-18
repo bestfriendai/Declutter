@@ -4,7 +4,7 @@
  * Accessible via deep link: declutterly://join or https://declutterly.app/join
  */
 
-import { Ionicons } from '@expo/vector-icons';
+import { ChevronLeft, Ticket, LogIn } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -32,7 +32,7 @@ import { useAuth } from '@/context/AuthContext';
 import { joinChallenge } from '@/services/social';
 import { useTheme } from '@/theme/ThemeProvider';
 import { Typography } from '@/theme/typography';
-import { Spacing, BorderRadius } from '@/theme/spacing';
+import { Spacing } from '@/theme/spacing';
 const ROUTES = {
   CHALLENGE: (id: string) => `/challenge/${id}` as const,
   AUTH: { LOGIN: '/auth/login' as const },
@@ -121,7 +121,7 @@ export default function JoinScreen() {
             accessibilityRole="button"
             accessibilityLabel="Go back"
           >
-            <Ionicons name="chevron-back" size={24} color={colors.text} />
+            <ChevronLeft size={24} color={colors.text} />
           </TouchableOpacity>
           <Text style={[styles.headerTitle, { color: colors.text }]}>Join</Text>
           <View style={styles.placeholder} />
@@ -166,17 +166,17 @@ export default function JoinScreen() {
               accessibilityRole="button"
               accessibilityLabel="Go back"
           >
-            <Ionicons name="chevron-back" size={24} color={colors.text} />
+            <ChevronLeft size={24} color={colors.text} />
           </TouchableOpacity>
           <Text style={[styles.headerTitle, { color: colors.text }]}>Join</Text>
           <View style={styles.placeholder} />
         </View>
 
-        <View style={styles.content}>
+        <View style={[styles.content, { paddingBottom: insets.bottom + 16 }]}>
           <Animated.View entering={FadeInDown.delay(100).duration(350)}>
             <View style={styles.iconContainer}>
               <View style={[styles.iconCircle, { backgroundColor: colors.primary + '20' }]}>
-                <Ionicons name="ticket-outline" size={48} color={colors.primary} />
+                <Ticket size={48} color={colors.primary} />
               </View>
             </View>
 
@@ -228,7 +228,7 @@ export default function JoinScreen() {
                 isJoining ? (
                   <ActivityIndicator size="small" color={colors.textOnPrimary} />
                 ) : (
-                  <Ionicons name="enter" size={20} color={colors.textOnPrimary} />
+                  <LogIn size={20} color={colors.textOnPrimary} />
                 )
               }
               style={styles.joinButton}

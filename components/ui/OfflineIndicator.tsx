@@ -4,20 +4,22 @@
  * Supports light and dark mode themes
  */
 
-import React, { useEffect, useState } from 'react';
-import { StyleSheet, Text, Pressable } from 'react-native';
+import { OFFLINE_STATUS_COPY } from '@/constants/copy';
+import { Time } from '@/constants/time';
+import { useColorScheme } from '@/hooks/useColorScheme';
+import { CloudOff, CircleCheck } from 'lucide-react-native';
 import NetInfo, { NetInfoState } from '@react-native-community/netinfo';
+import React, { useEffect, useState } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withTiming,
-  withSpring,
-  interpolate,
-  useReducedMotion,
+    interpolate,
+    useAnimatedStyle,
+    useReducedMotion,
+    useSharedValue,
+    withSpring,
+    withTiming,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
-import { useColorScheme } from '@/hooks/useColorScheme';
 
 interface OfflineIndicatorProps {
   onPress?: () => void;
@@ -35,34 +37,53 @@ export function OfflineIndicator({ onPress }: OfflineIndicatorProps) {
   const opacity = useSharedValue(0);
   const showReconnected = useSharedValue(0);
 
+  // Ref tracks current offline state so the subscription closure never goes stale
+  // and we can avoid putting `isOffline` in the effect deps (which caused an infinite loop
+  // because every setIsOffline() call would re-create the NetInfo subscription).
+  const isOfflineRef = React.useRef(false);
+
   useEffect(() => {
-    // Subscribe to network state changes
-    const unsubscribe = NetInfo.addEventListener((state: NetInfoState) => {
-      const offline = !state.isConnected || !state.isInternetReachable;
+    let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
+    let hideTimeout: ReturnType<typeof setTimeout> | null = null;
 
-      if (offline !== isOffline) {
-        if (!offline && isOffline) {
-          // Just came back online - show reconnected briefly
-          setWasOffline(true);
-          showReconnected.value = 1;
+    const handleState = (state: NetInfoState) => {
+      // Treat null isInternetReachable as "unknown/checking", not offline
+      const offline = !state.isConnected || state.isInternetReachable === false;
+      const prev = isOfflineRef.current;
 
-          // Hide after 2 seconds
-          setTimeout(() => {
-            showReconnected.value = 0;
-            setTimeout(() => setWasOffline(false), 300);
-          }, 2000);
-        }
-        setIsOffline(offline);
+      if (offline === prev) return;
+
+      if (!offline && prev) {
+        // Just came back online - show reconnected briefly
+        setWasOffline(true);
+        showReconnected.value = 1;
+
+        if (reconnectTimeout) clearTimeout(reconnectTimeout);
+        if (hideTimeout) clearTimeout(hideTimeout);
+
+        reconnectTimeout = setTimeout(() => {
+          showReconnected.value = 0;
+          hideTimeout = setTimeout(() => setWasOffline(false), Time.OFFLINE_BANNER_EXIT_MS);
+        }, Time.OFFLINE_RECONNECTED_MS);
       }
-    });
+
+      isOfflineRef.current = offline;
+      setIsOffline(offline);
+    };
+
+    // Subscribe to network state changes (subscribe once, never re-subscribe)
+    const unsubscribe = NetInfo.addEventListener(handleState);
 
     // Check initial state
-    NetInfo.fetch().then((state) => {
-      setIsOffline(!state.isConnected || !state.isInternetReachable);
-    });
+    NetInfo.fetch().then(handleState);
 
-    return () => unsubscribe();
-  }, [isOffline]);
+    return () => {
+      if (reconnectTimeout) clearTimeout(reconnectTimeout);
+      if (hideTimeout) clearTimeout(hideTimeout);
+      unsubscribe();
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Animate in/out based on offline status
   useEffect(() => {
@@ -77,7 +98,7 @@ export function OfflineIndicator({ onPress }: OfflineIndicatorProps) {
         : withTiming(-100, { duration: 300 });
       opacity.value = withTiming(0, { duration: 200 });
     }
-  }, [isOffline, wasOffline, reducedMotion]);
+  }, [isOffline, wasOffline, reducedMotion, opacity, translateY]);
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: translateY.value }],
@@ -118,6 +139,7 @@ export function OfflineIndicator({ onPress }: OfflineIndicatorProps) {
     >
       <Pressable
         onPress={onPress}
+        disabled={!onPress}
         style={({ pressed }) => [
           styles.banner,
           {
@@ -125,30 +147,47 @@ export function OfflineIndicator({ onPress }: OfflineIndicatorProps) {
               ? reconnectedBackgroundColor
               : offlineBackgroundColor,
           },
-          pressed && styles.pressed,
+          onPress && pressed && styles.pressed,
         ]}
+        accessibilityRole={onPress ? 'button' : undefined}
+        accessibilityLabel={
+          wasOffline && !isOffline
+            ? `${OFFLINE_STATUS_COPY.reconnectedTitle}. ${OFFLINE_STATUS_COPY.reconnectedMessage}`
+            : `${OFFLINE_STATUS_COPY.offlineTitle}. ${OFFLINE_STATUS_COPY.offlineMessage}`
+        }
       >
         {/* Offline state */}
         <Animated.View style={[styles.content, offlineStyle]}>
-          <Ionicons
-            name="cloud-offline-outline"
+          <CloudOff
             size={16}
             color={textColor}
             style={styles.icon}
           />
-          <Text style={[styles.text, { color: textColor }]}>You&apos;re offline</Text>
-          <Text style={[styles.subtext, { color: subtextColor }]}>Some features may be limited</Text>
+          <View style={styles.textGroup}>
+            <Text style={[styles.text, { color: textColor }]}>
+              {OFFLINE_STATUS_COPY.offlineTitle}
+            </Text>
+            <Text style={[styles.subtext, { color: subtextColor }]}>
+              {OFFLINE_STATUS_COPY.offlineMessage}
+            </Text>
+          </View>
         </Animated.View>
 
         {/* Reconnected state */}
         <Animated.View style={[styles.content, styles.absolute, reconnectedStyle]}>
-          <Ionicons
-            name="checkmark-circle-outline"
+          <CircleCheck
             size={16}
             color={textColor}
             style={styles.icon}
           />
-          <Text style={[styles.text, { color: textColor }]}>Back online!</Text>
+          <View style={styles.textGroup}>
+            <Text style={[styles.text, { color: textColor }]}>
+              {OFFLINE_STATUS_COPY.reconnectedTitle}
+            </Text>
+            <Text style={[styles.subtext, { color: subtextColor }]}>
+              {OFFLINE_STATUS_COPY.reconnectedMessage}
+            </Text>
+          </View>
         </Animated.View>
       </Pressable>
     </Animated.View>
@@ -171,7 +210,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.15,
@@ -185,24 +224,30 @@ const styles = StyleSheet.create({
   content: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
+    flex: 1,
   },
   absolute: {
     position: 'absolute',
-    left: 0,
-    right: 0,
-    justifyContent: 'center',
+    left: 16,
+    right: 16,
+    justifyContent: 'flex-start',
   },
   icon: {
     marginRight: 8,
+    marginTop: 1,
   },
   text: {
     fontSize: 14,
     fontWeight: '600',
-    marginRight: 6,
+  },
+  textGroup: {
+    flex: 1,
+    gap: 2,
   },
   subtext: {
     fontSize: 12,
+    lineHeight: 16,
   },
 });
 

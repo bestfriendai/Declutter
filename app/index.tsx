@@ -7,18 +7,17 @@ import { Redirect } from 'expo-router';
 import { useAuth } from '@/context/AuthContext';
 import { useDeclutter } from '@/context/DeclutterContext';
 import { api } from '@/convex/_generated/api';
-import { View, ActivityIndicator, StyleSheet, Text } from 'react-native';
-import { useTheme } from '@/theme/ThemeProvider';
-import { Typography } from '@/theme/typography';
-import { Spacing } from '@/theme/spacing';
+import { View, ActivityIndicator, StyleSheet, Text, useColorScheme } from 'react-native';
+import { Colors } from '@/constants/Colors';
 import { StatusBar } from 'expo-status-bar';
-import Animated, { FadeIn } from 'react-native-reanimated';
 import { useQuery } from 'convex/react';
 
 export default function Index() {
   const { isAuthenticated, isLoading, isAuthReady } = useAuth();
   const { user, isLoaded } = useDeclutter();
-  const { colors, isDark } = useTheme();
+  const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
+  const colors = Colors[isDark ? 'dark' : 'light'];
   const cloudUser = useQuery(api.users.get, isAuthenticated ? {} : 'skip');
   const isResolvingCloudUser = isAuthenticated && cloudUser === undefined;
   const hasCompletedLocalOnboarding = !!user?.onboardingComplete;
@@ -34,7 +33,7 @@ export default function Index() {
         accessibilityRole="none"
       >
         <StatusBar style={isDark ? 'light' : 'dark'} />
-        <Animated.View entering={FadeIn.duration(400)} style={styles.loadingContent}>
+        <View style={styles.loadingContent}>
           <Text style={[styles.loadingEmoji]} accessibilityElementsHidden>
             {'🧹'}
           </Text>
@@ -44,10 +43,10 @@ export default function Index() {
             style={styles.spinner}
             accessibilityLabel="Loading"
           />
-          <Text style={[Typography.subheadline, { color: colors.textSecondary, textAlign: 'center' }]}>
+          <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
             Getting your calm space ready...
           </Text>
-        </Animated.View>
+        </View>
       </View>
     );
   }
@@ -67,13 +66,17 @@ const styles = StyleSheet.create({
   },
   loadingContent: {
     alignItems: 'center',
-    gap: Spacing.md,
+    gap: 16,
   },
   loadingEmoji: {
     fontSize: 48,
-    marginBottom: Spacing.xs,
+    marginBottom: 8,
+  },
+  loadingText: {
+    fontSize: 15,
+    textAlign: 'center' as const,
   },
   spinner: {
-    marginVertical: Spacing.xs,
+    marginVertical: 8,
   },
 });

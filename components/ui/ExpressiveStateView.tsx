@@ -1,10 +1,19 @@
 import React from 'react';
-import { Pressable, StyleProp, StyleSheet, Text, View, ViewStyle, Platform } from 'react-native';
+import { Pressable, StyleProp, StyleSheet, Text, View, ViewStyle } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Ionicons } from '@expo/vector-icons';
+import { Lock, AlertCircle, Trophy, Scan, Camera, HelpCircle } from 'lucide-react-native';
+import type { LucideIcon } from 'lucide-react-native';
 
 const BODY_FONT = 'DM Sans';
 const DISPLAY_FONT = 'Bricolage Grotesque';
+
+const ICON_MAP: Record<string, LucideIcon> = {
+  'lock-closed-outline': Lock,
+  'alert-circle-outline': AlertCircle,
+  'trophy-outline': Trophy,
+  'scan-outline': Scan,
+  'camera-outline': Camera,
+};
 
 interface ExpressiveStateViewProps {
   isDark: boolean;
@@ -12,7 +21,7 @@ interface ExpressiveStateViewProps {
   description: string;
   kicker?: string;
   emoji?: string;
-  icon?: keyof typeof Ionicons.glyphMap;
+  icon?: string;
   primaryLabel?: string;
   onPrimary?: () => void;
   secondaryLabel?: string;
@@ -37,8 +46,8 @@ export function ExpressiveStateView({
 }: ExpressiveStateViewProps) {
   const gradient = accentColors ?? (
     isDark
-      ? (['#FFD9A1', '#FFB547', '#FF8C63'] as const)
-      : (['#FFD39A', '#FFB547', '#FF9B71'] as const)
+      ? (['#D9C9A8', '#C4A87A', '#A8895C'] as const)
+      : (['#D4BD96', '#C4A87A', '#9E8260'] as const)
   );
 
   return (
@@ -47,7 +56,7 @@ export function ExpressiveStateView({
         styles.card,
         {
           backgroundColor: isDark ? 'rgba(22,22,28,0.92)' : 'rgba(255,255,255,0.88)',
-          borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(55,40,26,0.08)',
+          borderColor: isDark ? 'rgba(255,255,255,0.07)' : 'rgba(55,40,26,0.08)',
         },
         style,
       ]}
@@ -73,7 +82,7 @@ export function ExpressiveStateView({
           {emoji ? (
             <Text style={styles.emoji}>{emoji}</Text>
           ) : (
-            <Ionicons name={icon!} size={24} color="#17120B" />
+            React.createElement(ICON_MAP[icon!] ?? HelpCircle, { size: 24, color: '#17120B' })
           )}
         </LinearGradient>
       ) : null}
@@ -84,7 +93,7 @@ export function ExpressiveStateView({
         </Text>
       ) : null}
 
-      <Text style={[styles.title, { color: isDark ? '#FFF8EF' : '#17171A' }]}>
+      <Text style={[styles.title, { color: isDark ? '#FFF8EF' : '#1A1A1A' }]}>
         {title}
       </Text>
       <Text style={[styles.description, { color: isDark ? 'rgba(255,255,255,0.58)' : 'rgba(23,23,26,0.56)' }]}>
@@ -105,7 +114,7 @@ export function ExpressiveStateView({
           style={[
             styles.secondaryButton,
             {
-              borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(55,40,26,0.08)',
+              borderColor: isDark ? 'rgba(255,255,255,0.07)' : 'rgba(55,40,26,0.08)',
               backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.74)',
             },
           ]}

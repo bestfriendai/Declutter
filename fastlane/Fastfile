@@ -1,0 +1,47 @@
+default_platform(:ios)
+
+platform :ios do
+  desc "Create Declutter app in App Store Connect"
+  lane :create_app do
+    produce(
+      app_identifier: "com.theblockbrowser.declutter",
+      app_name: "Declutter by BlockBrowser",
+      language: "English",
+      app_version: "1.0.0",
+      sku: "com.declutter.app.sku",
+      skip_itc: false
+    )
+  end
+
+  desc "Enable Push Notifications and Sign in with Apple"
+  lane :setup_capabilities do
+    produce(
+      app_identifier: "com.theblockbrowser.declutter",
+      enable_services: {
+        push_notification: "on",
+        sign_in_with_apple: "on"
+      }
+    )
+  end
+
+  desc "Upload App Store metadata"
+  lane :metadata do
+    deliver(
+      username: "theblockbrowser@gmail.com",
+      app_identifier: "com.theblockbrowser.declutter",
+      skip_binary_upload: true,
+      skip_screenshots: true,
+      force: true,
+      metadata_path: "./fastlane/metadata",
+      submit_for_review: false,
+      automatic_release: false,
+      precheck_include_in_app_purchases: false
+    )
+  end
+
+  desc "Build and upload with EAS Submit (preferred for Expo)"
+  lane :release_with_eas do
+    sh("eas build --platform ios --profile production")
+    sh("eas submit --platform ios --profile production")
+  end
+end

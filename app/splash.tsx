@@ -1,111 +1,115 @@
 /**
- * Declutterly Splash Screen
- * Premium loading screen shown briefly before the app shell loads.
- * ADHD-friendly: calm, dark, minimal with a gentle breathing animation.
+ * Declutterly Splash Screen (V1)
+ * Matches Pencil design: BIEh1
+ * Mascot centered, app name, tagline, 3 breathing dots.
  */
 
 import React, { useEffect } from 'react';
-import { Platform, StyleSheet, Text, View } from 'react-native';
+import { useColorScheme } from '@/hooks/useColorScheme';
+import { StyleSheet, Text, View } from 'react-native';
 import Animated, {
   Easing,
   useAnimatedStyle,
   useSharedValue,
+  withDelay,
   withRepeat,
   withSequence,
   withTiming,
 } from 'react-native-reanimated';
-import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { StatusBar } from 'expo-status-bar';
 
-const DISPLAY_FONT = 'Bricolage Grotesque';
-const BODY_FONT = 'DM Sans';
+// ─── V1 Color Palette ────────────────────────────────────────────────────────
+const V1 = {
+  coral: '#FF6B6B',
+  dark: { bg: '#0C0C0C', text: '#FFFFFF', textMuted: 'rgba(255,255,255,0.35)' },
+  light: { bg: '#FAFAFA', text: '#1A1A1A', textMuted: 'rgba(0,0,0,0.35)' },
+};
 
-export default function SplashScreen() {
-  // Breathing dot animation
-  const dotOpacity = useSharedValue(0.3);
-  const dotScale = useSharedValue(0.85);
-  const wordmarkOpacity = useSharedValue(0);
-  const taglineOpacity = useSharedValue(0);
+function BreathingDot({ delay }: { delay: number; isDark: boolean }) {
+  const opacity = useSharedValue(0.3);
 
   useEffect(() => {
-    // Fade in wordmark with slight stagger for tagline
-    wordmarkOpacity.value = withTiming(1, {
+    opacity.value = withDelay(
+      delay,
+      withRepeat(
+        withSequence(
+          withTiming(1, { duration: 800, easing: Easing.inOut(Easing.sin) }),
+          withTiming(0.3, { duration: 800, easing: Easing.inOut(Easing.sin) })
+        ),
+        -1,
+        false
+      )
+    );
+  }, [delay, opacity]);
+
+  const style = useAnimatedStyle(() => ({
+    opacity: opacity.value,
+  }));
+
+  return (
+    <Animated.View
+      style={[
+        styles.dot,
+        style,
+        { backgroundColor: V1.coral },
+      ]}
+    />
+  );
+}
+
+export default function SplashScreen() {
+  const rawScheme = useColorScheme();
+  const isDark = rawScheme === 'dark';
+  const t = isDark ? V1.dark : V1.light;
+  const insets = useSafeAreaInsets();
+
+  const contentOpacity = useSharedValue(0);
+
+  useEffect(() => {
+    // Fade in
+    contentOpacity.value = withTiming(1, {
       duration: 600,
       easing: Easing.out(Easing.cubic),
     });
-    taglineOpacity.value = withSequence(
-      withTiming(0, { duration: 400 }),
-      withTiming(1, { duration: 500, easing: Easing.out(Easing.cubic) })
-    );
 
-    // Gentle breathing loop on the dot
-    dotOpacity.value = withRepeat(
-      withSequence(
-        withTiming(1, { duration: 1100, easing: Easing.inOut(Easing.sin) }),
-        withTiming(0.3, { duration: 1100, easing: Easing.inOut(Easing.sin) })
-      ),
-      -1,
-      false
-    );
-    dotScale.value = withRepeat(
-      withSequence(
-        withTiming(1, { duration: 1100, easing: Easing.inOut(Easing.sin) }),
-        withTiming(0.72, { duration: 1100, easing: Easing.inOut(Easing.sin) })
-      ),
-      -1,
-      false
-    );
-
-    // Navigate faster -- reduce wait time for ADHD brains that lose interest
+    // Navigate after brief delay
     const timer = setTimeout(() => {
       router.replace('/');
     }, 1600);
     return () => clearTimeout(timer);
-  }, [dotOpacity, dotScale, wordmarkOpacity, taglineOpacity]);
+  }, [contentOpacity]);
 
-  const wordmarkStyle = useAnimatedStyle(() => ({
-    opacity: wordmarkOpacity.value,
-    transform: [{ translateY: (1 - wordmarkOpacity.value) * 12 }],
-  }));
-
-  const taglineStyle = useAnimatedStyle(() => ({
-    opacity: taglineOpacity.value,
-    transform: [{ translateY: (1 - taglineOpacity.value) * 6 }],
-  }));
-
-  const dotStyle = useAnimatedStyle(() => ({
-    opacity: dotOpacity.value,
-    transform: [{ scale: dotScale.value }],
+  const fadeStyle = useAnimatedStyle(() => ({
+    opacity: contentOpacity.value,
+    transform: [{ translateY: (1 - contentOpacity.value) * 16 }],
   }));
 
   return (
-    <View style={styles.container}>
-      <LinearGradient
-        colors={['#0A0A0A', '#0D0D12', '#0A0A0A']}
-        start={{ x: 0.2, y: 0 }}
-        end={{ x: 0.8, y: 1 }}
-        style={StyleSheet.absoluteFill}
-      />
+    <View style={[styles.container, { backgroundColor: t.bg }]}>
+      <StatusBar style={isDark ? 'light' : 'dark'} />
 
-      {/* Soft ambient glow */}
-      <View style={styles.glowWrap} pointerEvents="none">
-        <LinearGradient
-          colors={['rgba(255,184,107,0.12)', 'transparent']}
-          start={{ x: 0.5, y: 0 }}
-          end={{ x: 0.5, y: 1 }}
-          style={styles.glow}
-        />
-      </View>
+      <Animated.View style={[styles.centerContent, fadeStyle]}>
+        {/* Mascot circle */}
+        <View style={[styles.mascotCircle, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }]}>
+          <Text style={styles.mascotEmoji}>🐹</Text>
+        </View>
 
-      <Animated.View style={[styles.wordmarkWrap, wordmarkStyle]}>
         {/* App name */}
-        <Text style={styles.appName}>Declutterly</Text>
-        <Animated.Text style={[styles.tagline, taglineStyle]}>Calm space, clear mind.</Animated.Text>
+        <Text style={[styles.appName, { color: t.text }]}>Declutter</Text>
+
+        {/* Tagline */}
+        <Text style={[styles.tagline, { color: t.textMuted }]}>
+          Organize your space, organize your mind
+        </Text>
       </Animated.View>
 
-      {/* Breathing loading indicator */}
-      <View style={styles.dotWrap}>
-        <Animated.View style={[styles.dot, dotStyle]} />
+      {/* 3 breathing dots */}
+      <View style={[styles.dotsWrap, { bottom: insets.bottom + 48 }]}>
+        <BreathingDot delay={0} isDark={isDark} />
+        <BreathingDot delay={200} isDark={isDark} />
+        <BreathingDot delay={400} isDark={isDark} />
       </View>
     </View>
   );
@@ -114,48 +118,43 @@ export default function SplashScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0A0A0A',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  glowWrap: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: '60%',
-  },
-  glow: {
-    flex: 1,
-  },
-  wordmarkWrap: {
+  centerContent: {
     alignItems: 'center',
-    gap: 10,
+    gap: 16,
+  },
+  mascotCircle: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  mascotEmoji: {
+    fontSize: 52,
   },
   appName: {
-    fontFamily: DISPLAY_FONT,
-    fontSize: 48,
+    fontSize: 32,
     fontWeight: '700',
-    color: '#FFFFFF',
-    letterSpacing: -1.2,
+    letterSpacing: -0.8,
   },
   tagline: {
-    fontFamily: BODY_FONT,
     fontSize: 14,
-    fontWeight: '400',
-    color: 'rgba(255,255,255,0.38)',
     letterSpacing: 0.2,
   },
-  dotWrap: {
+  dotsWrap: {
     position: 'absolute',
-    bottom: 80,
+    flexDirection: 'row',
+    gap: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },
   dot: {
-    width: 7,
-    height: 7,
+    width: 8,
+    height: 8,
     borderRadius: 4,
-    backgroundColor: 'rgba(255,196,120,0.85)',
   },
 });

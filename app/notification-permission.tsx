@@ -1,94 +1,130 @@
 /**
- * Declutterly — Notification Permission Pre-Primer
- * Custom pre-primer screen (NOT the system dialog yet)
- * ADHD-friendly explanation of why notifications help
+ * Declutterly -- Notification Permission Screen (V1)
+ * Matches Pencil design: FEmgi
+ * Mascot avatar, benefit cards with icons, coral CTA.
  */
 
-import { Colors, ColorTokens } from '@/constants/Colors';
 import { api } from '@/convex/_generated/api';
 import { convex } from '@/config/convex';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { registerForPushNotifications } from '@/services/notifications';
-import { BorderRadius, Spacing } from '@/theme/spacing';
-import { Typography } from '@/theme/typography';
+import { Bell, Flame, Trophy, Heart } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
-import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import React, { useState } from 'react';
 import {
-    Dimensions,
-    Pressable,
-    StyleSheet,
-    Text,
-    View
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
 } from 'react-native';
 import Animated, {
-    FadeIn,
-    FadeInDown,
-    FadeInUp,
-    useAnimatedStyle,
-    useSharedValue,
-    withRepeat,
-    withSequence,
-    withSpring,
+  FadeIn,
+  FadeInDown,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+// ─── V1 Color Palette ────────────────────────────────────────────────────────
+const V1 = {
+  coral: '#FF6B6B',
+  amber: '#FFB74D',
+  green: '#66BB6A',
+  blue: '#64B5F6',
+  dark: {
+    bg: '#0C0C0C',
+    card: '#1A1A1A',
+    border: 'rgba(255,255,255,0.08)',
+    text: '#FFFFFF',
+    textSecondary: 'rgba(255,255,255,0.5)',
+    textMuted: 'rgba(255,255,255,0.3)',
+  },
+  light: {
+    bg: '#FAFAFA',
+    card: '#F6F7F8',
+    border: '#E5E7EB',
+    text: '#1A1A1A',
+    textSecondary: '#6B7280',
+    textMuted: '#9CA3AF',
+  },
+};
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Animated Dusty Mascot
-// ─────────────────────────────────────────────────────────────────────────────
-function AnimatedDusty() {
-  const bounce = useSharedValue(0);
-  
-  React.useEffect(() => {
-    bounce.value = withRepeat(
-      withSequence(
-        withSpring(-8, { damping: 4, stiffness: 80 }),
-        withSpring(0, { damping: 4, stiffness: 80 })
-      ),
-      -1,
-      false
-    );
-  }, [bounce]);
-  
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: bounce.value }],
-  }));
-  
-  return (
-    <Animated.View style={[styles.mascotContainer, animatedStyle]}>
-      <Text style={styles.mascotEmoji}>🧹</Text>
-      <View style={styles.speechBubble}>
-        <Text style={styles.speechText}>💬</Text>
-      </View>
-    </Animated.View>
-  );
+// ─── Benefit items ───────────────────────────────────────────────────────────
+const BENEFITS = [
+  {
+    icon: 'bell' as const,
+    color: V1.coral,
+    title: 'Gentle Reminders',
+    subtitle: 'Nudges that work with your energy',
+  },
+  {
+    icon: 'flame' as const,
+    color: V1.amber,
+    title: 'Streak Alerts',
+    subtitle: 'Celebrate your consistency',
+  },
+  {
+    icon: 'trophy' as const,
+    color: V1.green,
+    title: 'Achievements',
+    subtitle: 'Know when you unlock something',
+  },
+  {
+    icon: 'heart' as const,
+    color: V1.blue,
+    title: 'Dusty Updates',
+    subtitle: 'Your companion misses you',
+  },
+];
+
+function BenefitIcon({ name, size, color }: { name: string; size: number; color: string }) {
+  switch (name) {
+    case 'bell':
+      return <Bell size={size} color={color} />;
+    case 'flame':
+      return <Flame size={size} color={color} />;
+    case 'trophy':
+      return <Trophy size={size} color={color} />;
+    case 'heart':
+      return <Heart size={size} color={color} />;
+    default:
+      return <Bell size={size} color={color} />;
+  }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Benefit Item
-// ─────────────────────────────────────────────────────────────────────────────
-function BenefitItem({ 
-  emoji, 
-  text, 
-  colors, 
-  delay 
-}: { 
-  emoji: string; 
-  text: string; 
-  colors: ColorTokens; 
+function BenefitRow({
+  icon,
+  color,
+  title,
+  subtitle,
+  isDark,
+  delay,
+}: {
+  icon: string;
+  color: string;
+  title: string;
+  subtitle: string;
+  isDark: boolean;
   delay: number;
 }) {
+  const t = isDark ? V1.dark : V1.light;
   return (
-    <Animated.View 
+    <Animated.View
       entering={FadeInDown.delay(delay).duration(350)}
-      style={[styles.benefitItem, { backgroundColor: colors.surface }]}
+      style={[
+        styles.benefitItem,
+        { backgroundColor: t.card, borderColor: t.border },
+      ]}
     >
-      <Text style={styles.benefitEmoji}>{emoji}</Text>
-      <Text style={[styles.benefitText, { color: colors.text }]}>{text}</Text>
+      <View style={[styles.benefitIconWrap, { backgroundColor: `${color}15` }]}>
+        <BenefitIcon name={icon} size={20} color={color} />
+      </View>
+      <View style={styles.benefitTextWrap}>
+        <Text style={[styles.benefitTitle, { color: t.text }]}>{title}</Text>
+        <Text style={[styles.benefitSubtitle, { color: t.textSecondary }]}>
+          {subtitle}
+        </Text>
+      </View>
     </Animated.View>
   );
 }
@@ -97,32 +133,29 @@ function BenefitItem({
 // Main Screen
 // ─────────────────────────────────────────────────────────────────────────────
 export default function NotificationPermissionScreen() {
-  const rawColorScheme = useColorScheme();
-  const colorScheme = rawColorScheme === 'dark' ? 'dark' : 'light';
-  const colors = Colors[colorScheme];
-  const isDark = colorScheme === 'dark';
+  const rawScheme = useColorScheme();
+  const isDark = rawScheme === 'dark';
+  const t = isDark ? V1.dark : V1.light;
   const insets = useSafeAreaInsets();
-  
+
   const [isRequesting, setIsRequesting] = useState(false);
 
   const handleEnableNotifications = async () => {
     setIsRequesting(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    
+
     try {
       const token = await registerForPushNotifications();
       if (token) {
         try {
           await convex.mutation(api.notifications.savePushToken, { token });
         } catch (error) {
-          if (__DEV__) console.info('Failed to save push token to backend:', error);
+          if (__DEV__) console.info('Failed to save push token:', error);
         }
       }
-
-      // Navigate to home regardless of permission result
       router.replace('/(tabs)');
     } catch (error) {
-      if (__DEV__) console.info('Error requesting notification permissions:', error);
+      if (__DEV__) console.info('Error requesting notifications:', error);
       router.replace('/(tabs)');
     } finally {
       setIsRequesting(false);
@@ -135,108 +168,76 @@ export default function NotificationPermissionScreen() {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <View style={[styles.container, { backgroundColor: t.bg }]}>
       <StatusBar style={isDark ? 'light' : 'dark'} />
-      
-      <LinearGradient
-        colors={isDark
-          ? ['rgba(103,126,234,0.22)', 'rgba(118,75,162,0.14)', 'rgba(10,10,10,0)'] as const
-          : ['rgba(103,126,234,0.10)', 'rgba(118,75,162,0.06)', 'rgba(250,250,250,0)'] as const
-        }
-        style={styles.gradient}
-        start={{ x: 0.5, y: 0 }}
-        end={{ x: 0.5, y: 0.65 }}
-      />
 
-      <View style={[styles.content, { paddingTop: insets.top + 60, paddingBottom: insets.bottom + 20 }]}>
+      <View
+        style={[
+          styles.content,
+          { paddingTop: insets.top + 40, paddingBottom: insets.bottom + 16 },
+        ]}
+      >
         {/* Mascot */}
-        <AnimatedDusty />
+        <Animated.View
+          entering={FadeIn.delay(100).duration(400)}
+          style={styles.mascotWrap}
+        >
+          <View style={[styles.mascotCircle, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }]}>
+            <Text style={styles.mascotEmoji}>🐹</Text>
+          </View>
+        </Animated.View>
 
         {/* Title */}
         <Animated.Text
-          entering={FadeIn.delay(200)}
-          style={[Typography.title1, { color: colors.text, textAlign: 'center', marginTop: Spacing.xl }]}
+          entering={FadeIn.delay(200).duration(350)}
+          style={[styles.title, { color: t.text }]}
         >
-          Dusty wants to cheer you on!
+          Stay on Track
         </Animated.Text>
 
         {/* Subtitle */}
         <Animated.Text
-          entering={FadeIn.delay(300)}
-          style={[Typography.body, { color: colors.textSecondary, textAlign: 'center', marginTop: Spacing.sm, paddingHorizontal: Spacing.xl }]}
+          entering={FadeIn.delay(300).duration(350)}
+          style={[styles.subtitle, { color: t.textSecondary }]}
         >
-          Get gentle reminders that actually help — never guilt, always encouragement
+          Dusty wants to cheer you on!
         </Animated.Text>
 
         {/* Benefits */}
         <View style={styles.benefitsContainer}>
-          <BenefitItem 
-            emoji="🌅" 
-            text="Morning motivation that meets you where you are" 
-            colors={colors} 
-            delay={400}
-          />
-          <BenefitItem 
-            emoji="🎯" 
-            text="Gentle nudges, never guilt trips" 
-            colors={colors} 
-            delay={500}
-          />
-          <BenefitItem 
-            emoji="🧠" 
-            text="ADHD brains need external cues. Let Dusty be yours." 
-            colors={colors} 
-            delay={600}
-          />
-          <BenefitItem 
-            emoji="🔥" 
-            text="Celebrate streaks without the shame" 
-            colors={colors} 
-            delay={700}
-          />
+          {BENEFITS.map((benefit, idx) => (
+            <BenefitRow
+              key={benefit.title}
+              {...benefit}
+              isDark={isDark}
+              delay={400 + idx * 100}
+            />
+          ))}
         </View>
 
         {/* Spacer */}
         <View style={{ flex: 1 }} />
 
         {/* CTA Button */}
-        <Animated.View entering={FadeInUp.delay(800).duration(350)}>
+        <Animated.View entering={FadeInDown.delay(800).duration(350)}>
           <Pressable
             onPress={handleEnableNotifications}
             disabled={isRequesting}
-            accessibilityRole="button"
-            accessibilityLabel="Enable gentle cleaning reminders"
             style={({ pressed }) => [
-              styles.ctaButton,
-              { opacity: pressed || isRequesting ? 0.9 : 1 }
+              styles.coralButton,
+              { opacity: pressed || isRequesting ? 0.85 : 1 },
             ]}
           >
-            <LinearGradient
-              colors={['#667eea', '#764ba2']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.ctaGradient}
-            >
-              <Text style={styles.ctaText}>
-                {isRequesting ? 'Enabling...' : 'Enable Reminders'}
-              </Text>
-            </LinearGradient>
+            <Text style={styles.coralButtonText}>
+              {isRequesting ? 'Enabling...' : 'Enable Notifications'}
+            </Text>
           </Pressable>
         </Animated.View>
 
-        {/* Skip Button */}
-        <Pressable
-          onPress={handleSkip}
-          style={styles.skipButton}
-          accessibilityRole="button"
-          accessibilityLabel="Skip notifications for now"
-          accessibilityHint="You can always enable notifications later in Settings"
-        >
-          <Text style={[styles.skipText, { color: colors.textSecondary }]}>
-            Maybe Later
-          </Text>
-          <Text style={[styles.skipHint, { color: isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.25)' }]}>
-            You can turn these on in Settings anytime
+        {/* Skip */}
+        <Pressable onPress={handleSkip} style={styles.skipButton}>
+          <Text style={[styles.skipText, { color: t.textMuted }]}>
+            Maybe later
           </Text>
         </Pressable>
       </View>
@@ -251,84 +252,95 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  gradient: {
-    ...StyleSheet.absoluteFillObject,
-  },
   content: {
     flex: 1,
-    paddingHorizontal: Spacing.lg,
+    paddingHorizontal: 24,
     alignItems: 'center',
   },
-  mascotContainer: {
+
+  // ── Mascot ──
+  mascotWrap: {
+    marginBottom: 16,
+  },
+  mascotCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
     alignItems: 'center',
     justifyContent: 'center',
   },
   mascotEmoji: {
-    fontSize: 80,
+    fontSize: 44,
   },
-  speechBubble: {
-    position: 'absolute',
-    top: -10,
-    right: -20,
+
+  // ── Text ──
+  title: {
+    fontSize: 26,
+    fontWeight: '700',
+    letterSpacing: -0.4,
+    textAlign: 'center',
+    marginBottom: 6,
   },
-  speechText: {
-    fontSize: 24,
+  subtitle: {
+    fontSize: 15,
+    textAlign: 'center',
+    marginBottom: 28,
   },
+
+  // ── Benefits ──
   benefitsContainer: {
     width: '100%',
-    marginTop: Spacing.xxl,
-    gap: Spacing.md,
+    gap: 12,
   },
   benefitItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: Spacing.md,
-    borderRadius: BorderRadius.lg,
-    gap: Spacing.md,
+    padding: 16,
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: 'rgba(128,128,128,0.12)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 1,
+    gap: 14,
   },
-  benefitEmoji: {
-    fontSize: 24,
-  },
-  benefitText: {
-    flex: 1,
-    fontSize: 15,
-    lineHeight: 20,
-  },
-  ctaButton: {
-    width: SCREEN_WIDTH - (Spacing.lg * 2),
-    borderRadius: BorderRadius.full,
-    overflow: 'hidden',
-  },
-  ctaGradient: {
-    height: 54,
+  benefitIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  ctaText: {
+  benefitTextWrap: {
+    flex: 1,
+    gap: 2,
+  },
+  benefitTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  benefitSubtitle: {
+    fontSize: 13,
+  },
+
+  // ── CTA ──
+  coralButton: {
+    backgroundColor: '#FF6B6B',
+    borderRadius: 28,
+    height: 56,
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  coralButtonText: {
     color: '#FFFFFF',
     fontSize: 17,
-    fontWeight: '600',
-    letterSpacing: -0.2,
+    fontWeight: '700',
   },
+
+  // ── Skip ──
   skipButton: {
-    marginTop: Spacing.lg,
-    paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.xl,
+    paddingVertical: 12,
   },
   skipText: {
     fontSize: 15,
-    textAlign: 'center',
-  },
-  skipHint: {
-    fontSize: 12,
-    marginTop: 4,
     textAlign: 'center',
   },
 });

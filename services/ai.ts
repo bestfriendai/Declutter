@@ -1,12 +1,29 @@
 import { convex } from '@/config/convex';
 import { api } from '@/convex/_generated/api';
+import { FALLBACK_MOTIVATIONS } from '@/constants/copy';
+import { Time } from '@/constants/time';
+import {
+  AIAnalysisError,
+  AIMotivationError,
+  AIProgressError,
+  toError,
+} from '@/services/errors';
+import { logger } from '@/services/logger';
 import { AIAnalysisResult, CleaningTask, EnergyLevel, PhotoQuality, PhotoQualityFeedback, ProgressAnalysisResult } from '@/types/declutter';
 import { retryWithTimeout, isNetworkError, isServerError } from '@/utils/retry';
+import { sanitizeAiContext } from '@/utils/sanitize';
 
 /** Timeout for AI analysis calls (30s) — generous for image analysis */
-const AI_ANALYSIS_TIMEOUT_MS = 30_000;
+const AI_ANALYSIS_TIMEOUT_MS = Time.AI_ANALYSIS_TIMEOUT_MS;
 /** Timeout for lightweight AI calls like motivation (10s) */
-const AI_LIGHT_TIMEOUT_MS = 10_000;
+const AI_LIGHT_TIMEOUT_MS = Time.AI_LIGHT_TIMEOUT_MS;
+
+type RetryableError = Error & { status?: number; statusCode?: number };
+
+function isRetryableAiError(error: unknown): boolean {
+  const resolvedError = toError(error);
+  return isNetworkError(resolvedError) || isServerError(resolvedError as RetryableError);
+}
 
 // =====================
 // AI PROVIDER: Gemini via Convex server actions (API key stays server-side)
@@ -36,27 +53,36 @@ export async function analyzeRoomImage(
   base64Image: string,
   additionalContext?: string
 ): Promise<AIAnalysisResult> {
+  const sanitizedContext = sanitizeAiContext(additionalContext);
+
   try {
     return await retryWithTimeout(
       async () => {
         return convex.action(api.gemini.analyzeRoom, {
           base64Image,
-          additionalContext,
+          additionalContext: sanitizedContext,
         });
       },
       AI_ANALYSIS_TIMEOUT_MS,
       {
         maxAttempts: 2,
         initialDelayMs: 2000,
-        isRetryable: (error) => isNetworkError(error) || isServerError(error as any),
+        isRetryable: isRetryableAiError,
         onRetry: (attempt, error) => {
-          if (__DEV__) console.log(`AI analysis retry ${attempt}: ${error.message}`);
+          logger.warn(`AI analysis retry ${attempt}: ${error.message}`);
         },
       }
     );
   } catch (error) {
-    if (__DEV__) console.error('AI analysis failed after retries:', error);
-    return getFallbackAnalysis(additionalContext);
+    const resolvedError = toError(error);
+    logger.error(
+      'AI analysis failed after retries:',
+      new AIAnalysisError(resolvedError.message, {
+        retryable: isRetryableAiError(resolvedError),
+        cause: error,
+      })
+    );
+    return getFallbackAnalysis(sanitizedContext);
   }
 }
 
@@ -89,14 +115,21 @@ export async function analyzeProgress(
       {
         maxAttempts: 2,
         initialDelayMs: 2000,
-        isRetryable: (error) => isNetworkError(error) || isServerError(error as any),
+        isRetryable: isRetryableAiError,
         onRetry: (attempt, error) => {
-          if (__DEV__) console.log(`Progress analysis retry ${attempt}: ${error.message}`);
+          logger.warn(`Progress analysis retry ${attempt}: ${error.message}`);
         },
       }
     );
   } catch (error) {
-    if (__DEV__) console.error('Progress analysis failed after retries:', error);
+    const resolvedError = toError(error);
+    logger.error(
+      'Progress analysis failed after retries:',
+      new AIProgressError(resolvedError.message, {
+        retryable: isRetryableAiError(resolvedError),
+        cause: error,
+      })
+    );
     return {
       progressPercentage: 0,
       percentImproved: 0,
@@ -123,11 +156,13 @@ export interface MotivationResponse {
 }
 
 export async function getMotivation(context: string): Promise<MotivationResponse> {
+  const sanitizedContext = sanitizeAiContext(context);
+
   try {
     return await retryWithTimeout(
       async () => {
         const result = await convex.action(api.gemini.getMotivation, {
-          context,
+          context: sanitizedContext ?? '',
         });
         return result as MotivationResponse;
       },
@@ -135,10 +170,18 @@ export async function getMotivation(context: string): Promise<MotivationResponse
       {
         maxAttempts: 2,
         initialDelayMs: 1000,
-        isRetryable: (error) => isNetworkError(error) || isServerError(error as any),
+        isRetryable: isRetryableAiError,
       }
     );
-  } catch {
+  } catch (error) {
+    const resolvedError = toError(error);
+    logger.warn(
+      'Falling back to local motivation:',
+      new AIMotivationError(resolvedError.message, {
+        retryable: isRetryableAiError(resolvedError),
+        cause: error,
+      })
+    );
     return getLocalMotivationFallback();
   }
 }
@@ -270,17 +313,6 @@ export async function analyzeProgressStructured(
 // FALLBACKS — used when AI is unavailable so the app stays usable
 // =====================
 
-const FALLBACK_MOTIVATIONS: MotivationResponse[] = [
-  { message: "You don't have to do everything today. Just start with one small thing.", emoji: "💛", tone: "supportive" },
-  { message: "Progress over perfection. Every item you put away is a win!", emoji: "🌟", tone: "cheerful" },
-  { message: "Your future self will thank you for whatever you do right now.", emoji: "💪", tone: "encouraging" },
-  { message: "It's okay if it's not perfect. Done is better than perfect.", emoji: "✨", tone: "calm" },
-  { message: "10 minutes is better than 0 minutes. What can you do in just 10 minutes?", emoji: "⏰", tone: "supportive" },
-  { message: "The hardest part is starting. You've already done that by being here!", emoji: "🎉", tone: "cheerful" },
-  { message: "Celebrate every small win. You're making progress!", emoji: "🏆", tone: "cheerful" },
-  { message: "Remember: you don't have to feel motivated to start. Motivation often follows action.", emoji: "🧠", tone: "calm" },
-];
-
 function getLocalMotivationFallback(): MotivationResponse {
   return FALLBACK_MOTIVATIONS[Math.floor(Math.random() * FALLBACK_MOTIVATIONS.length)];
 }
@@ -323,7 +355,7 @@ function getFallbackAnalysis(_context?: string): AIAnalysisResult {
       },
     ] as CleaningTask[],
     roomType: 'other',
-    messLevel: 'moderate' as any,
+    messLevel: 50,
     estimatedTotalTime: 10,
     summary: 'Quick starter tasks to get you moving',
     quickWins: ['Pick up visible trash', 'Clear one surface'],

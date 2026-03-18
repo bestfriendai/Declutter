@@ -1,10 +1,9 @@
 /**
- * Declutterly - Achievements Screen
- * Matches Pencil design: XP card, streak card, earned badges grid.
- * Dark/Light adaptive. Keeps all existing data logic.
+ * Declutterly -- Achievements Screen (V1 Pencil Design)
+ * XP level card with gradient bar, streak card, badge grid.
  */
 
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useMemo, useCallback } from 'react';
 import {
   View,
   Text,
@@ -12,92 +11,90 @@ import {
   ScrollView,
   Pressable,
   Dimensions,
-  Modal,
   Share,
-  Platform,
 } from 'react-native';
 import { useColorScheme } from '@/hooks/useColorScheme';
-import Animated, {
-  FadeIn,
-  FadeInDown,
-  FadeInUp,
-  FadeOut,
-  SlideInUp,
-  SlideOutDown,
-} from 'react-native-reanimated';
-import { BlurView } from 'expo-blur';
+import { useReducedMotion } from '@/hooks/useReducedMotion';
+import Animated, { FadeInDown } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { AmbientBackdrop } from '@/components/ui/AmbientBackdrop';
-import { Colors } from '@/constants/Colors';
 import { useDeclutter } from '@/context/DeclutterContext';
-import { Ionicons } from '@expo/vector-icons';
-import { Spacing, BorderRadius } from '@/theme/spacing';
-import { Typography } from '@/theme/typography';
+import { ChevronLeft, Lock, Flame } from 'lucide-react-native';
 import { BADGES, Badge } from '@/types/declutter';
 
+const BODY_FONT = 'DM Sans';
 const DISPLAY_FONT = 'Bricolage Grotesque';
-
+const XP_PER_LEVEL = 500;
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const BADGE_CARD_WIDTH = (SCREEN_WIDTH - 40 - 12) / 2;
 
-// Badge display data for the design-matched grid
-const DISPLAY_BADGES = [
-  { emoji: '\u{2B50}', name: 'First Spark', stars: '\u{2605}\u{2605}\u{2605}', locked: false },
-  { emoji: '\u{26A1}', name: 'Speed Demon', stars: '\u{2605}\u{2605}\u{2605}', locked: false },
-  { emoji: '\u{1F525}', name: 'Flame Keeper', stars: '\u{2605}\u{2605}\u{2605}', locked: false },
-  { emoji: '\u{1F680}', name: 'Unstoppable', stars: '\u{2605}\u{2605}\u{2605}', locked: false },
-  { emoji: '\u{2728}', name: 'Neat Freak', stars: '\u{2605}\u{2605}\u{2606}', locked: false },
-  { emoji: '\u{1F512}', name: '???', stars: 'Locked', locked: true },
-];
-
-type BadgeCategory = 'all' | 'tasks' | 'rooms' | 'streak' | 'time' | 'comeback' | 'longComeback' | 'sessions';
-
-interface CategoryInfo {
-  id: BadgeCategory;
-  label: string;
-  emoji: string;
-  color: string;
-}
-
-const CATEGORIES: CategoryInfo[] = [
-  { id: 'all', label: 'All', emoji: '\u{1F3C6}', color: '#F59E0B' },
-  { id: 'tasks', label: 'Tasks', emoji: '\u{2705}', color: '#FF375F' },
-  { id: 'rooms', label: 'Rooms', emoji: '\u{1F3E0}', color: '#30D158' },
-  { id: 'streak', label: 'Streaks', emoji: '\u{1F525}', color: '#FBBF24' },
-  { id: 'time', label: 'Time', emoji: '\u{23F1}\u{FE0F}', color: '#0A84FF' },
-  { id: 'comeback', label: 'Comeback', emoji: '\u{1F49B}', color: '#FF9F0A' },
-  { id: 'sessions', label: 'Sessions', emoji: '\u{1F331}', color: '#34D399' },
-];
-
-const BADGE_COLORS: Record<string, string> = {
-  tasks: '#FF375F',
-  rooms: '#30D158',
-  streak: '#FBBF24',
-  time: '#0A84FF',
-  comeback: '#FF9F0A',
-  longComeback: '#FF6B6B',
-  sessions: '#34D399',
+const V1 = {
+  coral: '#FF6B6B',
+  green: '#66BB6A',
+  amber: '#FFB74D',
+  gold: '#FFD54F',
+  blue: '#64B5F6',
+  dark: {
+    bg: '#0C0C0C',
+    card: '#1A1A1A',
+    border: 'rgba(255,255,255,0.08)',
+    text: '#FFFFFF',
+    textSecondary: 'rgba(255,255,255,0.5)',
+    textMuted: 'rgba(255,255,255,0.3)',
+  },
+  light: {
+    bg: '#FAFAFA',
+    card: '#F6F7F8',
+    border: '#E5E7EB',
+    text: '#1A1A1A',
+    textSecondary: '#6B7280',
+    textMuted: '#9CA3AF',
+  },
 };
 
-const XP_PER_LEVEL = 500;
+function getLevelTitle(level: number) {
+  if (level >= 20) return 'Declutter Legend';
+  if (level >= 15) return 'Master Organizer';
+  if (level >= 10) return 'Space Transformer';
+  if (level >= 7) return 'Tidy Explorer';
+  if (level >= 5) return 'Tidy Champion';
+  if (level >= 3) return 'Rising Declutterer';
+  return 'Getting Started';
+}
+
+// Badge display data
+interface DisplayBadge {
+  emoji: string;
+  name: string;
+  subtitle: string;
+  earned: boolean;
+  badge: Badge | null;
+}
 
 export default function AchievementsScreen() {
-  const colorScheme = (useColorScheme() ?? 'dark') as 'light' | 'dark';
-  const colors = Colors[colorScheme];
-  const isDark = colorScheme === 'dark';
+  const rawScheme = useColorScheme();
+  const isDark = rawScheme === 'dark';
+  const reducedMotion = useReducedMotion();
   const insets = useSafeAreaInsets();
   const { stats } = useDeclutter();
+  const t = isDark ? V1.dark : V1.light;
 
-  const [selectedBadge, setSelectedBadge] = useState<Badge | null>(null);
-  const [showModal, setShowModal] = useState(false);
-
-  // Get badges data — defensive: stats.badges may be undefined if loaded from old storage
   const unlockedBadges: Badge[] = stats?.badges ?? [];
   const unlockedIds = useMemo(() => new Set(unlockedBadges.map(b => b.id)), [unlockedBadges]);
 
-  // Get progress for a badge — defensive null checks on all stats fields
+  const currentXp = stats?.xp ?? 0;
+  const level = Math.floor(currentXp / XP_PER_LEVEL) + 1;
+  const xpInLevel = currentXp % XP_PER_LEVEL;
+  const xpForNextLevel = XP_PER_LEVEL;
+  const xpProgressPercent = Math.min(100, Math.round((xpInLevel / XP_PER_LEVEL) * 100));
+
+  const currentStreak = stats?.currentStreak ?? 0;
+  const longestStreak = stats?.longestStreak ?? 0;
+
+  // Get badge progress
   const getBadgeProgress = useCallback((badge: Badge) => {
     let current = 0;
     switch (badge.type) {
@@ -113,808 +110,313 @@ export default function AchievementsScreen() {
       case 'time':
         current = stats?.totalMinutesCleaned ?? 0;
         break;
-      case 'comeback':
-      case 'longComeback':
-      case 'sessions':
+      default:
         current = 0;
-        break;
     }
-    const target = badge.requirement || 1; // prevent division by zero
-    return {
-      current,
-      target,
-      percentage: Math.min(100, Math.round((current / target) * 100)),
-    };
+    const target = badge.requirement || 1;
+    return { current, target };
   }, [stats]);
 
-  const handleBadgePress = (badge: Badge) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setSelectedBadge(badge);
-    setShowModal(true);
-  };
-
-  const handleShare = async (badge: Badge) => {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    try {
-      await Share.share({
-        message: `\u{1F389} I earned the "${badge.name}" ${badge.emoji} badge in Declutterly! ${badge.description}`,
-      });
-    } catch {
-      // User cancelled share
-    }
-  };
-
-  const closeModal = () => {
-    setShowModal(false);
-    setTimeout(() => setSelectedBadge(null), 300);
-  };
-
-  // Derive XP/level data from stats
-  const currentXp = stats?.xp ?? 0;
-  const level = Math.floor(currentXp / XP_PER_LEVEL) + 1;
-  const xpInLevel = currentXp % XP_PER_LEVEL;
-  const xpForNextLevel = XP_PER_LEVEL - xpInLevel;
-  const xpProgressPercent = Math.min(100, Math.round((xpInLevel / XP_PER_LEVEL) * 100));
-
-  // Streak data
-  const currentStreak = stats?.currentStreak ?? 0;
-  const longestStreak = stats?.longestStreak ?? 0;
-  const nextMilestone = currentStreak < 7 ? 7 : currentStreak < 14 ? 14 : currentStreak < 30 ? 30 : currentStreak < 60 ? 60 : 100;
-
-  // Map real earned badges to display format, fall back to design placeholders
-  const displayBadgeData = useMemo(() => {
-    const earned = BADGES.filter(b => unlockedIds.has(b.id)).slice(0, 5);
+  // Build display badges
+  const displayBadges = useMemo((): DisplayBadge[] => {
+    const earned = BADGES.filter(b => unlockedIds.has(b.id));
     const locked = BADGES.filter(b => !unlockedIds.has(b.id));
 
-    if (earned.length === 0) {
-      // Show design placeholders when no badges earned
-      return DISPLAY_BADGES;
-    }
-
-    const result = earned.map(b => ({
+    const result: DisplayBadge[] = earned.map(b => ({
       emoji: b.emoji,
       name: b.name,
-      stars: '\u{2605}\u{2605}\u{2605}',
-      locked: false,
+      subtitle: 'Earned',
+      earned: true,
       badge: b,
     }));
 
-    // Fill remaining with locked
-    while (result.length < 6) {
-      const lockedBadge = locked[result.length - earned.length];
-      if (lockedBadge) {
-        result.push({
-          emoji: '\u{1F512}',
-          name: '???',
-          stars: 'Locked',
-          locked: true,
-          badge: lockedBadge,
-        });
-      } else {
-        result.push({
-          emoji: '\u{1F512}',
-          name: '???',
-          stars: 'Locked',
-          locked: true,
-          badge: undefined as any,
-        });
-      }
+    locked.forEach(b => {
+      const prog = getBadgeProgress(b);
+      result.push({
+        emoji: b.emoji,
+        name: b.name,
+        subtitle: `${prog.current}/${prog.target} ${b.type}`,
+        earned: false,
+        badge: b,
+      });
+    });
+
+    // If no real badges, show design placeholders
+    if (result.length === 0) {
+      return [
+        { emoji: '\u2B50', name: 'First Spark', subtitle: 'Earned', earned: true, badge: null },
+        { emoji: '\u26A1', name: 'Speed Demon', subtitle: 'Earned', earned: true, badge: null },
+        { emoji: '\u{1F525}', name: 'Streak Master', subtitle: '5/7 days', earned: false, badge: null },
+        { emoji: '\u{1F3E0}', name: 'Room Champ', subtitle: '3/5 rooms', earned: false, badge: null },
+        { emoji: '\u{2728}', name: 'Deep Cleaner', subtitle: '1/3 deep cleans', earned: false, badge: null },
+        { emoji: '\u{1F512}', name: 'Mystery', subtitle: '???', earned: false, badge: null },
+      ];
     }
 
-    return result.slice(0, 6);
-  }, [unlockedIds]);
+    return result.slice(0, 8);
+  }, [unlockedIds, getBadgeProgress]);
+
+  const enter = (delay: number) =>
+    reducedMotion ? undefined : FadeInDown.delay(delay).duration(350);
 
   return (
-    <View style={[s.container, {
-      backgroundColor: isDark ? '#0A0A0A' : '#F8F8F8',
-    }]}>
+    <View style={[styles.container, { backgroundColor: t.bg }]}>
       <AmbientBackdrop isDark={isDark} variant="progress" />
       <ScrollView
-        style={s.scrollView}
+        style={styles.scrollView}
         contentContainerStyle={[
-          s.scrollContent,
-          { paddingTop: insets.top + 8, paddingBottom: insets.bottom + 100 },
+          styles.scrollContent,
+          { paddingTop: insets.top + 8, paddingBottom: insets.bottom + 24 },
         ]}
         showsVerticalScrollIndicator={false}
       >
         {/* Header */}
-        <Animated.View
-          entering={FadeInDown.delay(50).duration(350)}
-          style={s.header}
-        >
+        <Animated.View entering={enter(0)} style={styles.header}>
           <Pressable
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
               router.back();
             }}
-            style={[s.backBtn, {
-              backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.84)',
-              borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
-            }]}
+            style={[styles.backBtn, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)' }]}
             accessibilityRole="button"
             accessibilityLabel="Go back"
           >
-            <Ionicons name="chevron-back" size={18} color={isDark ? '#FFFFFF' : '#17171A'} />
+            <ChevronLeft size={18} color={t.text} />
           </Pressable>
-
-          <Text
-            style={[s.pageTitle, { color: isDark ? '#FFFFFF' : '#1A1A1A' }]}
-            accessibilityRole="header"
-          >
-            Achievements
-          </Text>
-          <Pressable
-            onPress={async () => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              try {
-                await Share.share({
-                  message: `I'm level ${level} with ${currentXp.toLocaleString()} XP on Declutterly! Check out my achievements!`,
-                });
-              } catch {
-                // User cancelled share
-              }
-            }}
-            style={[s.headerIconBtn, {
-              backgroundColor: isDark ? '#141414' : 'rgba(255,255,255,0.84)',
-              borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
-              borderWidth: 1,
-            }]}
-            accessibilityLabel="Share achievements"
-            accessibilityRole="button"
-          >
-            <Ionicons name="share-outline" size={18} color={isDark ? '#FFFFFF' : '#17171A'} />
-          </Pressable>
+          <Text style={[styles.pageTitle, { color: t.text }]}>Achievements</Text>
+          <View style={{ width: 36 }} />
         </Animated.View>
 
         {/* XP Level Card */}
-        <Animated.View
-          entering={FadeInDown.delay(100).duration(350)}
-          style={s.cardWrapper}
-        >
-          <View style={[s.lvlCard, {
-            backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : '#FFFFFF',
-            borderColor: isDark ? 'rgba(255,255,255,0.08)' : '#E8E8E8',
-            ...(isDark ? {
-              shadowColor: '#000',
-              shadowOffset: { width: 0, height: 4 },
-              shadowOpacity: 0.25,
-              shadowRadius: 24,
-            } : {
-              shadowColor: '#000',
-              shadowOffset: { width: 0, height: 2 },
-              shadowOpacity: 0.04,
-              shadowRadius: 12,
-            }),
-          }]}>
-            {/* Level Badge */}
-            <View style={[s.lvlBadge, {
-              backgroundColor: isDark ? '#1A1A1A' : '#E0E0E0',
-            }]}>
-              <Text style={[s.lvlNumber, { color: isDark ? '#FFFFFF' : '#1A1A1A' }]}>
-                {level}
-              </Text>
-              <Text style={[s.lvlLabel, { color: '#888888' }]}>
-                LVL
-              </Text>
+        <Animated.View entering={enter(60)}>
+          <View style={[styles.xpCard, { backgroundColor: t.card, borderColor: isDark ? t.border : '#E0E2E6' }]}>
+            <View style={styles.xpHeader}>
+              <Text style={[styles.xpLevel, { color: V1.coral }]}>Level {level}</Text>
+              <Text style={[styles.xpTitle, { color: t.textSecondary }]}>{getLevelTitle(level)}</Text>
             </View>
-
-            {/* Level Info */}
-            <View style={s.lvlRight}>
-              <Text style={[s.lvlTitle, { color: isDark ? '#AAAAAA' : '#555555' }]}>
-                {level >= 10 ? 'Master Organizer' : level >= 5 ? 'Cleaning Pro' : level >= 3 ? 'Rising Declutterer' : 'Getting Started'}
-              </Text>
-              <Text style={[s.xpText, { color: isDark ? '#FFFFFF' : '#1A1A1A' }]}>
-                {currentXp.toLocaleString()} XP
-              </Text>
-              <Text style={[s.xpNext, { color: '#888888' }]}>
-                {xpForNextLevel} XP to Level {level + 1}
-              </Text>
-              {/* XP Progress Bar */}
-              <View style={[s.xpTrack, {
-                backgroundColor: isDark ? '#1A1A1A' : '#E0E0E0',
-              }]}>
-                <View style={[s.xpFill, {
-                  backgroundColor: isDark ? '#FFFFFF' : '#1A1A1A',
-                  width: `${Math.max(xpProgressPercent, 6)}%`,
-                }]} />
-              </View>
+            {/* Gradient progress bar */}
+            <View style={[styles.xpTrack, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)' }]}>
+              <LinearGradient
+                colors={[V1.coral, V1.gold]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={[styles.xpFill, { width: `${Math.max(xpProgressPercent, 4)}%` }]}
+              />
             </View>
+            <Text style={[styles.xpSubtext, { color: t.textSecondary }]}>
+              {xpInLevel}/{xpForNextLevel} XP to Level {level + 1}
+            </Text>
           </View>
         </Animated.View>
 
         {/* Streak Card */}
-        <Animated.View
-          entering={FadeInDown.delay(150).duration(350)}
-          style={s.cardWrapper}
-        >
-          <View style={[s.streakCard, {
-            backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : '#FFFFFF',
-            borderColor: isDark ? 'rgba(255,255,255,0.08)' : '#E8E8E8',
-            ...(isDark ? {
-              shadowColor: '#000',
-              shadowOffset: { width: 0, height: 4 },
-              shadowOpacity: 0.25,
-              shadowRadius: 24,
-            } : {
-              shadowColor: '#000',
-              shadowOffset: { width: 0, height: 2 },
-              shadowOpacity: 0.04,
-              shadowRadius: 12,
-            }),
-          }]}>
-            {/* Left side: Fire + Number + DAYS */}
-            <View style={s.streakLeft}>
-              <Text style={s.streakFire}>{'\u{1F525}'}</Text>
-              <Text style={[s.streakNumber, { color: isDark ? '#FFFFFF' : '#1A1A1A' }]}>
-                {currentStreak}
-              </Text>
-              <Text style={[s.streakDays, { color: '#707070' }]}>
-                DAYS
-              </Text>
-            </View>
-
-            {/* Right side: Info */}
-            <View style={s.streakRight}>
-              <Text style={[s.streakTitle, { color: isDark ? '#FFFFFF' : '#1A1A1A' }]}>
-                Current Streak
-              </Text>
-              <Text style={[s.streakRecord, { color: isDark ? '#707070' : '#888888' }]}>
-                {isDark ? '\u{1F3C6}  ' : ''}Record: {longestStreak} days
-              </Text>
-              <Text style={[s.streakMilestone, { color: isDark ? '#AAAAAA' : '#555555' }]}>
-                {nextMilestone - currentStreak <= 2
-                  ? `Almost there! ${nextMilestone - currentStreak} day${nextMilestone - currentStreak === 1 ? '' : 's'} to ${nextMilestone}-day milestone`
-                  : `Next milestone: ${nextMilestone} days`}
-              </Text>
+        <Animated.View entering={enter(120)}>
+          <View style={[styles.streakCard, { backgroundColor: t.card, borderColor: isDark ? t.border : '#E0E2E6' }]}>
+            <View style={styles.streakRow}>
+              <View style={styles.streakCol}>
+                <Flame size={24} color={V1.coral} />
+                <Text style={[styles.streakLabel, { color: t.textSecondary }]}>Current Streak</Text>
+                <Text style={[styles.streakValue, { color: V1.coral }]}>{currentStreak} Days</Text>
+              </View>
+              <View style={styles.streakCol}>
+                <Text style={[styles.streakLabel, { color: t.textSecondary }]}>Best</Text>
+                <Text style={[styles.streakValue, { color: V1.green }]}>{longestStreak} Days</Text>
+              </View>
             </View>
           </View>
         </Animated.View>
 
-        {/* EARNED BADGES Label */}
-        <Animated.View
-          entering={FadeInDown.delay(200).duration(350)}
-          style={s.badgesLabelWrapper}
-        >
-          <Text style={[s.badgesLabel, {
-            color: isDark ? 'rgba(255,255,255,0.25)' : '#888888',
-          }]}>
-            EARNED BADGES
-          </Text>
+        {/* BADGES section */}
+        <Animated.View entering={enter(180)}>
+          <Text style={[styles.badgesTitle, { color: t.textMuted }]}>BADGES</Text>
         </Animated.View>
 
-        {/* Badge Grid (2 columns, 3 rows) */}
-        <Animated.View
-          entering={FadeInDown.delay(250).duration(350)}
-          style={s.badgeGrid}
-        >
-          {displayBadgeData.map((badge, index) => (
-            <Animated.View
+        <Animated.View entering={enter(220)} style={styles.badgeGrid}>
+          {displayBadges.map((badge, index) => (
+            <Pressable
               key={`badge-${index}`}
-              entering={FadeInUp.delay(300 + index * 60).duration(350)}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                if (badge.earned && badge.badge) {
+                  Share.share({
+                    message: `I earned the "${badge.name}" ${badge.emoji} badge in Declutterly!`,
+                  });
+                }
+              }}
+              style={({ pressed }) => [
+                styles.badgeCard,
+                {
+                  backgroundColor: t.card,
+                  borderColor: isDark ? t.border : '#E0E2E6',
+                  opacity: pressed ? 0.85 : 1,
+                },
+              ]}
+              accessibilityLabel={badge.earned ? `${badge.name} badge - earned` : `${badge.name} badge - locked`}
             >
-              <Pressable
-                onPress={() => {
-                  if (!badge.locked && (badge as any).badge) {
-                    handleBadgePress((badge as any).badge);
-                  } else {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  }
-                }}
-                style={({ pressed }) => [
-                  s.badgeCard,
-                  {
-                    backgroundColor: badge.locked
-                      ? (isDark ? 'rgba(255,255,255,0.03)' : '#FFFFFF')
-                      : (isDark ? 'rgba(255,255,255,0.06)' : '#FFFFFF'),
-                    borderColor: badge.locked
-                      ? (isDark ? 'rgba(255,255,255,0.06)' : '#E8E8E8')
-                      : (isDark ? 'rgba(255,255,255,0.08)' : '#E8E8E8'),
-                    transform: [{ scale: pressed ? 0.97 : 1 }],
-                  },
-                ]}
-                accessibilityLabel={badge.locked ? 'Locked badge' : `${badge.name} badge`}
-              >
-                <Text style={[s.badgeEmoji, {
-                  color: badge.locked ? '#555555' : (isDark ? '#FFFFFF' : '#1A1A1A'),
+              {badge.earned ? (
+                <View style={[styles.badgeIconCircle, {
+                  backgroundColor: isDark ? 'rgba(255,107,107,0.12)' : 'rgba(255,107,107,0.08)',
                 }]}>
-                  {badge.emoji}
-                </Text>
-                <Text style={[s.badgeName, {
-                  color: badge.locked
-                    ? (isDark ? '#555555' : '#999999')
-                    : (index === 4
-                      ? (isDark ? '#888888' : '#666666') // Neat Freak is muted
-                      : (isDark ? '#FFFFFF' : (
-                        index === 0 || index === 2 ? '#1A1A1A' : '#555555'
-                      ))),
+                  <Text style={styles.badgeEmoji}>{badge.emoji}</Text>
+                </View>
+              ) : (
+                <View style={[styles.badgeIconCircle, {
+                  backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
                 }]}>
-                  {badge.name}
-                </Text>
-                <Text style={[s.badgeStars, {
-                  color: badge.locked
-                    ? (isDark ? '#555555' : '#AAAAAA')
-                    : (index === 4
-                      ? (isDark ? 'rgba(136,136,136,0.38)' : '#666666') // Neat Freak muted stars
-                      : (isDark ? 'rgba(255,255,255,0.38)' : (
-                        index === 0 ? '#1A1A1A' : '#555555'
-                      ))),
-                  fontSize: badge.locked ? 11 : 12,
-                }]}>
-                  {badge.stars}
-                </Text>
-              </Pressable>
-            </Animated.View>
+                  {badge.name === 'Mystery' ? (
+                    <Lock size={20} color={t.textMuted} />
+                  ) : (
+                    <Text style={[styles.badgeEmoji, { opacity: 0.4 }]}>{badge.emoji}</Text>
+                  )}
+                </View>
+              )}
+              <Text style={[styles.badgeName, { color: badge.earned ? t.text : t.textSecondary }]}>
+                {badge.name}
+              </Text>
+              <Text style={[styles.badgeSubtitle, { color: t.textMuted }]}>
+                {badge.subtitle}
+              </Text>
+            </Pressable>
           ))}
         </Animated.View>
       </ScrollView>
-
-
-      {/* Badge Detail Modal */}
-      <BadgeModal
-        badge={selectedBadge}
-        isUnlocked={selectedBadge ? unlockedIds.has(selectedBadge.id) : false}
-        progress={selectedBadge ? getBadgeProgress(selectedBadge) : { current: 0, target: 0, percentage: 0 }}
-        visible={showModal}
-        onClose={closeModal}
-        onShare={selectedBadge ? () => handleShare(selectedBadge) : undefined}
-      />
     </View>
   );
 }
 
-// Badge Detail Modal
-function BadgeModal({
-  badge,
-  isUnlocked,
-  progress: _progress,
-  visible,
-  onClose,
-  onShare,
-}: {
-  badge: Badge | null;
-  isUnlocked: boolean;
-  progress: { current: number; target: number; percentage: number };
-  visible: boolean;
-  onClose: () => void;
-  onShare?: () => void;
-}) {
-  const colorScheme = (useColorScheme() ?? 'dark') as 'light' | 'dark';
-  const colors = Colors[colorScheme];
-
-  if (!badge) return null;
-
-  const displayType = badge.type === 'longComeback' ? 'comeback' : badge.type;
-  const categoryInfo = CATEGORIES.find(c => c.id === displayType);
-  const categoryColor = BADGE_COLORS[badge.type] || categoryInfo?.color || '#6B7280';
-
-  return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="none"
-      onRequestClose={onClose}
-    >
-      <Animated.View
-        entering={FadeIn.duration(200)}
-        exiting={FadeOut.duration(200)}
-        style={s.modalOverlay}
-      >
-        <Pressable style={s.modalBackdrop} onPress={onClose}>
-          <BlurView
-            intensity={80}
-            tint="dark"
-            style={StyleSheet.absoluteFill}
-          />
-        </Pressable>
-
-        <Animated.View
-          entering={SlideInUp.duration(350).damping(20)}
-          exiting={SlideOutDown.duration(200)}
-          style={s.modalContent}
-        >
-          <View
-            style={[
-              s.modalCard,
-              {
-                backgroundColor: colorScheme === 'dark'
-                  ? 'rgba(30, 30, 30, 0.95)'
-                  : 'rgba(255, 255, 255, 0.98)',
-              },
-            ]}
-          >
-            {/* Close button */}
-            <Pressable
-              onPress={onClose}
-              style={[
-                s.modalCloseButton,
-                {
-                  backgroundColor: colorScheme === 'dark'
-                    ? 'rgba(255, 255, 255, 0.1)'
-                    : 'rgba(0, 0, 0, 0.05)',
-                },
-              ]}
-              accessibilityRole="button"
-              accessibilityLabel="Close badge detail"
-            >
-              <Text style={[Typography.body, { color: colors.textSecondary }]}>{'\u{2715}'}</Text>
-            </Pressable>
-
-            {/* Badge display */}
-            <View style={s.modalBadgeContainer}>
-              {isUnlocked && (
-                <LinearGradient
-                  colors={[categoryColor + '40', categoryColor + '10']}
-                  style={s.modalBadgeGlow}
-                />
-              )}
-              <View
-                style={[
-                  s.modalBadgeCircle,
-                  {
-                    borderColor: isUnlocked ? categoryColor : 'rgba(255, 255, 255, 0.1)',
-                    borderWidth: isUnlocked ? 3 : 1,
-                  },
-                ]}
-              >
-                <Text style={s.modalBadgeEmoji}>{badge.emoji}</Text>
-                {!isUnlocked && (
-                  <View style={s.modalLockOverlay}>
-                    <Text style={{ fontSize: 28 }}>{'\u{1F512}'}</Text>
-                  </View>
-                )}
-              </View>
-            </View>
-
-            {/* Badge info */}
-            <Text style={[Typography.title1, { color: colors.text, textAlign: 'center', marginTop: 20 }]}>
-              {badge.name}
-            </Text>
-
-            <Text style={[Typography.body, { color: colors.textSecondary, textAlign: 'center', marginTop: 8 }]}>
-              {badge.description}
-            </Text>
-
-            {/* Category tag */}
-            <View style={[s.modalCategoryTag, { backgroundColor: categoryColor + '20' }]}>
-              <Text style={{ fontSize: 16 }}>{categoryInfo?.emoji}</Text>
-              <Text style={[Typography.caption1, { color: categoryColor, marginLeft: 6, fontWeight: '500' }]}>
-                {categoryInfo?.label}
-              </Text>
-            </View>
-
-            {/* Celebration / locked */}
-            <View style={s.modalProgressSection}>
-              {isUnlocked ? (
-                <View style={s.modalCelebration}>
-                  <Text style={{ fontSize: 40 }}>{'\u{1F389}'}</Text>
-                  <Text style={[Typography.headline, { color: colors.success, marginTop: 12 }]}>
-                    Badge Earned!
-                  </Text>
-                </View>
-              ) : (
-                <View style={s.modalCelebration}>
-                  <Text style={{ fontSize: 40 }}>{'\u{1F512}'}</Text>
-                  <Text style={[Typography.headline, { color: colors.textSecondary, marginTop: 12 }]}>
-                    Keep going!
-                  </Text>
-                  <Text style={[Typography.body, { color: colors.textTertiary, marginTop: 8, textAlign: 'center' }]}>
-                    {_progress.current > 0
-                      ? `${_progress.current}/${badge.requirement} ${badge.type} done (${_progress.percentage}%)`
-                      : `${badge.requirement} ${badge.type} needed`}
-                  </Text>
-                  {_progress.current > 0 && (
-                    <View style={{ width: '80%', height: 6, borderRadius: 3, backgroundColor: 'rgba(128,128,128,0.2)', marginTop: 12, overflow: 'hidden' }}>
-                      <View style={{ height: '100%', borderRadius: 3, backgroundColor: categoryColor, width: `${Math.min(_progress.percentage, 100)}%` }} />
-                    </View>
-                  )}
-                </View>
-              )}
-            </View>
-
-            {/* Share button for unlocked */}
-            {isUnlocked && onShare && (
-              <Pressable
-                onPress={onShare}
-                style={({ pressed }) => [
-                  s.modalShareButton,
-                  { opacity: pressed ? 0.8 : 1 },
-                ]}
-                accessibilityRole="button"
-                accessibilityLabel="Share this achievement"
-              >
-                <LinearGradient
-                  colors={[categoryColor, categoryColor + 'CC']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={StyleSheet.absoluteFill}
-                />
-                <Text style={[Typography.headline, { color: '#FFFFFF' }]}>
-                  Share Achievement
-                </Text>
-              </Pressable>
-            )}
-          </View>
-        </Animated.View>
-      </Animated.View>
-    </Modal>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Styles
-// ─────────────────────────────────────────────────────────────────────────────
-
-const BADGE_CARD_WIDTH = (SCREEN_WIDTH - 32 - 12) / 2; // 16px padding each side, 12px gap
-
-const s = StyleSheet.create({
+const styles = StyleSheet.create({
   container: { flex: 1 },
   scrollView: { flex: 1 },
-  scrollContent: { paddingHorizontal: 0 },
+  scrollContent: {
+    flexGrow: 1,
+    paddingHorizontal: 20,
+    gap: 16,
+  },
 
   // Header
   header: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    height: 60,
+    gap: 12,
   },
   backBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    borderWidth: 1,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
   },
   pageTitle: {
+    flex: 1,
     fontFamily: DISPLAY_FONT,
     fontSize: 24,
     fontWeight: '700',
     letterSpacing: -0.5,
   },
-  headerIconBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
 
-  // Card wrapper
-  cardWrapper: {
-    paddingHorizontal: 16,
-    marginBottom: 12,
-  },
-
-  // XP/Level Card
-  lvlCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  // XP Card
+  xpCard: {
     borderRadius: 20,
     borderWidth: 1,
     padding: 18,
-    paddingHorizontal: 20,
-    gap: 20,
-    height: 116,
+    gap: 10,
   },
-  lvlBadge: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 2,
+  xpHeader: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 8,
   },
-  lvlNumber: {
-    fontSize: 26,
+  xpLevel: {
+    fontFamily: DISPLAY_FONT,
+    fontSize: 18,
     fontWeight: '700',
   },
-  lvlLabel: {
-    fontSize: 9,
-    fontWeight: '600',
-    letterSpacing: 1,
-  },
-  lvlRight: {
-    flex: 1,
-    justifyContent: 'center',
-    gap: 6,
-  },
-  lvlTitle: {
-    fontSize: 12,
+  xpTitle: {
+    fontFamily: BODY_FONT,
+    fontSize: 14,
     fontWeight: '500',
   },
-  xpText: {
-    fontSize: 22,
-    fontWeight: '700',
-    letterSpacing: -0.5,
-  },
-  xpNext: {
-    fontSize: 11,
-    fontWeight: '400',
-  },
   xpTrack: {
-    height: 7,
-    borderRadius: 4,
+    height: 10,
+    borderRadius: 5,
     overflow: 'hidden',
   },
   xpFill: {
-    height: 7,
-    borderRadius: 4,
-    maxWidth: '100%',
+    height: '100%',
+    borderRadius: 5,
+  },
+  xpSubtext: {
+    fontFamily: BODY_FONT,
+    fontSize: 12,
+    fontWeight: '500',
   },
 
   // Streak Card
   streakCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
     borderRadius: 20,
     borderWidth: 1,
-    paddingVertical: 16,
-    paddingHorizontal: 20,
-    gap: 16,
-    height: 100,
+    padding: 18,
   },
-  streakLeft: {
-    width: 68,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 2,
+  streakRow: {
+    flexDirection: 'row',
+    gap: 24,
   },
-  streakFire: {
-    fontSize: 34,
+  streakCol: {
+    gap: 4,
   },
-  streakNumber: {
-    fontSize: 24,
-    fontWeight: '700',
-  },
-  streakDays: {
-    fontSize: 9,
-    fontWeight: '600',
-    letterSpacing: 1,
-  },
-  streakRight: {
-    flex: 1,
-    justifyContent: 'center',
-    gap: 6,
-  },
-  streakTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  streakRecord: {
+  streakLabel: {
+    fontFamily: BODY_FONT,
     fontSize: 12,
-    fontWeight: '400',
+    fontWeight: '500',
   },
-  streakMilestone: {
-    fontSize: 11,
-    fontWeight: '400',
+  streakValue: {
+    fontFamily: DISPLAY_FONT,
+    fontSize: 22,
+    fontWeight: '700',
+    letterSpacing: -0.3,
   },
 
-  // Badges Label
-  badgesLabelWrapper: {
-    paddingHorizontal: 20,
-    marginTop: 14,
-    marginBottom: 14,
-  },
-  badgesLabel: {
+  // Badges
+  badgesTitle: {
+    fontFamily: BODY_FONT,
     fontSize: 11,
     fontWeight: '600',
-    letterSpacing: 1.5,
+    letterSpacing: 0.8,
+    marginTop: 8,
   },
-
-  // Badge Grid
   badgeGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    paddingHorizontal: 16,
     gap: 12,
   },
   badgeCard: {
     width: BADGE_CARD_WIDTH,
-    height: 106,
-    borderRadius: 18,
+    borderRadius: 16,
     borderWidth: 1,
+    padding: 14,
+    alignItems: 'center',
+    gap: 8,
+  },
+  badgeIconCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
   },
   badgeEmoji: {
-    fontSize: 30,
+    fontSize: 24,
   },
   badgeName: {
+    fontFamily: BODY_FONT,
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: '700',
+    textAlign: 'center',
   },
-  badgeStars: {
-    fontSize: 12,
-    fontWeight: '400',
-  },
-
-  // Modal styles
-  modalOverlay: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  modalBackdrop: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  modalContent: {
-    width: SCREEN_WIDTH - 48,
-    maxWidth: 360,
-  },
-  modalCard: {
-    borderRadius: BorderRadius.card,
-    padding: Spacing.lg,
-    alignItems: 'center',
-  },
-  modalCloseButton: {
-    position: 'absolute',
-    top: Spacing.sm,
-    right: Spacing.sm,
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 10,
-  },
-  modalBadgeContainer: {
-    position: 'relative',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: Spacing.ml,
-  },
-  modalBadgeGlow: {
-    position: 'absolute',
-    width: 160,
-    height: 160,
-    borderRadius: 80,
-  },
-  modalBadgeCircle: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-  },
-  modalBadgeEmoji: {
-    fontSize: 48,
-  },
-  modalLockOverlay: {
-    position: 'absolute',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
-    width: '100%',
-    height: '100%',
-    borderRadius: 50,
-  },
-  modalCategoryTag: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: Spacing.xxs,
-    borderRadius: BorderRadius.input,
-    marginTop: Spacing.md,
-  },
-  modalProgressSection: {
-    marginTop: Spacing.lg,
-    alignItems: 'center',
-  },
-  modalCelebration: {
-    alignItems: 'center',
-  },
-  modalShareButton: {
-    marginTop: Spacing.lg,
-    paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.xl,
-    borderRadius: BorderRadius.button,
-    overflow: 'hidden',
-    minHeight: 44,
-    justifyContent: 'center',
-    alignItems: 'center',
+  badgeSubtitle: {
+    fontFamily: BODY_FONT,
+    fontSize: 11,
+    fontWeight: '500',
+    textAlign: 'center',
   },
 });

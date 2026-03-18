@@ -7,8 +7,21 @@ import { api } from '@/convex/_generated/api';
 import { convex } from '@/config/convex';
 import { registerForPushNotifications } from '@/services/notifications';
 import { Notifications, notificationsAvailable } from '@/services/notificationsRuntime';
+import {
+  deleteSecureValue,
+  SECURE_KEYS,
+  saveSecureJson,
+} from '@/services/secureStorage';
+import {
+  AppSettings,
+  CollectedItem,
+  CollectionStats,
+  Mascot,
+  Room,
+  UserProfile,
+  UserStats,
+} from '@/types/declutter';
 import { useAuthActions } from '@convex-dev/auth/react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
 import { useConvexAuth, useQuery } from 'convex/react';
 import React, {
@@ -18,6 +31,7 @@ import React, {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 
@@ -41,13 +55,23 @@ interface AuthState {
 }
 
 export interface SyncData {
-  profile?: any;
-  rooms: any[];
-  stats: any;
-  settings: any;
-  mascot?: any;
-  collection: any[];
-  collectionStats: any;
+  profile?: UserProfile;
+  rooms: Room[];
+  stats: UserStats;
+  settings: AppSettings;
+  mascot?: Mascot;
+  collection: CollectedItem[];
+  collectionStats: CollectionStats;
+}
+
+interface CloudUserState {
+  profile?: UserProfile | null;
+  rooms: Room[];
+  stats: UserStats;
+  settings: AppSettings;
+  mascot?: Mascot | null;
+  collection: CollectedItem[];
+  collectionStats: CollectionStats;
 }
 
 export type SyncStatus = 'idle' | 'syncing' | 'success' | 'error';
@@ -79,14 +103,16 @@ interface AuthContextValue extends AuthState {
   deleteAccount: (password?: string) => Promise<AuthResult>;
   clearError: () => void;
   syncToCloud: (data: SyncData) => Promise<void>;
-  loadFromCloud: () => Promise<any>;
+  loadFromCloud: () => Promise<CloudUserState | null>;
   syncStatus: SyncStatus;
   lastSyncTime: Date | null;
   isOnline: boolean;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
-const AUTH_STATE_KEY = '@declutterly_auth_state';
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
 
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message) {
@@ -99,17 +125,27 @@ function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }
 
-function toSerializableData<T>(value: T): T {
-  return JSON.parse(JSON.stringify(value));
+function isValidEmail(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
-function mapUser(user: any | null | undefined): AuthUser | null {
-  if (!user?._id) return null;
+const MIN_PASSWORD_LENGTH = 6;
+
+function toSerializableData<T>(value: T): T {
+  try {
+    return JSON.parse(JSON.stringify(value));
+  } catch {
+    return value;
+  }
+}
+
+function mapUser(user: unknown): AuthUser | null {
+  if (!isRecord(user) || !user._id) return null;
   return {
     uid: String(user._id),
-    email: user.email ?? null,
-    displayName: user.name ?? null,
-    photoURL: user.avatar ?? null,
+    email: typeof user.email === 'string' ? user.email : null,
+    displayName: typeof user.name === 'string' ? user.name : null,
+    photoURL: typeof user.avatar === 'string' ? user.avatar : null,
     isAnonymous: !!user.isAnonymous,
     emailVerified: !!user.emailVerificationTime || !user.email,
   };
@@ -121,7 +157,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const currentUser = useQuery(api.users.get, isAuthenticated ? {} : 'skip');
 
   const [error, setError] = useState<string | null>(null);
-  const [syncStatus, setSyncStatus] = useState<SyncStatus>('idle');
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
   const [isOnline, setIsOnline] = useState(true);
   const [pendingAuthAction, setPendingAuthAction] = useState(false);
@@ -139,12 +174,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!isAuthenticated || !user) {
-      void AsyncStorage.removeItem(AUTH_STATE_KEY);
+      void deleteSecureValue(SECURE_KEYS.AUTH_STATE);
       return;
     }
 
     void (async () => {
-      await AsyncStorage.setItem(AUTH_STATE_KEY, JSON.stringify(user));
+      await saveSecureJson(SECURE_KEYS.AUTH_STATE, user);
 
       try {
         if (!notificationsAvailable) {
@@ -195,12 +230,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const signIn = useCallback(
-    async (email: string, password: string): Promise<AuthResult> =>
-      runAuthFlow('password', {
+    async (email: string, password: string): Promise<AuthResult> => {
+      if (!isValidEmail(email)) {
+        return { success: false, error: 'Please enter a valid email address.' };
+      }
+      if (password.length < MIN_PASSWORD_LENGTH) {
+        return { success: false, error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters.` };
+      }
+      return runAuthFlow('password', {
         flow: 'signIn',
         email: normalizeEmail(email),
         password,
-      }),
+      });
+    },
     [runAuthFlow]
   );
 
@@ -209,13 +251,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       email: string,
       password: string,
       displayName?: string
-    ): Promise<AuthResult> =>
-      runAuthFlow('password', {
+    ): Promise<AuthResult> => {
+      if (!isValidEmail(email)) {
+        return { success: false, error: 'Please enter a valid email address.' };
+      }
+      if (password.length < MIN_PASSWORD_LENGTH) {
+        return { success: false, error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters.` };
+      }
+      return runAuthFlow('password', {
         flow: 'signUp',
         email: normalizeEmail(email),
         password,
         name: displayName?.trim() || undefined,
-      }),
+      });
+    },
     [runAuthFlow]
   );
 
@@ -231,7 +280,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Best-effort: don't block sign out if token removal fails
       }
       await authSignOut();
-      await AsyncStorage.removeItem(AUTH_STATE_KEY);
+      await deleteSecureValue(SECURE_KEYS.AUTH_STATE);
     } finally {
       setPendingAuthAction(false);
     }
@@ -257,9 +306,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       try {
         // 1. Snapshot current user data from the cloud before switching accounts
-        let existingData: any = null;
+        let existingData: CloudUserState | null = null;
         try {
-          existingData = await convex.query(api.sync.getUserState, {});
+          existingData = await convex.query(api.sync.getUserState, {}) as CloudUserState | null;
         } catch {
           // Best-effort: if snapshot fails we still proceed with upgrade
         }
@@ -351,7 +400,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         await convex.mutation(api.users.deleteAccount, {});
         await authSignOut();
-        await AsyncStorage.removeItem(AUTH_STATE_KEY);
+        await deleteSecureValue(SECURE_KEYS.AUTH_STATE);
         return { success: true };
       } catch (deleteError) {
         const message = getErrorMessage(deleteError);
@@ -368,10 +417,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setError(null);
   }, []);
 
+  const syncStatusRef = useRef<SyncStatus>('idle');
   const syncToCloud = useCallback(async (_data: SyncData): Promise<void> => {
     if (!isAuthenticated) return;
 
-    setSyncStatus('syncing');
+    syncStatusRef.current = 'syncing';
 
     try {
       const data = toSerializableData(_data);
@@ -384,27 +434,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         collection: data.collection,
         collectionStats: data.collectionStats,
       });
-      setSyncStatus('success');
+      syncStatusRef.current = 'success';
       setLastSyncTime(new Date());
-
-      setTimeout(() => {
-        setSyncStatus('idle');
-      }, 1000);
     } catch (syncError) {
       const message = getErrorMessage(syncError);
       if (__DEV__) console.error('Convex sync failed:', syncError);
       setError(message);
-      setSyncStatus('error');
-
-      setTimeout(() => {
-        setSyncStatus('idle');
-      }, 2000);
+      syncStatusRef.current = 'error';
     }
   }, [isAuthenticated]);
 
-  const loadFromCloud = useCallback(async () => {
+  const loadFromCloud = useCallback(async (): Promise<CloudUserState | null> => {
     if (!isAuthenticated) return null;
-    return convex.query(api.sync.getUserState, {});
+    return convex.query(api.sync.getUserState, {}) as Promise<CloudUserState | null>;
   }, [isAuthenticated]);
 
   const value = useMemo<AuthContextValue>(
@@ -426,7 +468,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       clearError,
       syncToCloud,
       loadFromCloud,
-      syncStatus,
+      syncStatus: syncStatusRef.current,
       lastSyncTime,
       isOnline,
     }),
@@ -444,7 +486,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signIn,
       signOut,
       signUp,
-      syncStatus,
       syncToCloud,
       updateProfile,
       upgradeFromGuest,

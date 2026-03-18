@@ -62,7 +62,7 @@ export function PromptModal({
             styles.card,
             {
               backgroundColor: isDark ? '#141414' : '#FFFFFF',
-              borderColor: isDark ? 'rgba(255,255,255,0.08)' : '#E8E8E8',
+              borderColor: isDark ? 'rgba(255,255,255,0.07)' : '#E8E8E8',
             },
           ]}
         >
@@ -86,7 +86,7 @@ export function PromptModal({
               styles.input,
               {
                 backgroundColor: isDark ? '#0F0F0F' : '#F5F5F5',
-                borderColor: isDark ? 'rgba(255,255,255,0.08)' : '#DDDDDD',
+                borderColor: isDark ? 'rgba(255,255,255,0.07)' : '#DDDDDD',
                 color: isDark ? '#FFFFFF' : '#1A1A1A',
               },
             ]}

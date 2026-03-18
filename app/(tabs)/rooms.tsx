@@ -1,81 +1,267 @@
-import { AmbientBackdrop } from '@/components/ui/AmbientBackdrop';
+/**
+ * Declutterly -- Rooms List Screen (V1 Pencil Design)
+ * Room cards with thumbnails, freshness bars, and empty state.
+ */
+
+import {
+  V1,
+  BODY_FONT,
+  DISPLAY_FONT,
+  RADIUS,
+  SPACING,
+  cardStyle,
+  getTheme,
+  CARD_SHADOW,
+} from '@/constants/designTokens';
 import { useDeclutter } from '@/context/DeclutterContext';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
 import { Room } from '@/types/declutter';
-import { Ionicons } from '@expo/vector-icons';
+import {
+  Plus,
+  ChevronRight,
+  LayoutGrid,
+  Bed,
+  UtensilsCrossed,
+  Droplets,
+  Tv,
+  Monitor,
+  Car,
+  Shirt,
+  Box,
+  Sparkles,
+  Clock,
+  Scan,
+} from 'lucide-react-native';
+import type { LucideIcon } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
+import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import React, { useCallback, useMemo } from 'react';
 import {
   ActivityIndicator,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
-import Animated, { FadeInDown } from 'react-native-reanimated';
+import Animated, {
+  FadeInDown,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-const BODY_FONT = 'DM Sans';
-const DISPLAY_FONT = 'Bricolage Grotesque';
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
-const ROOM_ICON_MAP: Record<string, keyof typeof Ionicons.glyphMap> = {
-  bedroom: 'bed-outline',
-  kitchen: 'restaurant-outline',
-  bathroom: 'water-outline',
-  livingRoom: 'tv-outline',
-  living_room: 'tv-outline',
-  office: 'desktop-outline',
-  garage: 'car-outline',
-  closet: 'shirt-outline',
-  other: 'cube-outline',
+const ROOM_ICON_MAP: Record<string, LucideIcon> = {
+  bedroom: Bed,
+  kitchen: UtensilsCrossed,
+  bathroom: Droplets,
+  livingRoom: Tv,
+  living_room: Tv,
+  office: Monitor,
+  garage: Car,
+  closet: Shirt,
+  other: Box,
 };
 
-const STARTER_ROOMS = [
-  { label: 'Kitchen counter', icon: 'restaurant-outline' as const, note: 'Fast visible win' },
-  { label: 'Bedroom floor', icon: 'bed-outline' as const, note: 'Low-friction start' },
-  { label: 'Bathroom sink', icon: 'water-outline' as const, note: 'Quick reset' },
-];
-
-function getRoomIcon(type?: string): keyof typeof Ionicons.glyphMap {
-  if (!type) return 'cube-outline';
-  return ROOM_ICON_MAP[type] || 'cube-outline';
+function getRoomIcon(type?: string): LucideIcon {
+  if (!type) return Box;
+  return ROOM_ICON_MAP[type] || Box;
 }
 
-function getRoomSummary(room: Room) {
+function getFreshnessInfo(room: Room): { label: string; color: string; percent: number } {
   const tasks = room.tasks ?? [];
-  const totalTasks = tasks.length;
-  const completedTasks = tasks.filter((task) => task.completed).length;
-  const pendingTasks = Math.max(totalTasks - completedTasks, 0);
+  const total = tasks.length;
+  if (total === 0) return { label: 'New', color: V1.blue, percent: 0 };
 
-  if (totalTasks === 0) {
-    return 'Ready for its first plan';
-  }
+  const completed = tasks.filter((t) => t.completed).length;
+  const percent = Math.round((completed / total) * 100);
 
-  if (pendingTasks === 0) {
-    return `${completedTasks}/${totalTasks} tasks complete`;
-  }
-
-  return `${pendingTasks} task${pendingTasks === 1 ? '' : 's'} left`;
+  if (percent >= 90) return { label: 'Sparkling', color: V1.green, percent };
+  if (percent >= 60) return { label: 'Fresh', color: V1.green, percent };
+  if (percent >= 30) return { label: 'Needs love', color: V1.amber, percent };
+  return { label: 'Needs attention', color: V1.coral, percent };
 }
 
-function getRoomsMomentum(rooms: Room[]) {
-  const totalTasks = rooms.reduce((sum, room) => sum + (room.tasks?.length ?? 0), 0);
-  const completedTasks = rooms.reduce(
-    (sum, room) => sum + (room.tasks ?? []).filter((task) => task.completed).length,
-    0
-  );
+function getTaskSummary(room: Room): string {
+  const tasks = room.tasks ?? [];
+  const pending = tasks.filter((t) => !t.completed).length;
+  if (tasks.length === 0) return 'Ready for first scan';
+  return `${pending} task${pending === 1 ? '' : 's'}`;
+}
 
-  return {
-    totalRooms: rooms.length,
-    totalTasks,
-    completedTasks,
-    pendingTasks: Math.max(totalTasks - completedTasks, 0),
-  };
+function RoomCard({
+  isDark,
+  room,
+  onPress,
+}: {
+  isDark: boolean;
+  room: Room;
+  onPress: () => void;
+}) {
+  const t = getTheme(isDark);
+  const freshness = getFreshnessInfo(room);
+  const summary = getTaskSummary(room);
+  const photo = room.photos?.[0];
+  const Icon = getRoomIcon(room.type);
+
+  const scale = useSharedValue(1);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+
+  const handlePressIn = useCallback(() => {
+    scale.value = withSpring(0.98, { damping: 15, stiffness: 150 });
+  }, [scale]);
+
+  const handlePressOut = useCallback(() => {
+    scale.value = withSpring(1, { damping: 15, stiffness: 150 });
+  }, [scale]);
+
+  return (
+    <AnimatedPressable
+      onPress={onPress}
+      onPressIn={handlePressIn}
+      onPressOut={handlePressOut}
+      accessibilityRole="button"
+      accessibilityLabel={`Open ${room.name}`}
+      style={animatedStyle}
+    >
+      <View style={[styles.roomCard, cardStyle(isDark)]}>
+        {/* Thumbnail */}
+        <View style={styles.roomThumb}>
+          {photo?.uri ? (
+            <Image
+              source={{ uri: photo.uri }}
+              style={styles.roomImage}
+              contentFit="cover"
+              transition={200}
+            />
+          ) : (
+            <View style={[styles.roomImagePlaceholder, {
+              backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.03)',
+            }]}>
+              <Icon size={22} color={t.textMuted} />
+            </View>
+          )}
+        </View>
+
+        {/* Content */}
+        <View style={styles.roomContent}>
+          <Text style={[styles.roomName, { color: t.text }]} numberOfLines={1}>
+            {room.name}
+          </Text>
+
+          {/* Freshness bar */}
+          <View style={[styles.freshnessTrack, {
+            backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+          }]}>
+            <View
+              style={[styles.freshnessFill, {
+                backgroundColor: freshness.color,
+                width: `${Math.max(freshness.percent, 4)}%`,
+              }]}
+            />
+          </View>
+
+          <Text style={[styles.roomStatus, { color: t.textSecondary }]}>
+            {freshness.label}{'  \u00B7  '}{summary}
+          </Text>
+        </View>
+
+        {/* Chevron */}
+        <ChevronRight size={18} color={t.textMuted} />
+      </View>
+    </AnimatedPressable>
+  );
+}
+
+function EmptyState({
+  isDark,
+  onAdd,
+}: {
+  isDark: boolean;
+  onAdd: () => void;
+}) {
+  const t = getTheme(isDark);
+
+  return (
+    <View style={styles.emptyContainer}>
+      {/* Icon */}
+      <View style={styles.emptyIconWrap}>
+        <LinearGradient
+          colors={isDark
+            ? ['rgba(255,107,107,0.20)', 'rgba(255,107,107,0.08)']
+            : ['rgba(255,107,107,0.14)', 'rgba(255,107,107,0.06)']
+          }
+          style={StyleSheet.absoluteFill}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+        />
+        <LayoutGrid size={36} color={V1.coral} />
+      </View>
+
+      <Text style={[styles.emptyTitle, { color: t.text }]}>No rooms yet</Text>
+      <Text style={[styles.emptySubtitle, { color: t.textSecondary }]}>
+        Scan a room to get started. Each room{'\n'}gets its own task list and freshness tracker.
+      </Text>
+
+      {/* CTA */}
+      <Pressable
+        onPress={onAdd}
+        accessibilityRole="button"
+        accessibilityLabel="Add Your First Room"
+        style={({ pressed }) => [{ opacity: pressed ? 0.88 : 1, width: '100%' }]}
+      >
+        <LinearGradient
+          colors={['#FF6B6B', '#FF5252']}
+          style={styles.ctaButton}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+        >
+          <Text style={styles.ctaText}>Add Your First Room</Text>
+        </LinearGradient>
+      </Pressable>
+
+      {/* Feature pills */}
+      <View style={styles.featureList}>
+        <FeaturePill isDark={isDark} icon={Scan} text="AI spots what needs cleaning" color={V1.amber} />
+        <FeaturePill isDark={isDark} icon={Sparkles} text="Tasks broken into small steps" color={V1.green} />
+        <FeaturePill isDark={isDark} icon={Clock} text="Time estimates for each task" color={V1.coral} />
+      </View>
+    </View>
+  );
+}
+
+function FeaturePill({
+  isDark,
+  icon,
+  text,
+  color,
+}: {
+  isDark: boolean;
+  icon: LucideIcon;
+  text: string;
+  color?: string;
+}) {
+  const t = getTheme(isDark);
+  const iconColor = color || V1.green;
+  return (
+    <View style={[styles.featurePill, {
+      backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : '#FFFFFF',
+      borderWidth: isDark ? 0 : 1,
+      borderColor: isDark ? 'transparent' : '#E5E7EB',
+    }]}>
+      {React.createElement(icon, { size: 16, color: iconColor })}
+      <Text style={[styles.featureText, { color: t.text }]}>{text}</Text>
+    </View>
+  );
 }
 
 export default function RoomsScreen() {
@@ -87,7 +273,22 @@ export default function RoomsScreen() {
 
   const safeRooms = rooms ?? [];
   const isLoading = rooms === undefined || rooms === null;
-  const momentum = useMemo(() => getRoomsMomentum(safeRooms), [safeRooms]);
+  const t = getTheme(isDark);
+
+  // Header "+" press animation
+  const addBtnScale = useSharedValue(1);
+  const addBtnAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: addBtnScale.value }],
+  }));
+
+  // Count rooms needing attention
+  const needsAttention = useMemo(() => {
+    return safeRooms.filter((r) => {
+      const tasks = r.tasks ?? [];
+      const completed = tasks.filter((tk) => tk.completed).length;
+      return tasks.length > 0 && completed / tasks.length < 0.5;
+    }).length;
+  }, [safeRooms]);
 
   const handleScan = useCallback(() => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -100,664 +301,284 @@ export default function RoomsScreen() {
     router.push(`/room/${roomId}`);
   }, []);
 
+  const handleAddPressIn = useCallback(() => {
+    addBtnScale.value = withSpring(0.9, { damping: 15, stiffness: 150 });
+  }, [addBtnScale]);
+
+  const handleAddPressOut = useCallback(() => {
+    addBtnScale.value = withSpring(1, { damping: 15, stiffness: 150 });
+  }, [addBtnScale]);
+
+  const enter = (delay: number) =>
+    reducedMotion ? undefined : FadeInDown.duration(380).delay(delay);
+
   return (
-    <View style={[styles.container, { backgroundColor: isDark ? '#0A0A0A' : '#F8F8F8' }]}>
-      <AmbientBackdrop isDark={isDark} variant="home" />
+    <View style={[styles.container, { backgroundColor: t.bg }]}>
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={[
           styles.scrollContent,
-          { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 100 },
+          { paddingTop: insets.top + 14, paddingBottom: insets.bottom + 120 },
         ]}
         showsVerticalScrollIndicator={false}
       >
-        <Animated.View entering={reducedMotion ? undefined : FadeInDown.duration(360)}>
-          <View style={styles.header}>
-            <View style={styles.headerCopy}>
-              <Text style={[styles.title, { color: isDark ? '#FFFFFF' : '#17171A' }]}>
-                Your Rooms
+        {/* Header */}
+        <Animated.View entering={enter(0)} style={styles.header}>
+          <View style={styles.headerLeft}>
+            <Text style={[styles.title, { color: t.text }]}>Your Rooms</Text>
+            {safeRooms.length > 0 && (
+              <Text style={[styles.subtitle, { color: t.textSecondary }]}>
+                {safeRooms.length} room{safeRooms.length === 1 ? '' : 's'}
+                {needsAttention > 0 ? `  \u00B7  ${needsAttention} need attention` : ''}
               </Text>
-              <Text
-                style={[
-                  styles.subtitle,
-                  { color: isDark ? 'rgba(255,255,255,0.56)' : 'rgba(23,23,26,0.52)' },
-                ]}
-              >
-                {safeRooms.length > 0
-                  ? `${momentum.pendingTasks} task${momentum.pendingTasks === 1 ? '' : 's'} left across ${momentum.totalRooms} room${momentum.totalRooms === 1 ? '' : 's'}.`
-                  : 'Start with the space that gives you the fastest visible relief.'}
-              </Text>
-            </View>
-
-            <Pressable
-              onPress={handleScan}
-              accessibilityRole="button"
-              accessibilityLabel="Scan a new room"
-              style={({ pressed }) => [
-                styles.headerAction,
-                {
-                  backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.78)',
-                  borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)',
-                  opacity: pressed ? 0.78 : 1,
-                },
-              ]}
-            >
-              <Ionicons name="camera-outline" size={18} color={isDark ? '#FFFFFF' : '#17171A'} />
-            </Pressable>
+            )}
           </View>
+
+          <AnimatedPressable
+            onPress={handleScan}
+            onPressIn={handleAddPressIn}
+            onPressOut={handleAddPressOut}
+            accessibilityRole="button"
+            accessibilityLabel="Add a new room"
+            style={addBtnAnimatedStyle}
+          >
+            <View style={[
+              styles.addButton,
+              { backgroundColor: V1.coral },
+              !isDark && {
+                shadowColor: V1.coral,
+                shadowOffset: { width: 0, height: 3 },
+                shadowOpacity: 0.25,
+                shadowRadius: 6,
+                elevation: 3,
+              },
+            ]}>
+              <Plus size={20} color="#FFFFFF" strokeWidth={2.5} />
+            </View>
+          </AnimatedPressable>
         </Animated.View>
 
         {isLoading ? (
           <View style={styles.loadingWrap}>
-            <ActivityIndicator color={isDark ? '#FFFFFF' : '#17171A'} />
+            <ActivityIndicator color={t.text} />
           </View>
         ) : safeRooms.length === 0 ? (
-          <Animated.View entering={reducedMotion ? undefined : FadeInDown.duration(380).delay(70)}>
-            <StarterCard isDark={isDark} onScan={handleScan} />
+          <Animated.View entering={enter(60)}>
+            <EmptyState isDark={isDark} onAdd={handleScan} />
           </Animated.View>
         ) : (
-          <>
-            <Animated.View entering={reducedMotion ? undefined : FadeInDown.duration(380).delay(70)}>
-              <OverviewCard
-                isDark={isDark}
-                totalRooms={momentum.totalRooms}
-                pendingTasks={momentum.pendingTasks}
-                completedTasks={momentum.completedTasks}
-                onScan={handleScan}
-              />
-            </Animated.View>
+          <View style={styles.roomList}>
+            {safeRooms.map((room, index) => (
+              <Animated.View
+                key={room.id}
+                entering={enter(60 + index * 40)}
+              >
+                <RoomCard
+                  isDark={isDark}
+                  room={room}
+                  onPress={() => handleRoomPress(room.id)}
+                />
+              </Animated.View>
+            ))}
 
-            <View style={styles.roomList}>
-              {safeRooms.map((room, index) => (
-                <Animated.View
-                  key={room.id}
-                  entering={reducedMotion ? undefined : FadeInDown.duration(380).delay(110 + index * 45)}
-                >
-                  <RoomCard
-                    isDark={isDark}
-                    room={room}
-                    onPress={() => handleRoomPress(room.id)}
-                  />
-                </Animated.View>
-              ))}
-            </View>
-          </>
+            {/* Add new room dashed card */}
+            <Animated.View entering={enter(60 + safeRooms.length * 40)}>
+              <Pressable
+                onPress={handleScan}
+                accessibilityRole="button"
+                accessibilityLabel="Add a new room"
+                style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}
+              >
+                <View style={[styles.addRoomCard, {
+                  borderColor: `rgba(255,107,107,0.20)`,
+                }]}>
+                  <Plus size={18} color={V1.coral} />
+                  <Text style={[styles.addRoomText, { color: t.textSecondary }]}>
+                    Add a new room
+                  </Text>
+                </View>
+              </Pressable>
+            </Animated.View>
+          </View>
         )}
       </ScrollView>
     </View>
   );
 }
 
-function StarterCard({ isDark, onScan }: { isDark: boolean; onScan: () => void }) {
-  return (
-    <LinearGradient
-      colors={
-        isDark
-          ? ['rgba(23,23,28,0.96)', 'rgba(14,14,18,0.98)']
-          : ['rgba(255,255,255,0.98)', 'rgba(249,245,239,0.96)']
-      }
-      start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 1 }}
-      style={[
-        styles.starterCard,
-        { borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)' },
-      ]}
-    >
-      <View
-        style={[
-          styles.starterGlow,
-          { backgroundColor: isDark ? 'rgba(255,184,111,0.14)' : 'rgba(255,207,160,0.26)' },
-        ]}
-      />
-
-      <LinearGradient
-        colors={
-          isDark
-            ? ['#FFD39A', '#FFAA63']
-            : ['#FFC888', '#FFA36A']
-        }
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.starterIcon}
-      >
-        <Ionicons name="camera-outline" size={24} color="#17120B" />
-      </LinearGradient>
-
-      <Text style={[styles.starterEyebrow, { color: isDark ? '#F7DAB5' : '#8A5926' }]}>
-        FIRST ROOM
-      </Text>
-      <Text style={[styles.starterTitle, { color: isDark ? '#FFF9F1' : '#17171A' }]}>
-        Start with the room you see most.
-      </Text>
-      <Text
-        style={[
-          styles.starterDescription,
-          { color: isDark ? 'rgba(255,255,255,0.56)' : 'rgba(23,23,26,0.56)' },
-        ]}
-      >
-        One photo is enough. Declutterly will turn it into a calm, ordered next step instead of a giant project.
-      </Text>
-
-      <Text style={[styles.starterSuggestionLabel, { color: isDark ? '#D4B48B' : '#84511D' }]}>
-        Easiest first wins
-      </Text>
-
-      <View style={styles.starterSuggestionWrap}>
-        {STARTER_ROOMS.map((suggestion) => (
-          <Pressable
-            key={suggestion.label}
-            onPress={onScan}
-            accessibilityRole="button"
-            accessibilityLabel={`Scan ${suggestion.label}`}
-            style={({ pressed }) => [{ opacity: pressed ? 0.84 : 1 }]}
-          >
-            <View
-              style={[
-                styles.starterSuggestionPill,
-                {
-                  backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(255,248,241,0.94)',
-                  borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)',
-                },
-              ]}
-            >
-              <Ionicons
-                name={suggestion.icon}
-                size={14}
-                color={isDark ? '#FFCE96' : '#7A5021'}
-              />
-              <Text
-                style={[
-                  styles.starterSuggestionText,
-                  { color: isDark ? '#FFF3E2' : '#56361A' },
-                ]}
-              >
-                {suggestion.label}
-              </Text>
-            </View>
-          </Pressable>
-        ))}
-      </View>
-
-      <Pressable
-        onPress={onScan}
-        accessibilityRole="button"
-        accessibilityLabel="Scan first room"
-        style={({ pressed }) => [{ opacity: pressed ? 0.88 : 1 }]}
-      >
-        <LinearGradient
-          colors={isDark ? ['#FFF4E3', '#F9D39C'] : ['#1B1B20', '#35333D']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.starterButton}
-        >
-          <Text style={[styles.starterButtonText, { color: isDark ? '#17120B' : '#FFFFFF' }]}>
-            Scan first room
-          </Text>
-          <Ionicons name="arrow-forward" size={16} color={isDark ? '#17120B' : '#FFFFFF'} />
-        </LinearGradient>
-      </Pressable>
-    </LinearGradient>
-  );
-}
-
-function OverviewCard({
-  isDark,
-  totalRooms,
-  pendingTasks,
-  completedTasks,
-  onScan,
-}: {
-  isDark: boolean;
-  totalRooms: number;
-  pendingTasks: number;
-  completedTasks: number;
-  onScan: () => void;
-}) {
-  return (
-    <View
-      style={[
-        styles.overviewCard,
-        {
-          backgroundColor: isDark ? 'rgba(19,19,23,0.94)' : 'rgba(255,255,255,0.92)',
-          borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
-        },
-      ]}
-    >
-      <View style={styles.overviewHeader}>
-        <View style={styles.overviewCopy}>
-          <Text style={[styles.overviewEyebrow, { color: isDark ? '#F3C37A' : '#956631' }]}>
-            ROOM MAP
-          </Text>
-          <Text style={[styles.overviewTitle, { color: isDark ? '#FFFFFF' : '#17171A' }]}>
-            Keep going room by room.
-          </Text>
-          <Text
-            style={[
-              styles.overviewDescription,
-              { color: isDark ? 'rgba(255,255,255,0.52)' : 'rgba(23,23,26,0.52)' },
-            ]}
-          >
-            {completedTasks} tasks finished, {pendingTasks} still waiting for the next pass.
-          </Text>
-        </View>
-
-        <Pressable
-          onPress={onScan}
-          accessibilityRole="button"
-          accessibilityLabel="Scan another room"
-          style={({ pressed }) => [
-            styles.scanPill,
-            {
-              backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(248,244,238,0.95)',
-              borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.04)',
-              opacity: pressed ? 0.82 : 1,
-            },
-          ]}
-        >
-          <Ionicons name="scan-outline" size={14} color={isDark ? '#FFFFFF' : '#17171A'} />
-          <Text style={[styles.scanPillText, { color: isDark ? '#FFFFFF' : '#17171A' }]}>
-            Scan another
-          </Text>
-        </Pressable>
-      </View>
-
-      <View style={styles.metricRow}>
-        <MetricCard isDark={isDark} value={String(totalRooms)} label="Rooms" />
-        <MetricCard isDark={isDark} value={String(pendingTasks)} label="Tasks left" />
-        <MetricCard isDark={isDark} value={String(completedTasks)} label="Done" />
-      </View>
-    </View>
-  );
-}
-
-function MetricCard({
-  isDark,
-  value,
-  label,
-}: {
-  isDark: boolean;
-  value: string;
-  label: string;
-}) {
-  return (
-    <View
-      style={[
-        styles.metricCard,
-        {
-          backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(248,245,241,0.88)',
-          borderColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
-        },
-      ]}
-    >
-      <Text style={[styles.metricValue, { color: isDark ? '#FFFFFF' : '#17171A' }]}>
-        {value}
-      </Text>
-      <Text
-        style={[
-          styles.metricLabel,
-          { color: isDark ? 'rgba(255,255,255,0.42)' : 'rgba(23,23,26,0.44)' },
-        ]}
-      >
-        {label}
-      </Text>
-    </View>
-  );
-}
-
-function RoomCard({
-  isDark,
-  room,
-  onPress,
-}: {
-  isDark: boolean;
-  room: Room;
-  onPress: () => void;
-}) {
-  const progress = Math.round(room.currentProgress ?? 0);
-
-  return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel={`Open ${room.name}`}
-      style={({ pressed }) => [{ opacity: pressed ? 0.84 : 1 }]}
-    >
-      <View
-        style={[
-          styles.roomCard,
-          {
-            backgroundColor: isDark ? 'rgba(20,20,24,0.94)' : 'rgba(255,255,255,0.96)',
-            borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
-          },
-        ]}
-      >
-        <LinearGradient
-          colors={
-            isDark
-              ? ['rgba(255,201,148,0.22)', 'rgba(255,142,88,0.1)']
-              : ['rgba(255,223,189,0.92)', 'rgba(255,188,139,0.42)']
-          }
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.roomIcon}
-        >
-          <Ionicons name={getRoomIcon(room.type)} size={18} color={isDark ? '#FFF6E8' : '#5B3916'} />
-        </LinearGradient>
-
-        <View style={styles.roomCopy}>
-          <Text style={[styles.roomName, { color: isDark ? '#FFFFFF' : '#17171A' }]}>
-            {room.name}
-          </Text>
-          <Text
-            style={[
-              styles.roomDescription,
-              { color: isDark ? 'rgba(255,255,255,0.48)' : 'rgba(23,23,26,0.5)' },
-            ]}
-          >
-            {getRoomSummary(room)}
-          </Text>
-          <View
-            style={[
-              styles.progressTrack,
-              { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.07)' },
-            ]}
-          >
-            <LinearGradient
-              colors={isDark ? ['#FFD7A6', '#F5A06C'] : ['#D9B080', '#B98556']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={[styles.progressFill, { width: `${Math.max(progress, 6)}%` }]}
-            />
-          </View>
-        </View>
-
-        <View style={styles.roomTrailing}>
-          <Text style={[styles.roomPercent, { color: isDark ? '#FFFFFF' : '#17171A' }]}>
-            {progress}%
-          </Text>
-          <Text
-            style={[
-              styles.roomContinue,
-              { color: isDark ? 'rgba(255,255,255,0.42)' : 'rgba(23,23,26,0.42)' },
-            ]}
-          >
-            Continue
-          </Text>
-        </View>
-      </View>
-    </Pressable>
-  );
-}
-
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  scrollView: {
-    flex: 1,
-  },
+  container: { flex: 1 },
+  scrollView: { flex: 1 },
   scrollContent: {
-    paddingHorizontal: 20,
+    flexGrow: 1,
+    paddingHorizontal: SPACING.screenPadding,
     gap: 16,
   },
+
+  // Header
   header: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     justifyContent: 'space-between',
-    gap: 16,
   },
-  headerCopy: {
+  headerLeft: {
     flex: 1,
-    gap: 6,
+    gap: 4,
   },
   title: {
     fontFamily: DISPLAY_FONT,
-    fontSize: 32,
-    lineHeight: 36,
+    fontSize: 28,
     fontWeight: '700',
-    letterSpacing: -0.7,
+    letterSpacing: -0.5,
   },
   subtitle: {
     fontFamily: BODY_FONT,
-    fontSize: 14,
-    lineHeight: 20,
+    fontSize: 13,
     fontWeight: '500',
   },
-  headerAction: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    borderWidth: 1,
+  addButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
   },
+
   loadingWrap: {
     minHeight: 280,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  starterCard: {
-    overflow: 'hidden',
-    borderRadius: 30,
-    borderWidth: 1,
-    paddingHorizontal: 24,
-    paddingVertical: 24,
-    alignItems: 'center',
-  },
-  starterGlow: {
-    position: 'absolute',
-    top: -24,
-    right: -18,
-    width: 136,
-    height: 136,
-    borderRadius: 68,
-  },
-  starterIcon: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 14,
-  },
-  starterEyebrow: {
-    fontFamily: BODY_FONT,
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 1,
-    marginBottom: 8,
-  },
-  starterTitle: {
-    fontFamily: DISPLAY_FONT,
-    fontSize: 30,
-    lineHeight: 34,
-    fontWeight: '700',
-    letterSpacing: -0.7,
-    textAlign: 'center',
-  },
-  starterDescription: {
-    fontFamily: BODY_FONT,
-    fontSize: 15,
-    lineHeight: 22,
-    textAlign: 'center',
-    marginTop: 10,
-  },
-  starterSuggestionLabel: {
-    fontFamily: BODY_FONT,
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 0.8,
-    marginTop: 18,
-  },
-  starterSuggestionWrap: {
-    width: '100%',
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-    gap: 10,
-    marginTop: 12,
-    marginBottom: 20,
-  },
-  starterSuggestionPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    borderRadius: 999,
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  starterSuggestionText: {
-    fontFamily: BODY_FONT,
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  starterButton: {
-    minHeight: 54,
-    minWidth: 220,
-    borderRadius: 999,
-    paddingHorizontal: 24,
-    paddingVertical: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-  },
-  starterButtonText: {
-    fontFamily: BODY_FONT,
-    fontSize: 16,
-    fontWeight: '800',
-  },
-  overviewCard: {
-    borderRadius: 26,
-    borderWidth: 1,
-    padding: 20,
-    gap: 18,
-  },
-  overviewHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-  overviewCopy: {
-    flex: 1,
-    gap: 6,
-  },
-  overviewEyebrow: {
-    fontFamily: BODY_FONT,
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 0.8,
-  },
-  overviewTitle: {
-    fontFamily: DISPLAY_FONT,
-    fontSize: 26,
-    lineHeight: 30,
-    fontWeight: '700',
-    letterSpacing: -0.6,
-  },
-  overviewDescription: {
-    fontFamily: BODY_FONT,
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  scanPill: {
-    minHeight: 40,
-    borderRadius: 999,
-    borderWidth: 1,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  scanPillText: {
-    fontFamily: BODY_FONT,
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  metricRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  metricCard: {
-    flex: 1,
-    borderRadius: 20,
-    borderWidth: 1,
-    paddingVertical: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-  },
-  metricValue: {
-    fontFamily: DISPLAY_FONT,
-    fontSize: 28,
-    lineHeight: 32,
-    fontWeight: '700',
-  },
-  metricLabel: {
-    fontFamily: BODY_FONT,
-    fontSize: 12,
-    fontWeight: '500',
-  },
+
+  // Room list
   roomList: {
-    gap: 12,
+    gap: SPACING.itemGap,
   },
+
+  // Room card
   roomCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
-    borderRadius: 24,
-    borderWidth: 1,
-    paddingHorizontal: 16,
-    paddingVertical: 16,
+    gap: 12,
+    padding: 12,
   },
-  roomIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 18,
+  roomThumb: {
+    width: 60,
+    height: 60,
+    borderRadius: 14,
+    overflow: 'hidden',
+  },
+  roomImage: {
+    width: 60,
+    height: 60,
+  },
+  roomImagePlaceholder: {
+    width: 60,
+    height: 60,
     alignItems: 'center',
     justifyContent: 'center',
+    borderRadius: 14,
   },
-  roomCopy: {
+  roomContent: {
     flex: 1,
-    gap: 6,
+    gap: 4,
   },
   roomName: {
     fontFamily: BODY_FONT,
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700',
   },
-  roomDescription: {
-    fontFamily: BODY_FONT,
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  progressTrack: {
-    height: 7,
-    borderRadius: 999,
+  freshnessTrack: {
+    height: 5,
+    borderRadius: 2.5,
     overflow: 'hidden',
-    marginTop: 2,
   },
-  progressFill: {
+  freshnessFill: {
     height: '100%',
-    borderRadius: 999,
+    borderRadius: 2.5,
   },
-  roomTrailing: {
-    alignItems: 'flex-end',
-    gap: 4,
-  },
-  roomPercent: {
-    fontFamily: DISPLAY_FONT,
-    fontSize: 20,
-    lineHeight: 22,
-    fontWeight: '700',
-  },
-  roomContinue: {
+  roomStatus: {
     fontFamily: BODY_FONT,
     fontSize: 12,
+    fontWeight: '500',
+    letterSpacing: 0.1,
+  },
+
+  // Add room card
+  addRoomCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    height: 64,
+    borderRadius: RADIUS.md,
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+  },
+  addRoomText: {
+    fontFamily: BODY_FONT,
+    fontSize: 14,
     fontWeight: '600',
+  },
+
+  // Empty state
+  emptyContainer: {
+    alignItems: 'center',
+    paddingTop: 40,
+    gap: 16,
+  },
+  emptyIconWrap: {
+    width: 88,
+    height: 88,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+    overflow: 'hidden',
+  },
+  emptyTitle: {
+    fontFamily: DISPLAY_FONT,
+    fontSize: 22,
+    fontWeight: '700',
+    letterSpacing: -0.3,
+    textAlign: 'center',
+  },
+  emptySubtitle: {
+    fontFamily: BODY_FONT,
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: '500',
+    textAlign: 'center',
+  },
+  ctaButton: {
+    height: 52,
+    borderRadius: 26,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 8,
+  },
+  ctaText: {
+    fontFamily: BODY_FONT,
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  featureList: {
+    gap: 12,
+    marginTop: 8,
+    width: '100%',
+  },
+  featurePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    borderRadius: 14,
+  },
+  featureText: {
+    fontFamily: BODY_FONT,
+    fontSize: 14,
+    fontWeight: '500',
   },
 });

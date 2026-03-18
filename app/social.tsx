@@ -16,7 +16,7 @@ import {
 } from '@/services/social';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
-import { Ionicons } from '@expo/vector-icons';
+import { Users } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
@@ -51,7 +51,7 @@ function getInitial(name: string): string {
 // ─────────────────────────────────────────────────────────────────────────────
 // Weekly Challenge Card
 // ─────────────────────────────────────────────────────────────────────────────
-function WeeklyChallengeCard({ isDark, challenge }: { isDark: boolean; challenge: Challenge | null }) {
+function WeeklyChallengeCard({ isDark, challenge, onPress }: { isDark: boolean; challenge: Challenge | null; onPress?: () => void }) {
   if (!challenge) {
     return (
       <LinearGradient
@@ -104,74 +104,82 @@ function WeeklyChallengeCard({ isDark, challenge }: { isDark: boolean; challenge
   const daysLeft = Math.max(0, Math.ceil((end.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
 
   return (
-    <LinearGradient
-      colors={isDark
-        ? ['#1A1A1A', '#151515', '#121212'] as const
-        : ['#F5F5F5', '#F0F0F0', '#EBEBEB'] as const
-      }
-      start={{ x: 0, y: 0 }}
-      end={{ x: 0.5, y: 1 }}
-      style={[styles.challengeCard, {
-        borderColor: isDark ? 'rgba(255,255,255,0.09)' : 'rgba(0,0,0,0.06)',
-      }]}
+    <Pressable
+      onPress={onPress}
+      disabled={!onPress}
+      accessibilityRole={onPress ? 'button' : undefined}
+      accessibilityLabel={`View challenge: ${challenge.title}`}
+      style={({ pressed }) => [{ opacity: pressed && onPress ? 0.85 : 1 }]}
     >
-      {/* Badge */}
-      <View style={styles.challengeHeaderRow}>
-        <View style={[styles.challengeBadge, {
-          backgroundColor: isDark ? 'rgba(255,255,255,0.13)' : 'rgba(0,0,0,0.06)',
-        }]}>
-          <Text style={{ fontSize: 12 }}>{'\u{1F3C6}'}</Text>
-          <Text style={[styles.challengeBadgeText, {
-            color: isDark ? 'rgba(255,255,255,0.56)' : 'rgba(0,0,0,0.5)',
+      <LinearGradient
+        colors={isDark
+          ? ['#1A1A1A', '#151515', '#121212'] as const
+          : ['#F5F5F5', '#F0F0F0', '#EBEBEB'] as const
+        }
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
+        style={[styles.challengeCard, {
+          borderColor: isDark ? 'rgba(255,255,255,0.09)' : 'rgba(0,0,0,0.06)',
+        }]}
+      >
+        {/* Badge */}
+        <View style={styles.challengeHeaderRow}>
+          <View style={[styles.challengeBadge, {
+            backgroundColor: isDark ? 'rgba(255,255,255,0.13)' : 'rgba(0,0,0,0.06)',
           }]}>
-            WEEKLY CHALLENGE
-          </Text>
-        </View>
-        <View style={[styles.challengeTimeBadge, {
-          backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.04)',
-        }]}>
-          <Text style={[styles.challengeTimeText, {
-            color: isDark ? 'rgba(255,255,255,0.44)' : 'rgba(0,0,0,0.44)',
+            <Text style={{ fontSize: 12 }}>{'\u{1F3C6}'}</Text>
+            <Text style={[styles.challengeBadgeText, {
+              color: isDark ? 'rgba(255,255,255,0.56)' : 'rgba(0,0,0,0.5)',
+            }]}>
+              WEEKLY CHALLENGE
+            </Text>
+          </View>
+          <View style={[styles.challengeTimeBadge, {
+            backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
           }]}>
-            {daysLeft === 0 ? 'Ends today' : `${daysLeft} day${daysLeft !== 1 ? 's' : ''} left`}
-          </Text>
+            <Text style={[styles.challengeTimeText, {
+              color: isDark ? 'rgba(255,255,255,0.44)' : 'rgba(0,0,0,0.44)',
+            }]}>
+              {daysLeft === 0 ? 'Ends today' : `${daysLeft} day${daysLeft !== 1 ? 's' : ''} left`}
+            </Text>
+          </View>
         </View>
-      </View>
 
-      {/* Title */}
-      <Text style={[styles.challengeTitle, {
-        color: isDark ? '#FFFFFF' : '#1A1A1A',
-      }]}>
-        {challenge.title}
-      </Text>
-
-      {/* Progress bar + text */}
-      <View style={styles.challengeProgress}>
-        <View style={[styles.progressTrack, {
-          backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+        {/* Title */}
+        <Text style={[styles.challengeTitle, {
+          color: isDark ? '#FFFFFF' : '#1A1A1A',
         }]}>
-          <LinearGradient
-            colors={['#FFFFFF', '#888888'] as const}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={[styles.progressFill, { width: `${progressPercent}%` }]}
-          />
-        </View>
-        <View style={styles.challengeProgressRow}>
-          <Text style={[styles.progressText, {
-            color: isDark ? 'rgba(255,255,255,0.38)' : 'rgba(0,0,0,0.4)',
+          {challenge.title}
+        </Text>
+
+        {/* Progress bar + text */}
+        <View style={styles.challengeProgress}>
+          <View style={[styles.progressTrack, {
+            backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)',
           }]}>
-            {myProgress} of {challenge.target} complete
-          </Text>
-          <Text style={[styles.progressText, {
-            color: isDark ? '#C4A87A' : '#8A6A3A',
-            fontWeight: '600',
-          }]}>
-            {challenge.participants?.length ?? 1} participant{(challenge.participants?.length ?? 1) !== 1 ? 's' : ''}
-          </Text>
+            <LinearGradient
+              colors={['#FFFFFF', '#888888'] as const}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={[styles.progressFill, { width: `${progressPercent}%` }]}
+            />
+          </View>
+          <View style={styles.challengeProgressRow}>
+            <Text style={[styles.progressText, {
+              color: isDark ? 'rgba(255,255,255,0.38)' : 'rgba(0,0,0,0.4)',
+            }]}>
+              {myProgress} of {challenge.target} complete
+            </Text>
+            <Text style={[styles.progressText, {
+              color: isDark ? '#C4A87A' : '#8A6A3A',
+              fontWeight: '600',
+            }]}>
+              {challenge.participants?.length ?? 1} participant{(challenge.participants?.length ?? 1) !== 1 ? 's' : ''}
+            </Text>
+          </View>
         </View>
-      </View>
-    </LinearGradient>
+      </LinearGradient>
+    </Pressable>
   );
 }
 
@@ -183,7 +191,7 @@ function YourCircle({ isDark, onManage, connections }: { isDark: boolean; onMana
     return (
       <View style={styles.circleSection}>
         <View style={styles.circleSectionHeader}>
-          <Text style={styles.circleSectionTitle}>
+          <Text style={[styles.circleSectionTitle, { color: isDark ? 'rgba(255,255,255,0.21)' : 'rgba(0,0,0,0.25)' }]}>
             YOUR CIRCLE
           </Text>
         </View>
@@ -206,7 +214,7 @@ function YourCircle({ isDark, onManage, connections }: { isDark: boolean; onMana
     <View style={styles.circleSection}>
       {/* Header */}
       <View style={styles.circleSectionHeader}>
-        <Text style={styles.circleSectionTitle}>
+        <Text style={[styles.circleSectionTitle, { color: isDark ? 'rgba(255,255,255,0.21)' : 'rgba(0,0,0,0.25)' }]}>
           YOUR CIRCLE
         </Text>
         <Pressable
@@ -283,7 +291,7 @@ function CircleActivity({ isDark, challenges }: { isDark: boolean; challenges: C
   if (activityItems.length === 0) {
     return (
       <View style={styles.activitySection}>
-        <Text style={styles.activityTitle}>
+        <Text style={[styles.activityTitle, { color: isDark ? 'rgba(255,255,255,0.21)' : 'rgba(0,0,0,0.25)' }]}>
           CIRCLE ACTIVITY
         </Text>
         <Text style={{
@@ -298,7 +306,7 @@ function CircleActivity({ isDark, challenges }: { isDark: boolean; challenges: C
 
   return (
     <View style={styles.activitySection}>
-      <Text style={styles.activityTitle}>
+      <Text style={[styles.activityTitle, { color: isDark ? 'rgba(255,255,255,0.21)' : 'rgba(0,0,0,0.25)' }]}>
         CIRCLE ACTIVITY
       </Text>
 
@@ -341,7 +349,7 @@ function GrowCircle({ isDark }: { isDark: boolean }) {
   return (
     <View style={[styles.inviteCard, {
       backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : '#FFFFFF',
-      borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+      borderColor: isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)',
     }]}>
       <View style={styles.inviteLeft}>
         <Text style={[styles.inviteTitle, {
@@ -413,7 +421,7 @@ export default function SocialScreen() {
 
   const [challenges, setChallenges] = useState<Challenge[]>([]);
   const [connections, setConnections] = useState<Connection[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [_isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   const loadData = useCallback(async () => {
@@ -463,12 +471,11 @@ export default function SocialScreen() {
 
   if (!isAuthenticated) {
     return (
-      <View style={[styles.container, { backgroundColor: isDark ? '#0A0A0A' : '#FAFAFA' }]}>
+      <LinearGradient
+        colors={isDark ? ['#0A0A0A', '#131313', '#141414'] : ['#FAFAFA', '#F7F7F7', '#F5F5F5']}
+        style={styles.container}
+      >
         <AmbientBackdrop isDark={isDark} variant="profile" />
-        <LinearGradient
-          colors={isDark ? ['rgba(10,10,10,0.78)', 'rgba(20,20,20,0.96)'] as const : ['rgba(250,250,250,0.42)', 'rgba(245,245,245,0.92)'] as const}
-          style={StyleSheet.absoluteFill}
-        />
         <View style={[styles.emptyState, { paddingTop: insets.top + 80 }]}>
           <ExpressiveStateView
             isDark={isDark}
@@ -482,22 +489,21 @@ export default function SocialScreen() {
             style={styles.expressiveEmptyState}
           />
         </View>
-      </View>
+      </LinearGradient>
     );
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: isDark ? '#0A0A0A' : '#FAFAFA' }]}>
-      <LinearGradient
-        colors={isDark ? ['#0A0A0A', '#141414'] as const : ['#FAFAFA', '#F5F5F5'] as const}
-        style={StyleSheet.absoluteFill}
-      />
+    <LinearGradient
+      colors={isDark ? ['#0A0A0A', '#131313', '#141414'] : ['#FAFAFA', '#F7F7F7', '#F5F5F5']}
+      style={styles.container}
+    >
 
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={[styles.scrollContent, {
           paddingTop: insets.top + 16,
-          paddingBottom: insets.bottom + 100,
+          paddingBottom: insets.bottom + 16,
         }]}
         showsVerticalScrollIndicator={false}
         refreshControl={
@@ -512,13 +518,12 @@ export default function SocialScreen() {
           <Pressable
             onPress={handleManageCircle}
             style={[styles.headerIcon, {
-              backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)',
+              backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)',
             }]}
             accessibilityRole="button"
             accessibilityLabel="People"
           >
-            <Ionicons
-              name="people-outline"
+            <Users
               size={20}
               color={isDark ? '#FFFFFF' : '#1A1A1A'}
             />
@@ -527,7 +532,14 @@ export default function SocialScreen() {
 
         {/* Weekly Challenge */}
         <Animated.View entering={enterAnim(60)} style={styles.section}>
-          <WeeklyChallengeCard isDark={isDark} challenge={activeChallenge} />
+          <WeeklyChallengeCard
+            isDark={isDark}
+            challenge={activeChallenge}
+            onPress={activeChallenge ? () => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              router.push(`/challenge/${activeChallenge.id}`);
+            } : undefined}
+          />
         </Animated.View>
 
         {/* Your Circle */}
@@ -545,7 +557,7 @@ export default function SocialScreen() {
           <GrowCircle isDark={isDark} />
         </Animated.View>
       </ScrollView>
-    </View>
+    </LinearGradient>
   );
 }
 
@@ -555,7 +567,7 @@ export default function SocialScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   scrollView: { flex: 1 },
-  scrollContent: { paddingHorizontal: 20 },
+  scrollContent: { flexGrow: 1, paddingHorizontal: 20 },
   section: { marginBottom: 24 },
 
   // ── Header ──
@@ -653,7 +665,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     letterSpacing: 1.5,
     textTransform: 'uppercase',
-    color: '#808080',
   },
   circleManage: {
     fontSize: 13,
@@ -736,7 +747,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     letterSpacing: 1.5,
     textTransform: 'uppercase',
-    color: '#808080',
   },
   feedItem: {
     flexDirection: 'row',
