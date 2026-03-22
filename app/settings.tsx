@@ -9,7 +9,6 @@ import { useColorScheme } from '@/hooks/useColorScheme';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
 import { useAuth } from '@/context/AuthContext';
 import { useDeclutter } from '@/context/DeclutterContext';
-import { DEFAULT_FOCUS_SETTINGS } from '@/types/declutter';
 import { useRevenueCat } from '@/hooks/useRevenueCat';
 import { setHapticsEnabled } from '@/services/haptics';
 import { setSoundEffectsEnabled } from '@/services/audio';
@@ -25,8 +24,6 @@ import {
   Volume2,
   Smartphone,
   Moon,
-  Sun,
-  Monitor,
   CreditCard,
   RotateCcw,
   User,
@@ -37,10 +34,7 @@ import {
   FileText,
   LogOut,
   Trash2,
-  Sparkles,
-  Timer,
   Heart,
-  SlidersHorizontal,
   Target,
 } from 'lucide-react-native';
 import type { LucideIcon } from 'lucide-react-native';
@@ -448,18 +442,6 @@ function SettingsScreenContent() {
         <Animated.View entering={enterAnim(60)}>
           <Group title="HOW I CLEAN" isDark={isDark}>
             <PickerRow
-              icon={SlidersHorizontal}
-              label="Task Detail Level"
-              options={[
-                { value: 'normal', label: 'Normal' },
-                { value: 'detailed', label: 'Detailed' },
-                { value: 'ultra', label: 'Ultra' },
-              ]}
-              selectedValue={settings?.taskBreakdownLevel ?? 'detailed'}
-              onSelect={(v) => updateSettings?.({ taskBreakdownLevel: v as 'normal' | 'detailed' | 'ultra' })}
-              isDark={isDark}
-            />
-            <PickerRow
               icon={Heart}
               label="Encouragement Level"
               options={[
@@ -469,20 +451,6 @@ function SettingsScreenContent() {
               ]}
               selectedValue={settings?.encouragementLevel ?? 'moderate'}
               onSelect={(v) => updateSettings?.({ encouragementLevel: v as 'minimal' | 'moderate' | 'maximum' })}
-              isDark={isDark}
-            />
-            <PickerRow
-              icon={Timer}
-              label="Default Session Length"
-              options={[
-                { value: '5', label: '5m' },
-                { value: '10', label: '10m' },
-                { value: '15', label: '15m' },
-                { value: '25', label: '25m' },
-                { value: '45', label: '45m' },
-              ]}
-              selectedValue={String(settings?.focusMode?.defaultDuration ?? 25)}
-              onSelect={(v) => updateSettings?.({ focusMode: { ...(settings?.focusMode ?? DEFAULT_FOCUS_SETTINGS), defaultDuration: parseInt(v, 10) } })}
               isDark={isDark}
               isLast
             />
@@ -505,24 +473,6 @@ function SettingsScreenContent() {
                   [5, 10, 15, 20, 25].map(n => ({
                     text: `${n} tasks`,
                     onPress: () => updateStats?.({ weeklyTaskGoal: n }),
-                  }))
-                );
-              }}
-              isDark={isDark}
-            />
-            <Row
-              icon={Timer}
-              label="Time goal per week"
-              trailing={
-                <Text style={{ fontFamily: BODY_FONT, fontSize: 13, fontWeight: '600', color: t.textSecondary }}>
-                  {stats?.weeklyTimeGoal ? (stats.weeklyTimeGoal < 60 ? `${stats.weeklyTimeGoal} min` : `${Math.round(stats.weeklyTimeGoal / 60)}h`) : '1h'}
-                </Text>
-              }
-              onPress={() => {
-                Alert.alert('Weekly Time Goal', 'How much time per week?',
-                  [30, 60, 120, 180, 300].map(m => ({
-                    text: m < 60 ? `${m} min` : `${Math.round(m / 60)} hours`,
-                    onPress: () => updateStats?.({ weeklyTimeGoal: m }),
                   }))
                 );
               }}
@@ -566,32 +516,6 @@ function SettingsScreenContent() {
               icon={User}
               label="Edit Profile"
               onPress={openEditProfile}
-              isDark={isDark}
-              isLast
-            />
-          </Group>
-        </Animated.View>
-
-        {/* DATA & PRIVACY */}
-        <Animated.View entering={enterAnim(120)}>
-          <Group title="DATA & PRIVACY" isDark={isDark}>
-            <Row
-              icon={FileText}
-              label="Export My Data"
-              subtitle="Download all your rooms, stats & history"
-              onPress={() => {
-                Alert.alert(
-                  'Export Data',
-                  'We will prepare a JSON export of all your data. This includes rooms, tasks, stats, collection, and mascot data.',
-                  [
-                    { text: 'Cancel', style: 'cancel' },
-                    {
-                      text: 'Export',
-                      onPress: () => Alert.alert('Data Export', 'Your data export has been queued. You will receive it via email shortly.'),
-                    },
-                  ]
-                );
-              }}
               isDark={isDark}
               isLast
             />
@@ -773,13 +697,6 @@ const styles = StyleSheet.create({
     fontFamily: BODY_FONT,
     fontSize: 13,
     fontWeight: '600',
-  },
-
-  // Color dot
-  colorDot: {
-    width: 14,
-    height: 14,
-    borderRadius: 7,
   },
 
   // Version

@@ -80,6 +80,9 @@ function TaskBox({
   const fill = done ? 'rgba(102,187,106,0.35)' : hexToRgba(color, 0.18);
   const label = done ? 'Done!' : `${shortLabel(task.title)} · ${task.estimatedMinutes || 2}m`;
 
+  const minW = Math.max(box.width, 12);
+  const minH = Math.max(box.height, 12);
+
   return (
     <Pressable
       onPress={() => onToggle(task.id)}
@@ -88,8 +91,8 @@ function TaskBox({
         {
           left: `${box.x}%`,
           top: `${box.y}%`,
-          width: `${box.width}%`,
-          height: `${box.height}%`,
+          width: `${minW}%`,
+          height: `${minH}%`,
           backgroundColor: fill,
           borderColor: color,
           borderWidth: done ? 2.5 : 2,
@@ -183,16 +186,36 @@ function RoomDetailContent() {
         </Pressable>
         <View style={styles.centered}>
           <Camera size={48} color="rgba(255,255,255,0.5)" />
-          <Text style={[styles.centeredTitle, { color: '#FFF', marginTop: 16 }]}>
-            Scan this room
-          </Text>
-          <Text style={{ color: 'rgba(255,255,255,0.6)', fontFamily: BODY_FONT, fontSize: 15, textAlign: 'center', marginBottom: 24 }}>
-            Take a photo and AI will find{'\n'}everything that needs cleaning
-          </Text>
-          <Pressable onPress={() => router.push('/camera')} style={[styles.pill, { backgroundColor: V1.coral }]}>
-            <Camera size={18} color="#FFF" />
-            <Text style={styles.pillText}>Scan Room</Text>
-          </Pressable>
+          {photoUri ? (
+            <>
+              <Text style={[styles.centeredTitle, { color: '#FFF', marginTop: 16 }]}>
+                Couldn't detect items
+              </Text>
+              <Text style={{ color: 'rgba(255,255,255,0.6)', fontFamily: BODY_FONT, fontSize: 15, textAlign: 'center', marginBottom: 24 }}>
+                Try retaking the photo with better lighting,{'\n'}or from a different angle
+              </Text>
+              <Pressable onPress={() => router.push('/camera')} style={[styles.pill, { backgroundColor: V1.coral }]}>
+                <Camera size={18} color="#FFF" />
+                <Text style={styles.pillText}>Retake Photo</Text>
+              </Pressable>
+              <Text style={{ color: 'rgba(255,255,255,0.4)', fontFamily: BODY_FONT, fontSize: 13, marginTop: 16 }}>
+                Or add tasks manually
+              </Text>
+            </>
+          ) : (
+            <>
+              <Text style={[styles.centeredTitle, { color: '#FFF', marginTop: 16 }]}>
+                Scan this room
+              </Text>
+              <Text style={{ color: 'rgba(255,255,255,0.6)', fontFamily: BODY_FONT, fontSize: 15, textAlign: 'center', marginBottom: 24 }}>
+                Take a photo and AI will find{'\n'}everything that needs cleaning
+              </Text>
+              <Pressable onPress={() => router.push('/camera')} style={[styles.pill, { backgroundColor: V1.coral }]}>
+                <Camera size={18} color="#FFF" />
+                <Text style={styles.pillText}>Scan Room</Text>
+              </Pressable>
+            </>
+          )}
         </View>
       </View>
     );
@@ -248,7 +271,7 @@ function RoomDetailContent() {
             <View style={styles.statsRow}>
               <Clock size={12} color="rgba(255,255,255,0.5)" />
               <Text style={styles.statText}>
-                {allDone ? 'All done!' : `${timeRemaining} min left · ${remainingCount} tasks`}
+                {allDone ? 'All done! \uD83C\uDF89' : `${remainingCount} left · ~${timeRemaining} min`}
               </Text>
             </View>
           </View>

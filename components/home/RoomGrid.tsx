@@ -80,6 +80,13 @@ function RoomCard({ room, freshness, freshnessValue, isStartHere, isDark, cardWi
   const t = isDark ? V1.dark : V1.light;
   const sp = useScalePress(0.97);
 
+  const remainingTasks = room.tasks?.filter((task) => !task.completed) ?? [];
+  const taskCount = remainingTasks.length;
+  const totalMinutes = remainingTasks.reduce(
+    (sum, task) => sum + (task.estimatedMinutes || 2),
+    0,
+  );
+
   return (
     <AnimatedPressable
       onPress={onPress}
@@ -119,6 +126,11 @@ function RoomCard({ room, freshness, freshnessValue, isStartHere, isDark, cardWi
         />
       </View>
       <Text style={[styles.freshnessLabel, { color: freshness.color }]}>{freshness.label}</Text>
+      {taskCount > 0 && (
+        <Text style={[styles.taskEstimate, { color: t.textSecondary }]}>
+          {taskCount} {taskCount === 1 ? 'task' : 'tasks'} · ~{totalMinutes} min
+        </Text>
+      )}
     </AnimatedPressable>
   );
 }
@@ -310,6 +322,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '500',
     fontFamily: BODY_FONT,
+  },
+  taskEstimate: {
+    fontSize: 11,
+    fontWeight: '400',
+    fontFamily: BODY_FONT,
+    marginTop: 4,
   },
   addRoomButton: {
     flexDirection: 'row',
