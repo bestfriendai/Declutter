@@ -2,8 +2,7 @@
  * Declutterly -- Analysis Screen (V1)
  * Thin orchestrator importing sub-components from components/analysis/
  *
- * Flow: Scanning animation -> AI detection overlay -> Results grouped by detected items
- * -> "Start with 3 easy wins" CTA -> Task Customize screen
+ * Flow: Scanning animation -> AI detection overlay -> "Let's Do This" CTA -> Room created
  *
  * Improvements:
  * - 45-second analysis timeout with Promise.race
@@ -59,6 +58,8 @@ interface DetectedArea {
   taskCount: number;
   tasks: string[];
   color: string;
+  boundingBox?: { x: number; y: number; width: number; height: number };
+  priority?: string;
 }
 
 interface AnalysisResult {
@@ -313,20 +314,41 @@ function AnalysisScreenContent() {
 
       if (analysisData?.tasks && analysisData.tasks.length > 0) {
         tasks = analysisData.tasks;
-        const phaseMap = new Map<string, CleaningTask[]>();
-        tasks.forEach((task) => {
-          const phaseKey = task.phase
-            ? `Phase ${task.phase}: ${task.phaseName || ''}`
-            : task.zone || 'General';
-          if (!phaseMap.has(phaseKey)) phaseMap.set(phaseKey, []);
-          phaseMap.get(phaseKey)!.push(task);
-        });
-        areas = Array.from(phaseMap.entries()).map(([name, phaseTasks], i) => ({
-          name,
-          taskCount: phaseTasks.length,
-          tasks: phaseTasks.map((tk) => tk.title),
-          color: AREA_COLORS[i % AREA_COLORS.length],
-        }));
+
+        // Build areas from zones when available (includes boundingBox data)
+        if (analysisData?.zones && analysisData.zones.length > 0) {
+          areas = analysisData.zones.map((zone: any, i: number) => {
+            const zoneTasks = tasks.filter(t => t.zone === zone.id || t.zone === zone.name);
+            return {
+              name: zone.name,
+              taskCount: zoneTasks.length || zone.itemCount || 0,
+              tasks: zoneTasks.map(t => t.title),
+              color: AREA_COLORS[i % AREA_COLORS.length],
+              boundingBox: zone.boundingBox,
+              priority: zone.priority,
+            };
+          });
+          // Filter out empty zones
+          areas = areas.filter(a => a.taskCount > 0);
+        }
+
+        // Fall back to phase-based grouping if no zones or zones had no tasks
+        if (areas.length === 0) {
+          const phaseMap = new Map<string, CleaningTask[]>();
+          tasks.forEach((task) => {
+            const phaseKey = task.phase
+              ? `Phase ${task.phase}: ${task.phaseName || ''}`
+              : task.zone || 'General';
+            if (!phaseMap.has(phaseKey)) phaseMap.set(phaseKey, []);
+            phaseMap.get(phaseKey)!.push(task);
+          });
+          areas = Array.from(phaseMap.entries()).map(([name, phaseTasks], i) => ({
+            name,
+            taskCount: phaseTasks.length,
+            tasks: phaseTasks.map((tk) => tk.title),
+            color: AREA_COLORS[i % AREA_COLORS.length],
+          }));
+        }
       } else {
         tasks = generateFallbackTasks(roomType || 'bedroom');
         areas = [
@@ -369,13 +391,9 @@ function AnalysisScreenContent() {
         timeProfiles: analysisData?.timeProfiles || null,
       });
 
-      // Briefly show detection overlay
-      setPhase('detection');
-      await new Promise((r) => setTimeout(r, 800));
-      if (cancelledRef.current) return;
-
+      // Show detection overlay (user taps "Let's Do This" to proceed)
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      setPhase('results');
+      setPhase('detection');
     } catch (err) {
       if (cancelledRef.current) return;
       setError("Let's try a different angle -- sometimes the lighting or angle makes it tricky.");
@@ -599,7 +617,7 @@ function AnalysisScreenContent() {
         topInset={insets.top}
         bottomInset={insets.bottom}
         onBack={handleBack}
-        onContinue={() => setPhase('results')}
+        onContinue={handleCreateRoom}
       />
     );
   }

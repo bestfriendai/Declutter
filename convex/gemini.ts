@@ -118,6 +118,7 @@ Divide the visible space into distinct zones:
 - Fixtures (bed, sink, toilet, appliances)
 
 For each zone, assess clutter density, item count, and priority.
+For each zone, estimate the bounding box coordinates as percentages of the image (0-100). x and y are the top-left corner, width and height define the zone rectangle. Be precise - use the visual layout of the photo to position zones accurately.
 
 ### Step 3: Object Detection & Doom Pile Identification
 For EACH visible item that needs action, identify:
@@ -239,7 +240,8 @@ Respond with valid JSON:
       "itemCount": number,
       "estimatedClearTime": minutes,
       "priority": "high|medium|low",
-      "priorityReason": "why this zone matters"
+      "priorityReason": "why this zone matters",
+      "boundingBox": {"x": 0-100, "y": 0-100, "width": 0-100, "height": 0-100}
     }
   ],
 

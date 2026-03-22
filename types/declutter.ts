@@ -182,6 +182,13 @@ export interface Zone {
   estimatedClearTime: number;
   priority: Priority;
   priorityReason: string;
+  // Bounding box as percentage of image (0-100)
+  boundingBox?: {
+    x: number;      // left edge (0-100%)
+    y: number;      // top edge (0-100%)
+    width: number;   // width (0-100%)
+    height: number;  // height (0-100%)
+  };
 }
 
 export interface DetectedObject {
