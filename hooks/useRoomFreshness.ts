@@ -31,18 +31,22 @@ export interface RoomFreshness {
   label: string;
 }
 
-function getFreshnessColor(freshness: number): string {
-  if (freshness >= 80) return '#66BB6A'; // green
-  if (freshness >= 50) return '#FFB74D'; // yellow/amber
-  if (freshness >= 25) return '#FF9800'; // orange
-  return '#FF5252'; // red
+function getFreshnessColor(daysSinceClean: number): string {
+  if (daysSinceClean < 1) return '#66BB6A'; // green — today
+  if (daysSinceClean < 2) return '#66BB6A'; // green — yesterday
+  if (daysSinceClean < 5) return '#FFB74D'; // amber — a few days
+  if (daysSinceClean < 8) return '#FF9800'; // orange — about a week
+  return '#FF5252'; // red/coral — over a week
 }
 
-function getFreshnessLabelText(freshness: number): string {
-  if (freshness >= 80) return 'Fresh';
-  if (freshness >= 50) return 'Getting stale';
-  if (freshness >= 25) return 'Could use some love';
-  return 'Ready for a refresh';
+function getFreshnessLabelText(daysSinceClean: number): string {
+  if (daysSinceClean < 1) return 'Cleaned today';
+  if (daysSinceClean < 2) return 'Cleaned yesterday';
+  const days = Math.round(daysSinceClean);
+  if (days < 7) return `${days} days ago`;
+  if (days < 14) return '1 week ago';
+  const weeks = Math.round(days / 7);
+  return `${weeks}+ weeks ago`;
 }
 
 function calculateRoomFreshness(room: Room): RoomFreshness {
@@ -74,8 +78,8 @@ function calculateRoomFreshness(room: Room): RoomFreshness {
     freshness: Math.round(freshness),
     decayRate,
     daysSinceClean: Math.round(daysSinceClean * 10) / 10,
-    color: getFreshnessColor(freshness),
-    label: getFreshnessLabelText(freshness),
+    color: getFreshnessColor(daysSinceClean),
+    label: getFreshnessLabelText(daysSinceClean),
   };
 }
 

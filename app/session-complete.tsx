@@ -22,7 +22,6 @@ import {
     Text,
     View,
 } from 'react-native';
-import { Image } from 'expo-image';
 import Animated, {
   Easing,
   FadeInDown,
@@ -202,15 +201,11 @@ function SessionCompleteScreenContent() {
   }, [tasks, xp]);
 
   const room = rooms.find(r => r.id === roomId);
-  const beforePhoto = useMemo(() => {
-    if (!room?.photos) return null;
-    const before = room.photos.find(p => p.type === 'before');
-    return before?.uri || room.photos[0]?.uri || null;
-  }, [room]);
   const totalRoomTasks = room?.tasks?.length || 0;
   const completedRoomTasks = room?.tasks?.filter(task => task.completed).length || 0;
   const roomProgress = totalRoomTasks > 0 ? (completedRoomTasks / totalRoomTasks) * 100 : 0;
   const remainingTasks = totalRoomTasks - completedRoomTasks;
+  const roomIsComplete = roomProgress >= 100;
 
   // Streak info
   const currentStreak = stats?.currentStreak ?? 0;
@@ -230,16 +225,6 @@ function SessionCompleteScreenContent() {
     }
   }, [roomProgress, room, totalRoomTasks, time, roomName]);
 
-  // Animated progress bar
-  const progressWidth = useSharedValue(0);
-  useEffect(() => {
-    progressWidth.value = withDelay(400, withTiming(roomProgress, { duration: 800, easing: Easing.out(Easing.ease) }));
-  }, [roomProgress]);
-  const progressBarStyle = useAnimatedStyle(() => ({
-    width: `${Math.max(progressWidth.value, 3)}%`,
-    backgroundColor: V1.green,
-  }));
-
   // Confetti pieces (only for sessions with > 2 tasks)
   const confettiPieces = useMemo(() => {
     if (tasks <= 2 || reducedMotion) return [];
@@ -252,25 +237,6 @@ function SessionCompleteScreenContent() {
     }));
   }, [tasks, reducedMotion]);
 
-  // Gather specific completed task titles for rich feedback
-  const completedTaskTitles = room?.tasks
-    ?.filter(task => task.completed)
-    ?.slice(-tasks)
-    ?.map(task => task.title) || [];
-
-  const remainingTaskTitles = room?.tasks
-    ?.filter(task => !task.completed)
-    ?.slice(0, 3)
-    ?.map(task => task.title) || [];
-
-  const clearedZones = [...new Set(
-    room?.tasks
-      ?.filter(task => task.completed)
-      ?.slice(-tasks)
-      ?.map(task => task.zone)
-      ?.filter(Boolean) || []
-  )];
-
   const handleContinue = useCallback(() => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     if (roomId) {
@@ -279,11 +245,6 @@ function SessionCompleteScreenContent() {
       router.replace('/');
     }
   }, [roomId]);
-
-  const handleBrowseRooms = useCallback(() => {
-    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    router.replace('/(tabs)/rooms');
-  }, []);
 
   const handleDone = useCallback(() => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -353,92 +314,20 @@ function SessionCompleteScreenContent() {
           </Animated.View>
         )}
 
-        {/* Room progress */}
-        {room && (
-          <Animated.View entering={reducedMotion ? undefined : FadeInDown.delay(400).duration(400)} style={styles.roomProgressSection}>
-            <View style={styles.roomProgressHeader}>
-              {beforePhoto && (
-                <Image
-                  source={{ uri: beforePhoto }}
-                  style={styles.beforePhotoThumb}
-                  contentFit="cover"
-                />
-              )}
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.roomProgressName, { color: t.text }]}>{room.name}</Text>
-                <Text style={[styles.roomProgressPercent, { color: V1.green }]}>
-                  {Math.round(roomProgress)}% fresh
-                </Text>
-              </View>
-            </View>
-            <View style={[styles.roomProgressBar, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)' }]}>
-              <Animated.View style={[styles.roomProgressFill, progressBarStyle]} />
-            </View>
-            {remainingTasks > 0 && (
-              <Text style={[styles.remainingText, { color: t.textSecondary }]}>
-                {remainingTasks} more tasks to finish this room. You've got this!
-              </Text>
-            )}
-          </Animated.View>
-        )}
-
-        {/* Specific progress details */}
-        {completedTaskTitles.length > 0 && (
-          <Animated.View entering={reducedMotion ? undefined : FadeInDown.delay(450).duration(400)} style={styles.specificProgressSection}>
-            <Text style={[styles.specificProgressTitle, { color: V1.green }]}>
-              What you cleared:
-            </Text>
-            {completedTaskTitles.slice(0, 4).map((title, idx) => (
-              <View key={idx} style={styles.specificProgressRow}>
-                <Text style={{ fontSize: 14, color: V1.green }}>{'\u2713'}</Text>
-                <Text style={[styles.specificProgressText, { color: t.textSecondary }]} numberOfLines={1}>
-                  {title}
-                </Text>
-              </View>
-            ))}
-            {clearedZones.length > 0 && (
-              <Text style={[styles.zonesText, { color: t.textMuted }]}>
-                Zones tackled: {clearedZones.join(', ')}
-              </Text>
-            )}
-          </Animated.View>
-        )}
-
-        {/* What's next preview */}
-        {remainingTaskTitles.length > 0 && (
-          <Animated.View entering={reducedMotion ? undefined : FadeInDown.delay(500).duration(400)} style={styles.specificProgressSection}>
-            <Text style={[styles.specificProgressTitle, { color: V1.amber }]}>
-              Up next:
-            </Text>
-            {remainingTaskTitles.map((title, idx) => (
-              <View key={idx} style={styles.specificProgressRow}>
-                <Text style={{ fontSize: 14, color: t.textMuted }}>{'\u25CB'}</Text>
-                <Text style={[styles.specificProgressText, { color: t.textMuted }]} numberOfLines={1}>
-                  {title}
-                </Text>
-              </View>
-            ))}
-          </Animated.View>
-        )}
       </View>
 
-      {/* CTAs */}
+      {/* CTAs — exactly 2 choices to avoid decision paralysis */}
       <View style={[styles.ctas, { paddingBottom: insets.bottom + 24 }]}>
-        <Animated.View entering={reducedMotion ? undefined : FadeInDown.delay(600).duration(400)} style={{ width: '100%' }}>
-          <Pressable onPress={handleContinue} style={[styles.primaryCta, { backgroundColor: V1.coral }]}>
+        <Animated.View entering={reducedMotion ? undefined : FadeInDown.delay(500).duration(400)} style={{ width: '100%' }}>
+          <Pressable onPress={handleContinue} style={[styles.primaryCta, { backgroundColor: remainingTasks > 0 ? V1.coral : V1.green }]}>
             <Text style={styles.primaryCtaText}>
-              {remainingTasks > 0 ? `Keep Going \u2022 ${remainingTasks} task${remainingTasks !== 1 ? 's' : ''} left` : 'Keep Going'}
+              {roomIsComplete ? 'See Your Room' : 'Keep Cleaning'}
             </Text>
           </Pressable>
         </Animated.View>
-        <Animated.View entering={reducedMotion ? undefined : FadeInDown.delay(625).duration(400)} style={{ width: '100%' }}>
-          <Pressable onPress={handleBrowseRooms} style={[styles.secondaryCtaButton, { borderColor: t.border }]}>
-            <Text style={[styles.secondaryCtaButtonText, { color: t.text }]}>Continue Cleaning Other Rooms</Text>
-          </Pressable>
-        </Animated.View>
-        <Animated.View entering={reducedMotion ? undefined : FadeInDown.delay(650).duration(400)}>
-          <Pressable onPress={handleDone} style={{ minHeight: 44, justifyContent: 'center', alignItems: 'center' }}>
-            <Text style={[styles.secondaryCta, { color: t.textSecondary }]}>I'm done for now</Text>
+        <Animated.View entering={reducedMotion ? undefined : FadeInDown.delay(550).duration(400)}>
+          <Pressable onPress={handleDone} style={styles.textLinkCta}>
+            <Text style={[styles.textLinkCtaText, { color: t.textSecondary }]}>I'm done for now</Text>
           </Pressable>
         </Animated.View>
       </View>
@@ -510,75 +399,6 @@ const styles = StyleSheet.create({
     height: 32,
   },
 
-  // Room progress
-  roomProgressSection: {
-    width: '100%',
-    gap: 8,
-  },
-  roomProgressHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  beforePhotoThumb: {
-    width: 48,
-    height: 48,
-    borderRadius: 10,
-  },
-  roomProgressName: {
-    fontFamily: DISPLAY_FONT,
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  roomProgressPercent: {
-    fontFamily: BODY_FONT,
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  roomProgressBar: {
-    height: 8,
-    borderRadius: 4,
-  },
-  roomProgressFill: {
-    height: 8,
-    borderRadius: 4,
-  },
-  remainingText: {
-    fontFamily: BODY_FONT,
-    fontSize: 13,
-    lineHeight: 18,
-  },
-
-  // Specific progress
-  specificProgressSection: {
-    width: '100%',
-    marginTop: 16,
-    gap: 6,
-  },
-  specificProgressTitle: {
-    fontFamily: BODY_FONT,
-    fontSize: 13,
-    fontWeight: '700',
-    marginBottom: 4,
-  },
-  specificProgressRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingLeft: 4,
-  },
-  specificProgressText: {
-    fontFamily: BODY_FONT,
-    fontSize: 13,
-    flex: 1,
-  },
-  zonesText: {
-    fontFamily: BODY_FONT,
-    fontSize: 12,
-    marginTop: 6,
-    fontStyle: 'italic',
-  },
-
   // CTAs
   ctas: {
     alignItems: 'center',
@@ -597,21 +417,14 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
   },
-  secondaryCtaButton: {
-    paddingVertical: 14,
-    borderRadius: 28,
+  textLinkCta: {
+    minHeight: 44,
+    justifyContent: 'center',
     alignItems: 'center',
-    width: '100%',
-    borderWidth: 1,
-  },
-  secondaryCtaButtonText: {
-    fontFamily: BODY_FONT,
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  secondaryCta: {
-    fontFamily: BODY_FONT,
-    fontSize: 15,
     paddingVertical: 8,
+  },
+  textLinkCtaText: {
+    fontFamily: BODY_FONT,
+    fontSize: 15,
   },
 });

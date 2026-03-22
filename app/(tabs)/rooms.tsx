@@ -64,7 +64,6 @@ import {
 } from 'react-native';
 import { ScreenErrorBoundary } from '@/components/ErrorBoundary';
 import Animated, {
-  Easing,
   FadeInDown,
   useAnimatedStyle,
   useSharedValue,
@@ -165,20 +164,6 @@ function RoomCard({
   const Icon = getRoomIcon(room.type);
 
   const scale = useSharedValue(1);
-  // Animated freshness bar
-  const fillWidth = useSharedValue(0);
-
-  useEffect(() => {
-    fillWidth.value = withTiming(freshness.freshness, {
-      duration: 600,
-      easing: Easing.out(Easing.cubic),
-    });
-  }, [freshness.freshness]);
-
-  const fillAnimatedStyle = useAnimatedStyle(() => ({
-    width: `${Math.max(fillWidth.value, 4)}%`,
-    backgroundColor: freshness.color,
-  }));
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
@@ -198,7 +183,7 @@ function RoomCard({
       onPressIn={handlePressIn}
       onPressOut={handlePressOut}
       accessibilityRole="button"
-      accessibilityLabel={`Open ${room.name}, ${freshness.label}, ${freshness.freshness}% fresh`}
+      accessibilityLabel={`Open ${room.name}, last cleaned ${freshness.label}`}
       style={animatedStyle}
     >
       <View style={[styles.roomCard, cardStyle(isDark)]}>
@@ -235,15 +220,11 @@ function RoomCard({
             {room.name}
           </Text>
 
-          {/* Animated freshness bar */}
-          <View style={[styles.freshnessTrack, {
-            backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
-          }]}>
-            <Animated.View style={[styles.freshnessFill, fillAnimatedStyle]} />
-          </View>
-
-          <Text style={[styles.roomStatus, { color: t.textSecondary }]}>
-            {freshness.label}{'  \u00B7  '}{summary}
+          <Text style={[styles.roomStatus, { color: freshness.color }]}>
+            {freshness.label}
+          </Text>
+          <Text style={[styles.roomStatusSub, { color: t.textSecondary }]}>
+            {summary}
           </Text>
         </View>
 
@@ -388,7 +369,7 @@ function UrgentRoomCallout({
           <Text style={{
             fontFamily: BODY_FONT, fontSize: 13, color: t.textSecondary,
           }}>
-            {urgentRoom.label} -- {Math.round(urgentRoom.daysSinceClean)} days since last clean
+            Last cleaned: {urgentRoom.label}
           </Text>
         </LinearGradient>
       </Pressable>
@@ -851,19 +832,16 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
   },
-  freshnessTrack: {
-    height: 5,
-    borderRadius: 2.5,
-    overflow: 'hidden',
-  },
-  freshnessFill: {
-    height: '100%',
-    borderRadius: 2.5,
-  },
   roomStatus: {
     fontFamily: BODY_FONT,
     fontSize: 12,
-    fontWeight: '500',
+    fontWeight: '600',
+    letterSpacing: 0.1,
+  },
+  roomStatusSub: {
+    fontFamily: BODY_FONT,
+    fontSize: 11,
+    fontWeight: '400',
     letterSpacing: 0.1,
   },
   urgencyIndicator: {

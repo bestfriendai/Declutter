@@ -22,7 +22,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
-import { Check, Clock, Pause, SkipForward, Square, X } from 'lucide-react-native';
+import { Check, Clock, Pause, X } from 'lucide-react-native';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
     Alert,
@@ -32,23 +32,17 @@ import {
     StyleSheet,
     Text,
     View,
-    useWindowDimensions,
 } from 'react-native';
 import Animated, {
     FadeIn,
     FadeInDown,
     FadeOut,
-    useAnimatedProps,
-    useDerivedValue,
-    withTiming,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Svg, { Circle } from 'react-native-svg';
+
 import { ScreenErrorBoundary } from '@/components/ErrorBoundary';
 import { MascotAvatar } from '@/components/ui/MascotAvatar';
 
-// TIMER_SIZE now computed inside component via useWindowDimensions
-const TIMER_STROKE = 10;
 const DEFAULT_BLITZ_DURATION = 15 * 60; // 15 minutes in seconds
 
 // ─── Helper: format time ─────────────────────────────────────────────────────
@@ -92,46 +86,6 @@ function getEncouragement(done: number, total: number): string {
   return `You're doing amazing -- ${done} down, ${total - done} to go!`;
 }
 
-// ─── Smooth Animated Timer Ring Component ────────────────────────────────────
-const AnimatedCircle = Animated.createAnimatedComponent(Circle);
-
-function TimerRing({ progress, size, strokeWidth, isDark = true }: { progress: number; size: number; strokeWidth: number; isDark?: boolean }) {
-  const radius = (size - strokeWidth) / 2;
-  const circumference = 2 * Math.PI * radius;
-
-  const animatedProgress = useDerivedValue(() => {
-    return withTiming(progress, { duration: 1000 });
-  }, [progress]);
-
-  const animatedProps = useAnimatedProps(() => ({
-    strokeDashoffset: circumference * (1 - Math.max(0, Math.min(1, animatedProgress.value))),
-  }));
-
-  return (
-    <Svg width={size} height={size} style={{ transform: [{ rotate: '-90deg' }] }}>
-      <Circle
-        cx={size / 2}
-        cy={size / 2}
-        r={radius}
-        stroke={isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'}
-        strokeWidth={strokeWidth}
-        fill="none"
-      />
-      <AnimatedCircle
-        cx={size / 2}
-        cy={size / 2}
-        r={radius}
-        stroke={V1.coral}
-        strokeWidth={strokeWidth}
-        fill="none"
-        strokeDasharray={circumference}
-        animatedProps={animatedProps}
-        strokeLinecap="round"
-      />
-    </Svg>
-  );
-}
-
 // ─── Phase dot colors ────────────────────────────────────────────────────────
 const PHASE_COLORS = [V1.green, V1.green, V1.amber, V1.coral, V1.coral];
 
@@ -152,11 +106,8 @@ function BlitzScreenContent() {
   const rawScheme = useColorScheme();
   const isDark = rawScheme === 'dark';
   const t = isDark ? V1.dark : V1.light;
-  const { width: screenWidth } = useWindowDimensions();
-  const TIMER_SIZE = Math.min(screenWidth * 0.6, 220);
   const { duration: durationParam } = useLocalSearchParams<{ duration?: string }>();
   const blitzDuration = durationParam ? Math.max(60, parseInt(durationParam, 10) * 60) : DEFAULT_BLITZ_DURATION;
-  const blitzMinutes = Math.round(blitzDuration / 60);
   const { rooms, activeRoomId, toggleTask, comebackMultiplier, mascot } = useDeclutter();
 
   const activeRoom = activeRoomId ? (rooms ?? []).find(r => r.id === activeRoomId) : (rooms ?? [])[0];
@@ -173,7 +124,7 @@ function BlitzScreenContent() {
 
   const [currentTaskIndex, setCurrentTaskIndex] = useState(0);
   const [completedCount, setCompletedCount] = useState(0);
-  const [viewMode, setViewMode] = useState<'timer' | 'focus'>('timer'); // Toggle between timer view and focus view
+  // viewMode removed — single task-focused view is the only mode
   const completionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasEndedRef = useRef(false);
 
@@ -183,9 +134,7 @@ function BlitzScreenContent() {
     start: timerStart,
     pause: timerPause,
     toggle: timerToggle,
-    reset: timerReset,
     setSeconds: timerSetSeconds,
-    setIsRunning,
   } = useTimer({
     initialSeconds: blitzDuration,
     autoStart: true,
@@ -283,22 +232,6 @@ function BlitzScreenContent() {
     { id: 'later', label: 'Save for later' },
   ] as const;
 
-  // Encouraging messages that rotate during session
-  const ENCOURAGING_MESSAGES = [
-    "You're doing amazing!",
-    "Every task counts!",
-    "Look at you go!",
-    "Your space is thanking you!",
-    "Small steps, big impact!",
-    "You've got this!",
-    "Momentum is building!",
-    "Keep that energy going!",
-  ];
-
-  const currentEncouragingMessage = ENCOURAGING_MESSAGES[
-    Math.floor((blitzDuration - remainingSeconds) / 30) % ENCOURAGING_MESSAGES.length
-  ];
-
   // Clean up combo timeout on unmount
   useEffect(() => {
     return () => {
@@ -310,7 +243,6 @@ function BlitzScreenContent() {
 
   const totalTasks = tasks.length;
   const currentTask = tasks[currentTaskIndex] || null;
-  const timerProgress = remainingSeconds / blitzDuration;
 
   // Carry chain hint: if next task shares destination with current task
   const carryChainHint = useMemo(() => {
@@ -457,10 +389,7 @@ function BlitzScreenContent() {
     }
   }, [completedCount, handleSessionEnd]);
 
-  const handleToggleView = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setViewMode(v => v === 'timer' ? 'focus' : 'timer');
-  }, []);
+  // Toggle view removed — focus view is now the only view
 
   // ── EMPTY STATE: No tasks to blitz ──────────────────────────────────────
   if (tasks.length === 0) {
@@ -494,9 +423,8 @@ function BlitzScreenContent() {
     );
   }
 
-  // ── FOCUS VIEW (Single Task Focus - HxiD0) ─────────────────────────────
-  if (viewMode === 'focus') {
-    return (
+  // ── MAIN VIEW (Task-focused with small timer) ──────────────────────────
+  return (
       <View style={[styles.container, { backgroundColor: t.bg }]}>
         {/* Mascot avatar */}
         {mascot && (
@@ -536,10 +464,10 @@ function BlitzScreenContent() {
             {completedCount + 1} of {totalTasks}
           </Text>
           <Pressable
-            onPress={handleToggleView}
+            onPress={handlePauseResume}
             style={styles.timerBadge}
             accessibilityRole="button"
-            accessibilityLabel={`Switch to timer view, ${formatTime(remainingSeconds)} remaining`}
+            accessibilityLabel={`${isRunning ? 'Pause' : 'Resume'} timer, ${formatTime(remainingSeconds)} remaining`}
           >
             <Clock size={12} color="#FFFFFF" />
             <Text style={styles.timerBadgeText}>{formatTime(remainingSeconds)}</Text>
@@ -684,8 +612,73 @@ function BlitzScreenContent() {
           </View>
         </ScrollView>
 
-        {/* Big check button */}
+        {/* Audio error toast */}
+        {audioError && (
+          <View style={{
+            marginHorizontal: 20,
+            marginBottom: 8,
+            paddingVertical: 10,
+            paddingHorizontal: 14,
+            borderRadius: 12,
+            backgroundColor: isDark ? 'rgba(255,183,77,0.12)' : 'rgba(255,183,77,0.1)',
+            borderWidth: 1,
+            borderColor: isDark ? 'rgba(255,183,77,0.25)' : 'rgba(255,183,77,0.2)',
+          }}>
+            <Text style={{
+              fontFamily: BODY_FONT, fontSize: 13, fontWeight: '500',
+              color: isDark ? '#FFB74D' : '#E65100', textAlign: 'center',
+            }}>
+              {audioError}
+            </Text>
+          </View>
+        )}
+
+        {/* Bottom action area */}
         <View style={styles.focusActions}>
+          {/* Pause + Sound row */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 20, marginBottom: 8 }}>
+            <Pressable
+              onPress={handlePauseResume}
+              style={{
+                flexDirection: 'row', alignItems: 'center', gap: 6,
+                paddingHorizontal: 14, paddingVertical: 8, borderRadius: 12,
+                backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+              }}
+              accessibilityRole="button"
+              accessibilityLabel={isRunning ? 'Pause timer' : 'Resume timer'}
+            >
+              {isRunning ? (
+                <Pause size={14} color={t.textSecondary} />
+              ) : (
+                <Text style={{ fontSize: 12, color: t.textSecondary }}>{'\u25B6'}</Text>
+              )}
+              <Text style={{ fontFamily: BODY_FONT, fontSize: 12, fontWeight: '500', color: t.textSecondary }}>
+                {isRunning ? 'Pause' : 'Resume'}
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={handleCycleBlitzSound}
+              style={{
+                flexDirection: 'row', alignItems: 'center', gap: 6,
+                paddingHorizontal: 14, paddingVertical: 8, borderRadius: 12,
+                backgroundColor: ambientSound !== 'none'
+                  ? (isDark ? 'rgba(100,181,246,0.15)' : 'rgba(99,102,241,0.1)')
+                  : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'),
+              }}
+              accessibilityRole="button"
+              accessibilityLabel={`Ambient sound: ${SOUND_INFO[ambientSound]?.label ?? 'Off'}`}
+            >
+              <Text style={{ fontSize: 14 }}>{SOUND_INFO[ambientSound]?.emoji ?? '\u{1F507}'}</Text>
+              <Text style={{
+                fontFamily: BODY_FONT, fontSize: 12, fontWeight: '500',
+                color: ambientSound !== 'none' ? V1.blue : t.textSecondary,
+              }}>
+                {SOUND_INFO[ambientSound]?.label ?? 'Off'}
+              </Text>
+            </Pressable>
+          </View>
+
+          {/* Done button */}
           <Pressable
             onPress={handleCompleteTask}
             style={styles.bigCheckButton}
@@ -711,380 +704,138 @@ function BlitzScreenContent() {
         <Text style={[styles.encouragement, { color: t.textMuted, paddingBottom: insets.bottom + 16 }]}>
           {getEncouragement(completedCount, totalTasks)}
         </Text>
+
+        {/* Extend Timer Prompt */}
+        {showExtendPrompt && (
+          <Animated.View
+            entering={FadeInDown.duration(300)}
+            style={{
+              position: 'absolute',
+              bottom: insets.bottom + 80,
+              left: 20,
+              right: 20,
+              zIndex: 200,
+              backgroundColor: isDark ? V1.dark.cardElevated : '#FFFFFF',
+              borderRadius: 20,
+              padding: 20,
+              borderWidth: 1,
+              borderColor: t.border,
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: 0.08,
+              shadowRadius: 16,
+              elevation: 4,
+            }}
+          >
+            <Text style={{
+              fontFamily: DISPLAY_FONT, fontSize: 18, fontWeight: '700',
+              color: t.text, textAlign: 'center', marginBottom: 6,
+            }}>
+              Time's up! Keep going?
+            </Text>
+            <Text style={{
+              fontFamily: BODY_FONT, fontSize: 14,
+              color: t.textSecondary, textAlign: 'center', marginBottom: 16,
+            }}>
+              {tasks.filter(tk => !tk.completed).length} tasks remaining
+            </Text>
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <Pressable
+                onPress={() => {
+                  setShowExtendPrompt(false);
+                  timerSetSeconds(5 * 60);
+                  timerStart();
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                }}
+                style={{
+                  flex: 1, backgroundColor: V1.coral,
+                  paddingVertical: 14, borderRadius: 14, alignItems: 'center',
+                }}
+              >
+                <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 15, fontFamily: BODY_FONT }}>
+                  +5 min
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => {
+                  setShowExtendPrompt(false);
+                  timerSetSeconds(10 * 60);
+                  timerStart();
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                }}
+                style={{
+                  flex: 1, backgroundColor: V1.amber,
+                  paddingVertical: 14, borderRadius: 14, alignItems: 'center',
+                }}
+              >
+                <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 15, fontFamily: BODY_FONT }}>
+                  +10 min
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => {
+                  setShowExtendPrompt(false);
+                  hasEndedRef.current = true;
+                  handleSessionEnd();
+                }}
+                style={{
+                  flex: 1, borderWidth: 1, borderColor: t.border,
+                  paddingVertical: 14, borderRadius: 14, alignItems: 'center',
+                }}
+              >
+                <Text style={{ color: t.textSecondary, fontWeight: '600', fontSize: 15, fontFamily: BODY_FONT }}>
+                  I'm done
+                </Text>
+              </Pressable>
+            </View>
+          </Animated.View>
+        )}
+
+        {/* Skip Reason Bottom Sheet */}
+        {showSkipReason && (
+          <View style={{
+            position: 'absolute', bottom: 0, left: 0, right: 0,
+            backgroundColor: isDark ? V1.dark.card : '#FFFFFF',
+            borderTopLeftRadius: 20, borderTopRightRadius: 20,
+            paddingBottom: insets.bottom + 16, paddingTop: 20, paddingHorizontal: 20,
+            zIndex: 300,
+          }}>
+            <Text style={{
+              fontFamily: DISPLAY_FONT, fontSize: 17, fontWeight: '700',
+              color: t.text, marginBottom: 16,
+            }}>
+              Why skip this one?
+            </Text>
+            {SKIP_REASONS.map(reason => (
+              <Pressable
+                key={reason.id}
+                onPress={() => handleSkipWithReason(reason.id)}
+                style={{
+                  flexDirection: 'row', alignItems: 'center', gap: 12,
+                  paddingVertical: 14, borderBottomWidth: 1,
+                  borderBottomColor: t.border,
+                }}
+              >
+                <Text style={{ fontFamily: BODY_FONT, fontSize: 15, color: t.text }}>
+                  {reason.label}
+                </Text>
+              </Pressable>
+            ))}
+            <Pressable
+              onPress={() => {
+                setShowSkipReason(false);
+                setPendingSkipIndex(null);
+              }}
+              style={{ paddingVertical: 14, alignItems: 'center' }}
+            >
+              <Text style={{ fontFamily: BODY_FONT, fontSize: 14, color: t.textMuted }}>
+                Never mind
+              </Text>
+            </Pressable>
+          </View>
+        )}
       </View>
     );
-  }
-
-  // ── TIMER VIEW (0mb7F) ──────────────────────────────────────────────────
-  return (
-    <View style={[styles.container, { backgroundColor: t.bg }]}>
-      {/* Mascot avatar */}
-      {mascot && (
-        <View style={{ position: 'absolute', top: insets.top + 8, right: 56, zIndex: 10 }}>
-          <MascotAvatar size={40} mood={mascot.mood} />
-        </View>
-      )}
-
-      {/* H6: Combo Badge */}
-      {comboCount > 1 && (
-        <Animated.View
-          entering={reducedMotion ? undefined : FadeInDown.springify()}
-          style={styles.comboBadge}
-        >
-          <Text style={styles.comboBadgeText}>
-            {comboCount}x Combo! {'\uD83D\uDD25'}
-          </Text>
-        </Animated.View>
-      )}
-
-      {/* Phase transition celebration overlay */}
-      {phaseTransition && (
-        <Animated.View
-          entering={reducedMotion ? undefined : FadeIn.duration(300)}
-          exiting={reducedMotion ? undefined : FadeOut.duration(300)}
-          style={styles.phaseTransitionBanner}
-        >
-          <Text style={styles.phaseTransitionText}>
-            {phaseTransition.from} Complete! {'\u2728'} Moving to {phaseTransition.to}...
-          </Text>
-        </Animated.View>
-      )}
-
-      {/* Header */}
-      <View style={[styles.timerHeader, { paddingTop: insets.top + 8 }]}>
-        {roomPhotoUri ? (
-          <Pressable
-            onPress={() => setShowPhotoPreview(true)}
-            accessibilityRole="button"
-            accessibilityLabel="View room before photo"
-            style={styles.photoThumb}
-          >
-            <Image source={{ uri: roomPhotoUri }} style={styles.photoThumbImage} contentFit="cover" />
-          </Pressable>
-        ) : (
-          <View style={{ width: 40 }} />
-        )}
-        <View style={styles.timerHeaderCenter}>
-          <Text style={styles.timerLabel}>{blitzMinutes}-Minute Blitz</Text>
-          <Text style={[styles.timerRoomName, { color: t.text }]}>{activeRoom?.name || 'Room'} Refresh</Text>
-        </View>
-        <Pressable
-          onPress={handleClose}
-          hitSlop={12}
-          accessibilityRole="button"
-          accessibilityLabel="Close blitz session"
-        >
-          <X size={22} color={t.textMuted} />
-        </Pressable>
-      </View>
-
-      {/* Audio error toast (blitz) */}
-      {audioError && (
-        <View style={{
-          marginHorizontal: 20,
-          marginBottom: 8,
-          paddingVertical: 10,
-          paddingHorizontal: 14,
-          borderRadius: 12,
-          backgroundColor: isDark ? 'rgba(255,183,77,0.12)' : 'rgba(255,183,77,0.1)',
-          borderWidth: 1,
-          borderColor: isDark ? 'rgba(255,183,77,0.25)' : 'rgba(255,183,77,0.2)',
-        }}>
-          <Text style={{
-            fontFamily: BODY_FONT, fontSize: 13, fontWeight: '500',
-            color: isDark ? '#FFB74D' : '#E65100', textAlign: 'center',
-          }}>
-            {audioError}
-          </Text>
-        </View>
-      )}
-
-      {/* Ambient sound toggle (blitz) */}
-      <View style={{ alignItems: 'flex-end', paddingHorizontal: 20, marginBottom: 8 }}>
-        <Pressable
-          onPress={handleCycleBlitzSound}
-          style={{
-            flexDirection: 'row', alignItems: 'center', gap: 6,
-            paddingHorizontal: 14, paddingVertical: 8,
-            borderRadius: 12, minHeight: 36,
-            backgroundColor: ambientSound !== 'none'
-              ? (isDark ? 'rgba(100,181,246,0.15)' : 'rgba(99,102,241,0.1)')
-              : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'),
-          }}
-          accessibilityRole="button"
-          accessibilityLabel={`Ambient sound: ${SOUND_INFO[ambientSound]?.label ?? 'Off'}`}
-        >
-          <Text style={{ fontSize: 16 }}>{SOUND_INFO[ambientSound]?.emoji ?? '\u{1F507}'}</Text>
-          <Text style={{
-            fontFamily: BODY_FONT, fontSize: 12, fontWeight: '500',
-            color: ambientSound !== 'none' ? V1.blue : t.textSecondary,
-          }}>
-            {SOUND_INFO[ambientSound]?.label ?? 'Off'}
-          </Text>
-        </Pressable>
-      </View>
-
-      {/* Before photo expanded modal (timer view) */}
-      {showPhotoPreview && roomPhotoUri && (
-        <Modal transparent animationType="fade" visible={showPhotoPreview} onRequestClose={() => setShowPhotoPreview(false)}>
-          <Pressable
-            style={styles.photoModalOverlay}
-            onPress={() => setShowPhotoPreview(false)}
-          >
-            <View style={styles.photoModalContent}>
-              <Image source={{ uri: roomPhotoUri }} style={styles.photoModalImage} contentFit="contain" />
-              <Text style={styles.photoModalLabel}>Before photo</Text>
-            </View>
-          </Pressable>
-        </Modal>
-      )}
-
-      {/* Timer Ring */}
-      <View style={styles.timerRingSection}>
-        <View
-          style={styles.timerRingWrapper}
-          accessibilityLabel={`Timer progress: ${Math.round((1 - timerProgress) * 100)}% elapsed`}
-        >
-          <TimerRing
-            progress={timerProgress}
-            size={TIMER_SIZE}
-            strokeWidth={TIMER_STROKE}
-            isDark={isDark}
-          />
-          <View style={styles.timerCenter}>
-            <Text style={[styles.timerTime, { color: t.text }]}>{formatTime(remainingSeconds)}</Text>
-            <Text style={[styles.timerRemaining, { color: t.textMuted }]}>remaining</Text>
-          </View>
-        </View>
-      </View>
-
-      {/* Current task */}
-      <View style={styles.taskSection}>
-        <View style={[styles.currentTaskCard, { borderLeftColor: V1.coral, backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)' }]}>
-          <View style={[styles.nowPill, { backgroundColor: V1.coral }]}>
-            <Text style={styles.nowPillText}>NOW</Text>
-          </View>
-          <Text style={[styles.currentTaskName, { color: t.text }]}>
-            {currentTask?.title || 'All tasks done!'}
-          </Text>
-          {/* Zone + destination compact line */}
-          {(currentTask?.zone || currentTask?.destination?.location) && (
-            <Text style={[styles.currentTaskMeta, { color: t.textMuted }]}>
-              {currentTask.zone ? `\uD83D\uDCCD ${currentTask.zone}` : ''}
-              {currentTask.zone && currentTask.destination?.location ? '  \u00B7  ' : ''}
-              {currentTask.destination?.location ? `\u2192 ${currentTask.destination.location}` : ''}
-            </Text>
-          )}
-          <Text style={[styles.currentTaskTime, { color: t.textMuted }]}>
-            about {currentTask?.estimatedMinutes || 0} minutes
-          </Text>
-        </View>
-
-        {/* Up next */}
-        {currentTaskIndex < totalTasks - 1 && (
-          <View style={[styles.nextTaskCard, { backgroundColor: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)', borderLeftColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)' }]}>
-            <Text style={[styles.upNextLabel, { color: t.textMuted }]}>UP NEXT</Text>
-            <Text style={[styles.nextTaskName, { color: t.textSecondary }]}>
-              {tasks[currentTaskIndex + 1]?.title || ''}
-            </Text>
-          </View>
-        )}
-      </View>
-
-      {/* Progress dots */}
-      <View style={styles.progressSection}>
-        <Text style={[styles.progressText, { color: t.textSecondary }]}>
-          {completedCount} of {totalTasks} done
-        </Text>
-        <View style={styles.progressDotsRow}>
-          {tasks.slice(0, Math.min(totalTasks, 6)).map((_, i) => (
-            <View
-              key={i}
-              style={[
-                styles.progressDotLarge,
-                {
-                  backgroundColor: i < completedCount
-                    ? V1.green
-                    : i === currentTaskIndex
-                      ? V1.coral
-                      : isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.1)',
-                },
-              ]}
-            />
-          ))}
-        </View>
-      </View>
-
-      {/* Controls */}
-      <View style={[styles.controls, { paddingBottom: insets.bottom + 16 }]}>
-        <Pressable
-          onPress={handleToggleView}
-          style={styles.controlButton}
-          accessibilityRole="button"
-          accessibilityLabel="Switch to focus view"
-        >
-          <Square size={22} color={t.textSecondary} />
-        </Pressable>
-        <Pressable
-          onPress={handlePauseResume}
-          style={[styles.controlButtonMain, { backgroundColor: V1.coral }]}
-          accessibilityRole="button"
-          accessibilityLabel={isRunning ? 'Pause timer' : 'Resume timer'}
-        >
-          {isRunning ? (
-            <Pause size={28} color="#FFFFFF" fill="#FFFFFF" />
-          ) : (
-            <View style={styles.playIcon}>
-              <Text style={styles.playIconText}>{'\u25B6'}</Text>
-            </View>
-          )}
-        </Pressable>
-        <Pressable
-          onPress={handleCompleteTask}
-          style={styles.controlButton}
-          accessibilityRole="button"
-          accessibilityLabel="Complete current task"
-        >
-          <SkipForward size={22} color={t.textSecondary} />
-        </Pressable>
-      </View>
-
-      {/* Encouragement footer */}
-      <Text style={[styles.footerEncouragement, { color: t.textMuted }]}>
-        {isRunning ? currentEncouragingMessage : getEncouragement(completedCount, totalTasks)}
-      </Text>
-
-      {/* Extend Timer Prompt */}
-      {showExtendPrompt && (
-        <Animated.View
-          entering={FadeInDown.duration(300)}
-          style={{
-            position: 'absolute',
-            bottom: insets.bottom + 80,
-            left: 20,
-            right: 20,
-            zIndex: 200,
-            backgroundColor: isDark ? V1.dark.cardElevated : '#FFFFFF',
-            borderRadius: 20,
-            padding: 20,
-            borderWidth: 1,
-            borderColor: t.border,
-            shadowColor: '#000',
-            shadowOffset: { width: 0, height: 4 },
-            shadowOpacity: 0.08,
-            shadowRadius: 16,
-            elevation: 4,
-          }}
-        >
-          <Text style={{
-            fontFamily: DISPLAY_FONT, fontSize: 18, fontWeight: '700',
-            color: t.text, textAlign: 'center', marginBottom: 6,
-          }}>
-            Time's up! Keep going?
-          </Text>
-          <Text style={{
-            fontFamily: BODY_FONT, fontSize: 14,
-            color: t.textSecondary, textAlign: 'center', marginBottom: 16,
-          }}>
-            {tasks.filter(tk => !tk.completed).length} tasks remaining
-          </Text>
-          <View style={{ flexDirection: 'row', gap: 10 }}>
-            <Pressable
-              onPress={() => {
-                setShowExtendPrompt(false);
-                timerSetSeconds(5 * 60);
-                timerStart();
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-              }}
-              style={{
-                flex: 1, backgroundColor: V1.coral,
-                paddingVertical: 14, borderRadius: 14, alignItems: 'center',
-              }}
-            >
-              <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 15, fontFamily: BODY_FONT }}>
-                +5 min
-              </Text>
-            </Pressable>
-            <Pressable
-              onPress={() => {
-                setShowExtendPrompt(false);
-                timerSetSeconds(10 * 60);
-                timerStart();
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-              }}
-              style={{
-                flex: 1, backgroundColor: V1.amber,
-                paddingVertical: 14, borderRadius: 14, alignItems: 'center',
-              }}
-            >
-              <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 15, fontFamily: BODY_FONT }}>
-                +10 min
-              </Text>
-            </Pressable>
-            <Pressable
-              onPress={() => {
-                setShowExtendPrompt(false);
-                hasEndedRef.current = true;
-                handleSessionEnd();
-              }}
-              style={{
-                flex: 1, borderWidth: 1, borderColor: t.border,
-                paddingVertical: 14, borderRadius: 14, alignItems: 'center',
-              }}
-            >
-              <Text style={{ color: t.textSecondary, fontWeight: '600', fontSize: 15, fontFamily: BODY_FONT }}>
-                I'm done
-              </Text>
-            </Pressable>
-          </View>
-        </Animated.View>
-      )}
-
-      {/* Skip Reason Bottom Sheet */}
-      {showSkipReason && (
-        <View style={{
-          position: 'absolute', bottom: 0, left: 0, right: 0,
-          backgroundColor: isDark ? V1.dark.card : '#FFFFFF',
-          borderTopLeftRadius: 20, borderTopRightRadius: 20,
-          paddingBottom: insets.bottom + 16, paddingTop: 20, paddingHorizontal: 20,
-          zIndex: 300,
-        }}>
-          <Text style={{
-            fontFamily: DISPLAY_FONT, fontSize: 17, fontWeight: '700',
-            color: t.text, marginBottom: 16,
-          }}>
-            Why skip this one?
-          </Text>
-          {SKIP_REASONS.map(reason => (
-            <Pressable
-              key={reason.id}
-              onPress={() => handleSkipWithReason(reason.id)}
-              style={{
-                flexDirection: 'row', alignItems: 'center', gap: 12,
-                paddingVertical: 14, borderBottomWidth: 1,
-                borderBottomColor: t.border,
-              }}
-            >
-              <Text style={{ fontFamily: BODY_FONT, fontSize: 15, color: t.text }}>
-                {reason.label}
-              </Text>
-            </Pressable>
-          ))}
-          <Pressable
-            onPress={() => {
-              setShowSkipReason(false);
-              setPendingSkipIndex(null);
-            }}
-            style={{ paddingVertical: 14, alignItems: 'center' }}
-          >
-            <Text style={{ fontFamily: BODY_FONT, fontSize: 14, color: t.textMuted }}>
-              Never mind
-            </Text>
-          </Pressable>
-        </View>
-      )}
-    </View>
-  );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1111,183 +862,7 @@ const styles = StyleSheet.create({
     fontFamily: DISPLAY_FONT,
   },
 
-  // ── Timer View ─────────────────────────────────────────────────────────
-  timerHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingBottom: 8,
-  },
-  timerHeaderCenter: {
-    alignItems: 'center',
-  },
-  timerLabel: {
-    color: V1.coral,
-    fontSize: 13,
-    fontWeight: '600',
-    marginBottom: 2,
-    fontFamily: BODY_FONT,
-  },
-  timerRoomName: {
-    color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: '700',
-    fontFamily: DISPLAY_FONT,
-  },
-  timerRingSection: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 32,
-  },
-  timerRingWrapper: {
-    position: 'relative',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  timerCenter: {
-    position: 'absolute',
-    alignItems: 'center',
-  },
-  timerTime: {
-    color: '#FFFFFF',
-    fontSize: 48,
-    fontWeight: '200',
-    fontVariant: ['tabular-nums'],
-    letterSpacing: -1,
-    fontFamily: DISPLAY_FONT,
-  },
-  timerRemaining: {
-    color: 'rgba(255,255,255,0.4)',
-    fontSize: 13,
-    marginTop: 2,
-    fontFamily: BODY_FONT,
-  },
-
-  // ── Task Cards ─────────────────────────────────────────────────────────
-  taskSection: {
-    paddingHorizontal: 20,
-    gap: 1,
-  },
-  currentTaskCard: {
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    borderLeftWidth: 3,
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 1,
-  },
-  nowPill: {
-    alignSelf: 'flex-start',
-    paddingHorizontal: 10,
-    paddingVertical: 3,
-    borderRadius: 8,
-    marginBottom: 8,
-  },
-  nowPillText: {
-    color: '#FFFFFF',
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-    fontFamily: BODY_FONT,
-  },
-  currentTaskName: {
-    color: '#FFFFFF',
-    fontSize: 17,
-    fontWeight: '600',
-    marginBottom: 4,
-    fontFamily: DISPLAY_FONT,
-  },
-  currentTaskTime: {
-    color: 'rgba(255,255,255,0.4)',
-    fontSize: 13,
-    fontFamily: BODY_FONT,
-  },
-  currentTaskMeta: {
-    fontSize: 12,
-    fontFamily: BODY_FONT,
-    marginBottom: 2,
-  },
-  nextTaskCard: {
-    backgroundColor: 'rgba(255,255,255,0.02)',
-    borderRadius: 12,
-    padding: 16,
-    borderLeftWidth: 3,
-    borderLeftColor: 'rgba(255,255,255,0.1)',
-  },
-  upNextLabel: {
-    color: 'rgba(255,255,255,0.3)',
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 1,
-    marginBottom: 6,
-    fontFamily: BODY_FONT,
-  },
-  nextTaskName: {
-    color: 'rgba(255,255,255,0.5)',
-    fontSize: 15,
-    fontFamily: BODY_FONT,
-  },
-
-  // ── Progress ───────────────────────────────────────────────────────────
-  progressSection: {
-    alignItems: 'center',
-    paddingVertical: 24,
-    gap: 8,
-  },
-  progressText: {
-    color: 'rgba(255,255,255,0.5)',
-    fontSize: 13,
-    fontFamily: BODY_FONT,
-  },
-  progressDotsRow: {
-    flexDirection: 'row',
-    gap: 6,
-  },
-  progressDotLarge: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-  },
-
-  // ── Controls ───────────────────────────────────────────────────────────
-  controls: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 32,
-    paddingVertical: 8,
-  },
-  controlButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  controlButtonMain: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  playIcon: {
-    marginLeft: 3,
-  },
-  playIconText: {
-    color: '#FFFFFF',
-    fontSize: 24,
-    fontFamily: DISPLAY_FONT,
-  },
-  footerEncouragement: {
-    color: 'rgba(255,255,255,0.3)',
-    fontSize: 13,
-    textAlign: 'center',
-    paddingBottom: 8,
-    fontFamily: BODY_FONT,
-  },
-
-  // ── Focus View ─────────────────────────────────────────────────────────
+  // ── Main View ───────────────────────────────────────────────────────────
   focusTopBar: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -17,7 +17,7 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { ChevronLeft, ImageIcon, Zap, ZapOff } from 'lucide-react-native';
 import React, { useCallback, useRef, useState } from 'react';
 import {
@@ -64,13 +64,16 @@ export default function CameraScreen() {
 }
 
 function CameraScreenContent() {
+  const { preselectedRoomType } = useLocalSearchParams<{ preselectedRoomType?: string }>();
   const rawScheme = useColorScheme();
   const isDark = rawScheme === 'dark';
   const t = getTheme(isDark);
   const insets = useSafeAreaInsets();
   const [permission, requestPermission] = useCameraPermissions();
   const cameraRef = useRef<CameraView>(null);
-  const [selectedType, setSelectedType] = useState<RoomType>('bedroom');
+  const [selectedType, setSelectedType] = useState<RoomType>(
+    (preselectedRoomType as RoomType) || 'bedroom'
+  );
   const [isCapturing, setIsCapturing] = useState(false);
   const reducedMotion = useReducedMotion();
   // Flash toggle: auto -> on -> off cycle

@@ -16,7 +16,7 @@ import {
   scheduleComebackNudge,
 } from '@/services/notifications';
 import * as Haptics from 'expo-haptics';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Bell, Flame, Heart, Trophy } from 'lucide-react-native';
 import React, { useState } from 'react';
@@ -117,6 +117,7 @@ function BenefitRow({
 // Main Screen
 // ─────────────────────────────────────────────────────────────────────────────
 export default function NotificationPermissionScreen() {
+  const { preselectedRoomType } = useLocalSearchParams<{ preselectedRoomType?: string }>();
   const rawScheme = useColorScheme();
   const isDark = rawScheme === 'dark';
   const t = isDark ? V1.dark : V1.light;
@@ -152,12 +153,18 @@ export default function NotificationPermissionScreen() {
     } finally {
       setIsRequesting(false);
     }
-    router.replace('/paywall');
+    router.replace({
+      pathname: '/paywall',
+      params: preselectedRoomType ? { preselectedRoomType } : undefined,
+    });
   };
 
   const handleSkip = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    router.replace('/paywall');
+    router.replace({
+      pathname: '/paywall',
+      params: preselectedRoomType ? { preselectedRoomType } : undefined,
+    });
   };
 
   return (

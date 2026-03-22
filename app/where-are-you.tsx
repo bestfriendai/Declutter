@@ -8,7 +8,7 @@ import { BODY_FONT, DISPLAY_FONT, V1, CARD_SHADOW_LG, RADIUS } from '@/constants
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
 import * as Haptics from 'expo-haptics';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import React from 'react';
 import {
@@ -99,6 +99,7 @@ export default function WhereAreYouScreen() {
 }
 
 function WhereAreYouScreenContent() {
+  const { preselectedRoomType } = useLocalSearchParams<{ preselectedRoomType?: string }>();
   const rawScheme = useColorScheme();
   const isDark = rawScheme === 'dark';
   const t = isDark ? V1.dark : V1.light;
@@ -106,7 +107,10 @@ function WhereAreYouScreenContent() {
   const reducedMotion = useReducedMotion();
 
   const handleHome = () => {
-    router.replace('/camera');
+    router.replace({
+      pathname: '/camera',
+      params: preselectedRoomType ? { preselectedRoomType } : undefined,
+    });
   };
 
   const handleNotHome = () => {

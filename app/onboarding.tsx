@@ -388,8 +388,11 @@ function OnboardingScreenContent() {
     }
 
     setIsCompleting(false);
-    router.replace('/notification-permission');
-  }, [persistOnboarding, isAuthenticated, continueAsGuest]);
+    router.replace({
+      pathname: '/notification-permission',
+      params: { preselectedRoomType: selections.worstRoom || 'bedroom' },
+    });
+  }, [persistOnboarding, isAuthenticated, continueAsGuest, selections.worstRoom]);
 
   // Redirect if already onboarded
   if (user?.onboardingComplete && isAuthenticated) {

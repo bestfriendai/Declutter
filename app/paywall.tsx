@@ -12,7 +12,7 @@ import { useReducedMotion } from '@/hooks/useReducedMotion';
 import { PRODUCT_IDS, useRevenueCat } from '@/hooks/useRevenueCat';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Heart, Leaf, Star, X } from 'lucide-react-native';
 import { ScreenErrorBoundary } from '@/components/ErrorBoundary';
@@ -81,6 +81,7 @@ export default function PaywallScreen() {
 }
 
 function PaywallScreenContent() {
+  const { preselectedRoomType } = useLocalSearchParams<{ preselectedRoomType?: string }>();
   const rawScheme = useColorScheme();
   const isDark = rawScheme === 'dark';
   const t = isDark ? V1.dark : V1.light;
@@ -118,8 +119,11 @@ function PaywallScreenContent() {
   const trialDays = selectedPlanObj?.trialDays ?? 0;
 
   const navigateIntoApp = useCallback(() => {
-    router.replace('/where-are-you');
-  }, []);
+    router.replace({
+      pathname: '/where-are-you',
+      params: preselectedRoomType ? { preselectedRoomType } : undefined,
+    });
+  }, [preselectedRoomType]);
 
   const handlePurchase = useCallback(async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
@@ -466,7 +470,10 @@ function PaywallScreenContent() {
         {/* Dev bypass button */}
         {DEV_SKIP_AUTH && (
           <Pressable
-            onPress={() => router.replace('/where-are-you')}
+            onPress={() => router.replace({
+              pathname: '/where-are-you',
+              params: preselectedRoomType ? { preselectedRoomType } : undefined,
+            })}
             style={{
               alignItems: 'center',
               paddingVertical: 12,

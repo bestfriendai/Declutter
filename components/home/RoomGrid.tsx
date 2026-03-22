@@ -42,10 +42,21 @@ function getRoomIcon(type: string): string {
 }
 
 function getFreshnessLabel(progress: number): { label: string; color: string } {
-  if (progress >= 90) return { label: 'Sparkling', color: V1.green };
-  if (progress >= 70) return { label: 'Fresh', color: V1.green };
-  if (progress >= 40) return { label: 'Getting there', color: V1.amber };
-  return { label: 'Needs love', color: V1.coral };
+  // Fallback when no RoomFreshness data — estimate days from percentage
+  if (progress >= 90) return { label: 'Cleaned today', color: V1.green };
+  if (progress >= 70) return { label: 'Cleaned yesterday', color: V1.green };
+  if (progress >= 40) return { label: '3 days ago', color: V1.amber };
+  return { label: '1+ weeks ago', color: V1.coral };
+}
+
+function getHumanFreshnessLabel(daysSinceClean: number): { label: string; color: string } {
+  if (daysSinceClean < 1) return { label: 'Cleaned today', color: V1.green };
+  if (daysSinceClean < 2) return { label: 'Cleaned yesterday', color: V1.green };
+  const days = Math.round(daysSinceClean);
+  if (days < 7) return { label: `${days} days ago`, color: V1.amber };
+  if (days < 14) return { label: '1 week ago', color: V1.coral };
+  const weeks = Math.round(days / 7);
+  return { label: `${weeks}+ weeks ago`, color: V1.coral };
 }
 
 // ── Scale press hook ────────────────────────────────────────────────────────
@@ -69,14 +80,14 @@ function useScalePress(scaleTo = 0.97) {
 interface RoomCardProps {
   room: Room;
   freshness: { label: string; color: string };
-  freshnessValue: number;
+  daysSinceClean: number;
   isStartHere: boolean;
   isDark: boolean;
   cardWidth: number;
   onPress: () => void;
 }
 
-function RoomCard({ room, freshness, freshnessValue, isStartHere, isDark, cardWidth, onPress }: RoomCardProps) {
+function RoomCard({ room, freshness, daysSinceClean, isStartHere, isDark, cardWidth, onPress }: RoomCardProps) {
   const t = isDark ? V1.dark : V1.light;
   const sp = useScalePress(0.97);
 
@@ -93,7 +104,7 @@ function RoomCard({ room, freshness, freshnessValue, isStartHere, isDark, cardWi
       onPressIn={sp.onPressIn}
       onPressOut={sp.onPressOut}
       accessibilityRole="button"
-      accessibilityLabel={`Room: ${room.name}, ${freshnessValue}% fresh, ${freshness.label}`}
+      accessibilityLabel={`Room: ${room.name}, last cleaned ${freshness.label}`}
       accessibilityHint="Double tap to open room"
       style={[
         sp.animatedStyle,
@@ -112,19 +123,6 @@ function RoomCard({ room, freshness, freshnessValue, isStartHere, isDark, cardWi
       <Text style={[styles.spaceName, { color: t.text }]} numberOfLines={1}>
         {room.name}
       </Text>
-      <View
-        style={[
-          styles.freshnessBar,
-          { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)' },
-        ]}
-      >
-        <View
-          style={[
-            styles.freshnessBarFill,
-            { width: `${Math.max(freshnessValue, 5)}%`, backgroundColor: freshness.color },
-          ]}
-        />
-      </View>
       <Text style={[styles.freshnessLabel, { color: freshness.color }]}>{freshness.label}</Text>
       {taskCount > 0 && (
         <Text style={[styles.taskEstimate, { color: t.textSecondary }]}>
@@ -169,10 +167,10 @@ export function RoomGrid({
       rooms.map((room) => {
         const rf = roomFreshness.find((f) => f.roomId === room.id);
         const freshness = rf
-          ? { label: rf.label, color: rf.color }
+          ? getHumanFreshnessLabel(rf.daysSinceClean)
           : getFreshnessLabel(room.currentProgress);
-        const freshnessValue = rf ? rf.freshness : room.currentProgress;
-        return { room, freshness, freshnessValue };
+        const daysSinceClean = rf ? rf.daysSinceClean : 0;
+        return { room, freshness, daysSinceClean };
       }),
     [rooms, roomFreshness],
   );
@@ -184,7 +182,7 @@ export function RoomGrid({
       <RoomCard
         room={item.room}
         freshness={item.freshness}
-        freshnessValue={item.freshnessValue}
+        daysSinceClean={item.daysSinceClean}
         isStartHere={startHereRoomId === item.room.id}
         isDark={isDark}
         cardWidth={cardWidth}
@@ -217,7 +215,7 @@ export function RoomGrid({
               key={item.room.id}
               room={item.room}
               freshness={item.freshness}
-              freshnessValue={item.freshnessValue}
+              daysSinceClean={item.daysSinceClean}
               isStartHere={startHereRoomId === item.room.id}
               isDark={isDark}
               cardWidth={cardWidth}
@@ -308,15 +306,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     fontFamily: BODY_FONT,
     marginBottom: 10,
-  },
-  freshnessBar: {
-    height: 5,
-    borderRadius: 3,
-    marginBottom: 6,
-  },
-  freshnessBarFill: {
-    height: 5,
-    borderRadius: 3,
   },
   freshnessLabel: {
     fontSize: 12,
