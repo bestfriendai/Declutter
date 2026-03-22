@@ -315,40 +315,16 @@ function AnalysisScreenContent() {
       if (analysisData?.tasks && analysisData.tasks.length > 0) {
         tasks = analysisData.tasks;
 
-        // Build areas from zones when available (includes boundingBox data)
-        if (analysisData?.zones && analysisData.zones.length > 0) {
-          areas = analysisData.zones.map((zone: any, i: number) => {
-            const zoneTasks = tasks.filter(t => t.zone === zone.id || t.zone === zone.name);
-            return {
-              name: zone.name,
-              taskCount: zoneTasks.length || zone.itemCount || 0,
-              tasks: zoneTasks.map(t => t.title),
-              color: AREA_COLORS[i % AREA_COLORS.length],
-              boundingBox: zone.boundingBox,
-              priority: zone.priority,
-            };
-          });
-          // Filter out empty zones
-          areas = areas.filter(a => a.taskCount > 0);
-        }
-
-        // Fall back to phase-based grouping if no zones or zones had no tasks
-        if (areas.length === 0) {
-          const phaseMap = new Map<string, CleaningTask[]>();
-          tasks.forEach((task) => {
-            const phaseKey = task.phase
-              ? `Phase ${task.phase}: ${task.phaseName || ''}`
-              : task.zone || 'General';
-            if (!phaseMap.has(phaseKey)) phaseMap.set(phaseKey, []);
-            phaseMap.get(phaseKey)!.push(task);
-          });
-          areas = Array.from(phaseMap.entries()).map(([name, phaseTasks], i) => ({
-            name,
-            taskCount: phaseTasks.length,
-            tasks: phaseTasks.map((tk) => tk.title),
-            color: AREA_COLORS[i % AREA_COLORS.length],
-          }));
-        }
+        // Each task with a boundingBox becomes an area for the detection overlay
+        areas = tasks.map((task: any, i: number) => ({
+          name: task.title?.split('\u2192')[0]?.trim()?.substring(0, 30) || `Task ${i + 1}`,
+          taskCount: 1,
+          tasks: [task.title],
+          color: task.priority === 'high' ? V1.coral : task.priority === 'medium' ? V1.amber : V1.green,
+          boundingBox: task.boundingBox,
+        }));
+        // Filter to only areas with bounding boxes for the overlay
+        areas = areas.filter(a => a.boundingBox);
       } else {
         tasks = generateFallbackTasks(roomType || 'bedroom');
         areas = [

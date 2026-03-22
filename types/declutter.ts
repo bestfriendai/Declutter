@@ -277,6 +277,14 @@ export interface CleaningTask {
   phaseName?: string;
   mentalBenefit?: string;
 
+  // Bounding box on the room photo (percentages 0-100)
+  boundingBox?: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+
   userSkipped?: boolean;
   skipReason?: string;
   actualMinutes?: number;

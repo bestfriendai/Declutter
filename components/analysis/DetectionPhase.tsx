@@ -197,7 +197,7 @@ function ZoneOverlay({
       {/* Label */}
       <View style={[styles.zoneLabel, { backgroundColor: area.color }]}>
         <Text style={styles.zoneLabelText} numberOfLines={1}>
-          {area.name} {'\u00B7'} {area.taskCount} {area.taskCount === 1 ? 'task' : 'tasks'}
+          {area.name}
         </Text>
       </View>
     </Animated.View>
@@ -263,7 +263,7 @@ export function DetectionPhase({
           entering={reducedMotion ? undefined : FadeIn.duration(400)}
           style={styles.headerTitle}
         >
-          AI Found {totalItems} Items
+          {totalItems} {totalItems === 1 ? 'Thing' : 'Things'} Detected
         </Animated.Text>
         <View style={{ width: 24 }} />
       </View>

@@ -47,60 +47,48 @@ const ENERGY_TASK_LIMITS = {
   hyperfocused: { phases: [1, 2, 3], taskCount: 15, description: "maximum tasks across all phases" },
 } as const;
 
-const DECLUTTER_SYSTEM_PROMPT = `You are a friendly cleaning coach. Look at this room photo and give simple, clear instructions.
+const DECLUTTER_SYSTEM_PROMPT = `You are a cleaning coach. Look at this room photo and identify EVERY item or area that needs attention.
 
 ## RULES
-- Be warm, never judgmental
-- Name SPECIFIC items you see (e.g. "blue mug on desk" not "dishes")
-- Keep tasks short and easy — each should take 1-5 minutes
-- Generate 5-8 tasks total, ordered by visual impact (biggest difference first)
-- Identify 2-4 zones in the photo with bounding box positions
+- Name SPECIFIC items you see (e.g. "blue mug" not "dishes")
+- Find ALL things that need cleaning/organizing — no limit
+- Each task = one specific thing to do, with WHERE it is in the photo
+- Order tasks: easiest/most impactful first
 
-## ZONES
-Look at the photo and identify 2-4 distinct messy areas. For each zone, estimate where it appears in the photo as a percentage bounding box (x, y from top-left corner, width, height — all 0-100).
+## BOUNDING BOXES (CRITICAL)
+For EVERY task, estimate where that item/area appears in the photo as a bounding box. Coordinates are percentages of the image (0-100):
+- x: left edge position (0 = far left, 100 = far right)
+- y: top edge position (0 = top, 100 = bottom)
+- width/height: size of the box
 
-## TASKS
-Each task should be one clear action: "[Verb] [what] [where] → [destination]"
-Examples:
-- "Toss the 3 water bottles near the bed → recycling"
-- "Grab clothes off the chair → laundry basket"
-- "Stack papers on desk → one neat pile"
+Be PRECISE. If clothes are on the floor in the bottom-left, the box should be around x:5, y:65, width:30, height:25. Look carefully at where each item actually is.
 
-## OUTPUT — respond with valid JSON only:
+## TASK FORMAT
+Short and clear: "[Verb] [specific item] → [where it goes]"
+
+## OUTPUT — valid JSON only:
 {
-  "summary": "Brief 1-sentence description of what you see",
+  "summary": "One sentence about the room",
   "encouragement": "Short warm message",
   "messLevel": 0-100,
-
-  "zones": [
-    {
-      "id": "zone-1",
-      "name": "short name like Floor or Desk",
-      "type": "floor|surface|storage|fixture",
-      "itemCount": number,
-      "priority": "high|medium|low",
-      "boundingBox": {"x": 0-100, "y": 0-100, "width": 0-100, "height": 0-100}
-    }
-  ],
+  "estimatedTotalTime": total_minutes,
 
   "tasks": [
     {
       "id": "task-1",
-      "title": "Clear action — what to do",
-      "description": "One sentence of detail",
-      "emoji": "🧹",
+      "title": "Toss 3 water bottles → recycling",
+      "description": "The plastic bottles near the nightstand",
+      "emoji": "🗑️",
       "priority": "high|medium|low",
       "difficulty": "quick|medium|challenging",
       "estimatedMinutes": 2,
       "phase": 1,
       "phaseName": "Quick Wins",
-      "zone": "zone-1",
       "visualImpact": "high|medium|low",
-      "category": "trash_removal|surface_clearing|dishes|laundry|organization"
+      "category": "trash_removal|surface_clearing|dishes|laundry|organization",
+      "boundingBox": {"x": 10, "y": 60, "width": 20, "height": 15}
     }
-  ],
-
-  "estimatedTotalTime": total_minutes
+  ]
 }`;
 
 const PROGRESS_PROMPT = `You are analyzing before and after photos of a room cleaning session. Compare these two images carefully.

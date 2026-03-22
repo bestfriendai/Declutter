@@ -1,31 +1,46 @@
 /**
- * Declutterly -- Room Detail Screen (Simplified)
+ * Declutterly -- Room Detail Screen
  *
- * - Room photo header with parallax + progress bar
- * - Simple flat task checklist
+ * - Full-width room photo with per-task bounding box overlays
+ * - Color-coded rectangles by priority (coral/amber/green)
+ * - Completed tasks show green overlay with checkmark
+ * - Simple flat task checklist below the photo
  * - Floating "Start 15-Min Blitz" CTA
  * - Empty state with camera prompt
  */
 
-import { Check, Flame, Camera } from 'lucide-react-native';
+import { Check, ChevronLeft, Flame, Camera } from 'lucide-react-native';
+import { Image } from 'expo-image';
 import * as Haptics from 'expo-haptics';
 import { router, useLocalSearchParams } from 'expo-router';
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { V1, BODY_FONT, DISPLAY_FONT } from '@/constants/designTokens';
-import { useSharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useDeclutter } from '@/context/DeclutterContext';
 import { ScreenErrorBoundary } from '@/components/ErrorBoundary';
-import { RoomHeader } from '@/components/room';
 import { CleaningTask } from '@/types/declutter';
+
+// ─── Priority color mapping ────────────────────────────────────────────────
+function getPriorityColor(priority?: string): string {
+  if (priority === 'high') return V1.coral;
+  if (priority === 'medium') return V1.amber;
+  return V1.green; // low or undefined
+}
+
+function getPriorityFill(priority?: string): string {
+  if (priority === 'high') return 'rgba(255,107,107,0.20)';
+  if (priority === 'medium') return 'rgba(255,183,77,0.20)';
+  return 'rgba(102,187,106,0.20)';
+}
 
 // ─── Visual impact sort weight ──────────────────────────────────────────────
 function getVisualImpactWeight(impact?: string): number {
@@ -42,6 +57,13 @@ function getFreshnessInfo(progress: number): { label: string; color: string } {
   return { label: 'Needs Love', color: V1.coral };
 }
 
+// ─── Truncate title to first 3-4 words ──────────────────────────────────────
+function truncateTitle(title: string): string {
+  const words = title.split(' ');
+  if (words.length <= 4) return title;
+  return words.slice(0, 3).join(' ') + '...';
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Main Room Detail Screen
 // ─────────────────────────────────────────────────────────────────────────────
@@ -51,10 +73,13 @@ function RoomDetailContent() {
   const isDark = rawScheme === 'dark';
   const t = isDark ? V1.dark : V1.light;
   const insets = useSafeAreaInsets();
+  const { height: windowHeight } = useWindowDimensions();
   const { rooms, toggleTask, setActiveRoom } = useDeclutter();
-  const scrollY = useSharedValue(0);
+  const [highlightedTaskId, setHighlightedTaskId] = useState<string | null>(null);
 
   const room = rooms.find(r => r.id === id);
+  const photoUri = room?.photos?.[0]?.uri;
+  const photoHeight = windowHeight * 0.55;
 
   // Sort tasks: incomplete first, then by visual impact
   const sortedTasks = useMemo(() => {
@@ -84,6 +109,12 @@ function RoomDetailContent() {
     router.push('/blitz');
   }, [room, setActiveRoom]);
 
+  const handleTaskPress = useCallback((taskId: string) => {
+    // Highlight the corresponding bounding box on the photo
+    setHighlightedTaskId(prev => prev === taskId ? null : taskId);
+    handleToggleTask(taskId);
+  }, [handleToggleTask]);
+
   // Room not found
   if (!room) {
     return (
@@ -112,14 +143,35 @@ function RoomDetailContent() {
     return (
       <View style={[styles.container, { backgroundColor: t.bg }]}>
         <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + 40 }} showsVerticalScrollIndicator={false}>
-          <RoomHeader
-            room={room}
-            progress={0}
-            freshnessLabel="Needs Love"
-            freshnessColor={V1.coral}
-            scrollY={scrollY}
-            isDark={isDark}
-          />
+          {/* Minimal photo header for empty state */}
+          <View style={[styles.photoContainer, { height: photoHeight }]}>
+            {photoUri ? (
+              <Image
+                source={{ uri: photoUri }}
+                style={StyleSheet.absoluteFillObject}
+                contentFit="cover"
+                cachePolicy="memory-disk"
+                transition={300}
+              />
+            ) : (
+              <View style={[StyleSheet.absoluteFillObject, {
+                backgroundColor: isDark ? '#1A1A1A' : '#E8E8E8',
+              }]} />
+            )}
+            <View style={styles.darkOverlay} />
+            <Pressable
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                router.back();
+              }}
+              style={[styles.backButton, { top: insets.top + 8 }]}
+              hitSlop={12}
+              accessibilityRole="button"
+              accessibilityLabel="Go back"
+            >
+              <ChevronLeft size={24} color="#FFFFFF" />
+            </Pressable>
+          </View>
           <View style={styles.emptyState}>
             <Text style={{ fontSize: 48, marginBottom: 16 }}>{'\uD83D\uDCF7'}</Text>
             <Text style={[styles.emptyTitle, { color: t.text }]}>Scan this room to get started</Text>
@@ -147,58 +199,223 @@ function RoomDetailContent() {
         contentContainerStyle={{ paddingBottom: insets.bottom + 100 }}
         showsVerticalScrollIndicator={false}
       >
-        {/* Photo Header */}
-        <RoomHeader
-          room={room}
-          progress={progress}
-          freshnessLabel={freshness.label}
-          freshnessColor={freshness.color}
-          scrollY={scrollY}
-          isDark={isDark}
-          aiSummary={room.aiSummary}
-        />
-
-        {/* Task List */}
-        <View style={styles.taskList}>
-          {sortedTasks.map((task: CleaningTask) => (
+        {/* Photo with task bounding box overlays */}
+        <View style={[styles.photoContainer, { height: photoHeight }]}>
+          {photoUri ? (
+            <Image
+              source={{ uri: photoUri }}
+              style={StyleSheet.absoluteFillObject}
+              contentFit="cover"
+              placeholder={{ blurhash: 'LGF5]+Yk^6#M@-5c,1J5@[or[Q6.' }}
+              cachePolicy="memory-disk"
+              transition={300}
+            />
+          ) : (
             <Pressable
-              key={task.id}
-              onPress={() => handleToggleTask(task.id)}
-              accessibilityRole="checkbox"
-              accessibilityState={{ checked: task.completed }}
-              accessibilityLabel={`${task.completed ? 'Completed' : 'Incomplete'}: ${task.title}`}
-              style={[styles.taskRow, { backgroundColor: t.card, borderColor: t.border }]}
+              style={[StyleSheet.absoluteFillObject, {
+                backgroundColor: isDark ? '#1A1A1A' : '#E8E8E8',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }]}
+              onPress={() => router.push('/camera')}
+              accessibilityRole="button"
+              accessibilityLabel="Take a photo of this room"
             >
-              {/* Checkbox */}
-              <View
+              <Text style={{
+                fontSize: 14, fontWeight: '500',
+                color: isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.35)',
+                fontFamily: BODY_FONT,
+              }}>
+                Take a photo of this room
+              </Text>
+            </Pressable>
+          )}
+
+          {/* Dark scrim */}
+          <View style={styles.darkOverlay} />
+
+          {/* Task bounding box rectangles */}
+          {sortedTasks.map((task: CleaningTask) => {
+            const box = task.boundingBox;
+            if (!box) return null;
+
+            const isCompleted = task.completed;
+            const isHighlighted = highlightedTaskId === task.id;
+            const borderColor = isCompleted ? V1.green : getPriorityColor(task.priority);
+            const fillColor = isCompleted
+              ? 'rgba(102,187,106,0.30)'
+              : isHighlighted
+                ? getPriorityFill(task.priority).replace('0.20', '0.40')
+                : getPriorityFill(task.priority);
+            const shortTitle = truncateTitle(task.title);
+            const time = task.estimatedMinutes || 3;
+
+            return (
+              <Pressable
+                key={`bbox-${task.id}`}
+                onPress={() => handleToggleTask(task.id)}
                 style={[
-                  styles.checkbox,
-                  task.completed
-                    ? { backgroundColor: V1.coral, borderColor: V1.coral }
-                    : { borderColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.15)' },
+                  styles.boundingBox,
+                  {
+                    left: `${box.x}%`,
+                    top: `${box.y}%`,
+                    width: `${box.width}%`,
+                    height: `${box.height}%`,
+                    backgroundColor: fillColor,
+                    borderColor: borderColor,
+                    borderWidth: 2,
+                  },
+                  isHighlighted && {
+                    borderWidth: 3,
+                    shadowColor: borderColor,
+                    shadowOffset: { width: 0, height: 0 },
+                    shadowOpacity: 0.6,
+                    shadowRadius: 8,
+                    elevation: 8,
+                  },
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel={`${isCompleted ? 'Completed' : 'Incomplete'}: ${task.title}, ${time} minutes`}
+              >
+                {/* Label */}
+                <View style={[
+                  styles.boxLabel,
+                  { backgroundColor: isCompleted ? V1.green : borderColor },
+                ]}>
+                  {isCompleted ? (
+                    <View style={styles.boxLabelRow}>
+                      <Check size={10} color="#FFFFFF" strokeWidth={3} />
+                      <Text style={styles.boxLabelText} numberOfLines={1}>Done</Text>
+                    </View>
+                  ) : (
+                    <Text style={styles.boxLabelText} numberOfLines={1}>
+                      {shortTitle} · {time} min
+                    </Text>
+                  )}
+                </View>
+              </Pressable>
+            );
+          })}
+
+          {/* Back button overlaid on top-left */}
+          <Pressable
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              router.back();
+            }}
+            style={[styles.backButton, { top: insets.top + 8 }]}
+            hitSlop={12}
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
+          >
+            <ChevronLeft size={24} color="#FFFFFF" />
+          </Pressable>
+
+          {/* Progress indicator on top-right */}
+          <View style={[styles.progressBadge, { top: insets.top + 8 }]}>
+            <Text style={[styles.progressBadgeText, { color: freshness.color }]}>
+              {completedTasks}/{totalTasks}
+            </Text>
+          </View>
+
+          {/* Room name at bottom */}
+          <View style={styles.photoBottom}>
+            <Text style={styles.photoRoomName}>{room.name}</Text>
+            <View style={styles.photoProgressBar}>
+              <View style={[styles.photoProgressFill, {
+                width: `${Math.max(progress, 3)}%`,
+                backgroundColor: freshness.color,
+              }]} />
+            </View>
+          </View>
+        </View>
+
+        {/* AI Summary */}
+        {room.aiSummary && (
+          <View style={{
+            marginHorizontal: 20,
+            marginTop: 12,
+            padding: 14,
+            borderRadius: 14,
+            backgroundColor: isDark ? 'rgba(99,102,241,0.08)' : 'rgba(99,102,241,0.06)',
+            borderWidth: 1,
+            borderColor: isDark ? 'rgba(99,102,241,0.15)' : 'rgba(99,102,241,0.12)',
+          }}>
+            <Text style={{
+              fontFamily: BODY_FONT, fontSize: 12, fontWeight: '700',
+              color: V1.indigo, marginBottom: 6,
+            }}>
+              AI ANALYSIS
+            </Text>
+            <Text style={{
+              fontFamily: BODY_FONT, fontSize: 13, lineHeight: 19,
+              color: t.textSecondary,
+            }}>
+              {room.aiSummary}
+            </Text>
+          </View>
+        )}
+
+        {/* Task Checklist */}
+        <View style={styles.taskList}>
+          {sortedTasks.map((task: CleaningTask) => {
+            const hasBbox = !!task.boundingBox;
+            const isHighlighted = highlightedTaskId === task.id;
+
+            return (
+              <Pressable
+                key={task.id}
+                onPress={() => handleTaskPress(task.id)}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: task.completed }}
+                accessibilityLabel={`${task.completed ? 'Completed' : 'Incomplete'}: ${task.title}`}
+                style={[
+                  styles.taskRow,
+                  { backgroundColor: t.card, borderColor: t.border },
+                  isHighlighted && {
+                    borderColor: getPriorityColor(task.priority),
+                    borderWidth: 2,
+                  },
                 ]}
               >
-                {task.completed && <Check size={14} color="#FFFFFF" strokeWidth={3} />}
-              </View>
+                {/* Priority color indicator */}
+                {hasBbox && (
+                  <View style={[styles.priorityDot, {
+                    backgroundColor: task.completed ? V1.green : getPriorityColor(task.priority),
+                  }]} />
+                )}
 
-              {/* Title + time */}
-              <View style={styles.taskContent}>
-                <Text
+                {/* Checkbox */}
+                <View
                   style={[
-                    styles.taskTitle,
-                    { color: task.completed ? t.textMuted : t.text },
-                    task.completed && styles.taskTitleDone,
+                    styles.checkbox,
+                    task.completed
+                      ? { backgroundColor: V1.coral, borderColor: V1.coral }
+                      : { borderColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.15)' },
                   ]}
-                  numberOfLines={2}
                 >
-                  {task.title}
-                </Text>
-                <Text style={[styles.taskTime, { color: t.textMuted }]}>
-                  {task.estimatedMinutes || 3} min
-                </Text>
-              </View>
-            </Pressable>
-          ))}
+                  {task.completed && <Check size={14} color="#FFFFFF" strokeWidth={3} />}
+                </View>
+
+                {/* Title + time */}
+                <View style={styles.taskContent}>
+                  <Text
+                    style={[
+                      styles.taskTitle,
+                      { color: task.completed ? t.textMuted : t.text },
+                      task.completed && styles.taskTitleDone,
+                    ]}
+                    numberOfLines={2}
+                  >
+                    {task.title}
+                  </Text>
+                  <Text style={[styles.taskTime, { color: t.textMuted }]}>
+                    {task.estimatedMinutes || 3} min
+                  </Text>
+                </View>
+              </Pressable>
+            );
+          })}
         </View>
       </ScrollView>
 
@@ -233,6 +450,105 @@ export default function RoomDetailScreen() {
 // ─────────────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   container: { flex: 1 },
+
+  // Photo container with overlays
+  photoContainer: {
+    position: 'relative',
+    overflow: 'hidden',
+    width: '100%',
+  },
+  darkOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.25)',
+  },
+
+  // Bounding box rectangles
+  boundingBox: {
+    position: 'absolute',
+    borderRadius: 6,
+    justifyContent: 'flex-end',
+    alignItems: 'flex-start',
+    overflow: 'visible',
+  },
+  boxLabel: {
+    position: 'absolute',
+    bottom: -2,
+    left: -2,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    maxWidth: '120%',
+  },
+  boxLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+  },
+  boxLabelText: {
+    color: '#FFFFFF',
+    fontSize: 9,
+    fontWeight: '700',
+    fontFamily: BODY_FONT,
+    letterSpacing: 0.2,
+  },
+
+  // Back button
+  backButton: {
+    position: 'absolute',
+    left: 16,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    zIndex: 10,
+  },
+
+  // Progress badge
+  progressBadge: {
+    position: 'absolute',
+    right: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    zIndex: 10,
+  },
+  progressBadgeText: {
+    fontSize: 14,
+    fontWeight: '700',
+    fontFamily: BODY_FONT,
+  },
+
+  // Room name at bottom of photo
+  photoBottom: {
+    position: 'absolute',
+    bottom: 16,
+    left: 20,
+    right: 20,
+    zIndex: 10,
+  },
+  photoRoomName: {
+    color: '#FFFFFF',
+    fontSize: 26,
+    fontWeight: '700',
+    letterSpacing: -0.5,
+    marginBottom: 10,
+    fontFamily: DISPLAY_FONT,
+    textShadowColor: 'rgba(0,0,0,0.5)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
+  },
+  photoProgressBar: {
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+  },
+  photoProgressFill: {
+    height: 5,
+    borderRadius: 3,
+  },
 
   // Not found
   notFound: {
@@ -314,6 +630,12 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     borderWidth: 1,
     gap: 14,
+  },
+  priorityDot: {
+    width: 4,
+    height: 28,
+    borderRadius: 2,
+    marginLeft: -4,
   },
   checkbox: {
     width: 26,
