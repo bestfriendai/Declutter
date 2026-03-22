@@ -145,6 +145,7 @@ function RoomDetailContent() {
   const { height: windowHeight } = useWindowDimensions();
   const { rooms, toggleTask, setActiveRoom } = useDeclutter();
   const [listExpanded, setListExpanded] = useState(false);
+  const [selectedMinutes, setSelectedMinutes] = useState(5);
 
   const room = rooms.find(r => r.id === id);
   const photoUri = room?.photos?.[0]?.uri;
@@ -170,8 +171,8 @@ function RoomDetailContent() {
     if (!room) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
     setActiveRoom(room.id);
-    router.push('/blitz');
-  }, [room, setActiveRoom]);
+    router.push({ pathname: '/blitz', params: { duration: String(selectedMinutes) } });
+  }, [room, setActiveRoom, selectedMinutes]);
 
   // ── Not found ──
   if (!room) {
@@ -313,31 +314,66 @@ function RoomDetailContent() {
         </View>
 
         {/* Action buttons */}
-        <View style={styles.actions}>
-          {!allDone ? (
-            <Pressable onPress={handleBlitz} style={styles.blitzBtn}>
-              <Flame size={18} color="#FFF" />
-              <Text style={styles.blitzBtnText}>Start 15-Min Blitz</Text>
-            </Pressable>
-          ) : (
-            <Pressable onPress={() => router.back()} style={[styles.blitzBtn, { backgroundColor: V1.green }]}>
-              <Check size={18} color="#FFF" strokeWidth={3} />
-              <Text style={styles.blitzBtnText}>Room Complete!</Text>
-            </Pressable>
-          )}
+        {!allDone ? (
+          <>
+            {/* Time picker pills */}
+            <View style={styles.timePicker}>
+              {[2, 5, 15].map((mins) => (
+                <Pressable
+                  key={mins}
+                  onPress={() => setSelectedMinutes(mins)}
+                  style={[
+                    styles.timePill,
+                    selectedMinutes === mins
+                      ? { backgroundColor: V1.coral }
+                      : { borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' },
+                  ]}
+                >
+                  <Text style={[
+                    styles.timePillText,
+                    selectedMinutes === mins
+                      ? { color: '#FFF' }
+                      : { color: 'rgba(255,255,255,0.6)' },
+                  ]}>
+                    {mins} min
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
 
-          {/* Expand list toggle */}
-          <Pressable
-            onPress={() => setListExpanded(!listExpanded)}
-            style={styles.listToggle}
-          >
-            <ChevronUp
-              size={20}
-              color="rgba(255,255,255,0.6)"
-              style={{ transform: [{ rotate: listExpanded ? '180deg' : '0deg' }] }}
-            />
-          </Pressable>
-        </View>
+            <View style={styles.actions}>
+              <Pressable onPress={handleBlitz} style={styles.blitzBtn}>
+                <Flame size={18} color="#FFF" />
+                <Text style={styles.blitzBtnText}>Start Blitz</Text>
+              </Pressable>
+
+              {/* Expand list toggle */}
+              <Pressable
+                onPress={() => setListExpanded(!listExpanded)}
+                style={styles.listToggle}
+              >
+                <ChevronUp
+                  size={20}
+                  color="rgba(255,255,255,0.6)"
+                  style={{ transform: [{ rotate: listExpanded ? '180deg' : '0deg' }] }}
+                />
+              </Pressable>
+            </View>
+          </>
+        ) : (
+          <View style={styles.doneSection}>
+            <Text style={styles.doneEmoji}>{'\uD83C\uDF89'} All done!</Text>
+
+            <Pressable onPress={() => router.push('/camera')} style={styles.blitzBtn}>
+              <Camera size={18} color="#FFF" />
+              <Text style={styles.blitzBtnText}>Take After Photo</Text>
+            </Pressable>
+
+            <Pressable onPress={() => router.back()}>
+              <Text style={styles.backLink}>Back to rooms</Text>
+            </Pressable>
+          </View>
+        )}
 
         {/* Expandable task list (swipe-up style) */}
         {listExpanded && (
@@ -559,6 +595,41 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.35)',
     fontSize: 12,
     fontFamily: BODY_FONT,
+  },
+
+  // Time picker
+  timePicker: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 10,
+  },
+  timePill: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  timePillText: {
+    fontSize: 14,
+    fontWeight: '600',
+    fontFamily: BODY_FONT,
+  },
+
+  // Done section
+  doneSection: {
+    alignItems: 'center',
+    gap: 12,
+  },
+  doneEmoji: {
+    color: '#FFF',
+    fontSize: 18,
+    fontWeight: '700',
+    fontFamily: DISPLAY_FONT,
+  },
+  backLink: {
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: 14,
+    fontFamily: BODY_FONT,
+    paddingVertical: 4,
   },
 
   // Shared

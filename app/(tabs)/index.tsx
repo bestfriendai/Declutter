@@ -18,7 +18,7 @@ import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ScreenErrorBoundary } from '@/components/ErrorBoundary';
 import { QueryErrorState } from '@/components/ui/QueryErrorState';
@@ -55,6 +55,7 @@ function HomeScreenContent() {
     stats,
     activeRoomId,
     setActiveRoom,
+    toggleTask,
     isLoaded,
   } = useDeclutter();
   const { isPro } = useSubscription();
@@ -115,6 +116,40 @@ function HomeScreenContent() {
       return bIncomplete - aIncomplete;
     })[0];
   }, [rooms, activeRoomId]);
+
+  // Find the easiest incomplete task across all rooms for "One Tiny Thing"
+  const quickTask = useMemo(() => {
+    const impactScore = { high: 3, medium: 2, low: 1 };
+    let best: { task: any; roomId: string; roomName: string; roomEmoji: string } | null = null;
+    let bestScore = -Infinity;
+
+    rooms.forEach((room) => {
+      (room.tasks || []).forEach((task) => {
+        if (task.completed) return;
+        // Score: prefer low time + high visual impact
+        const time = task.estimatedMinutes || 5;
+        const impact = impactScore[task.visualImpact || 'medium'];
+        const score = impact * 10 - time; // higher is better
+        if (score > bestScore) {
+          bestScore = score;
+          best = { task, roomId: room.id, roomName: room.name, roomEmoji: room.emoji };
+        }
+      });
+    });
+    return best;
+  }, [rooms]);
+
+  const handleQuickTaskDone = useCallback(() => {
+    if (!quickTask) return;
+    toggleTask(quickTask.roomId, quickTask.task.id);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  }, [quickTask, toggleTask]);
+
+  const handleQuickTaskSeeRoom = useCallback(() => {
+    if (!quickTask) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    router.push({ pathname: '/room/[id]', params: { id: quickTask.roomId } });
+  }, [quickTask]);
 
   const handleScanRoom = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -235,6 +270,37 @@ function HomeScreenContent() {
           reducedMotion={reducedMotion}
         />
 
+        {/* One Tiny Thing — quickest incomplete task */}
+        {quickTask && (
+          <View style={styles.quickCard}>
+            <Text style={[styles.quickLabel, { color: t.text }]}>
+              {'\u26A1'} Your 2-min thing
+            </Text>
+            <Text style={[styles.quickTitle, { color: t.text }]} numberOfLines={2}>
+              {quickTask.task.emoji} {quickTask.task.title}
+            </Text>
+            <Text style={[styles.quickMeta, { color: t.textSecondary }]}>
+              {quickTask.roomEmoji} {quickTask.roomName} · ~{quickTask.task.estimatedMinutes || 2} min
+            </Text>
+            <View style={styles.quickActions}>
+              <Pressable
+                style={[styles.quickDoneBtn, { backgroundColor: V1.coral }]}
+                onPress={handleQuickTaskDone}
+              >
+                <Text style={styles.quickDoneBtnText}>{'\u2713'}  Done</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.quickSeeRoomBtn, { borderColor: t.textMuted }]}
+                onPress={handleQuickTaskSeeRoom}
+              >
+                <Text style={[styles.quickSeeRoomText, { color: t.textSecondary }]}>
+                  See room {'\u2192'}
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        )}
+
         {/* Room Grid */}
         <RoomGrid
           rooms={rooms}
@@ -260,4 +326,55 @@ function HomeScreenContent() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   scrollContent: { paddingHorizontal: SPACING.screenPadding },
+
+  // QuickTaskCard ("One Tiny Thing")
+  quickCard: {
+    backgroundColor: 'rgba(255, 107, 107, 0.08)',
+    borderRadius: 16,
+    padding: 16,
+    marginTop: 12,
+    marginBottom: 4,
+  },
+  quickLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    letterSpacing: 0.3,
+    marginBottom: 6,
+    opacity: 0.7,
+  },
+  quickTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    lineHeight: 24,
+    marginBottom: 4,
+  },
+  quickMeta: {
+    fontSize: 13,
+    marginBottom: 14,
+  },
+  quickActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  quickDoneBtn: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 12,
+  },
+  quickDoneBtnText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  quickSeeRoomBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  quickSeeRoomText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
 });
