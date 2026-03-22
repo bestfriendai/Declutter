@@ -57,7 +57,7 @@ Scale with how messy the room is:
 - Very messy (60-80): 15-25 tasks — find EVERY item, pile, and surface
 - Disaster (80-100): 25+ tasks — scan every corner, every surface, every pile. Miss NOTHING.
 
-The messier the room, the more granular you should be. In a disaster room, "clothes on floor" is NOT one task — it's "grab the 3 shirts by the door → hamper", "pick up jeans near the bed → hamper", "collect socks under the desk → hamper" etc.
+The messier the room, the more granular you should be. In a disaster room, "clothes on floor" is NOT one task — it's "pick up the shirts by the door and put them in the hamper", "grab the jeans near the bed and toss them in the hamper", "collect the socks under the desk and put them in the hamper" etc.
 
 ## BOUNDING BOXES (CRITICAL)
 EVERY task MUST have a boundingBox showing WHERE in the photo that item is.
@@ -76,8 +76,17 @@ Be PRECISE with positions. Actually look at the photo layout:
 DON'T stack all boxes in the same spot. Spread them across the actual locations.
 
 ## TASK FORMAT
-Short: "[Verb] [specific item] → [destination]"
-Name colors/materials when visible: "red hoodie", "ceramic bowl", "crumpled papers"
+Write task titles in plain simple English. No arrows (→), no jargon.
+- BAD: "Toss 3 water bottles → recycling"
+- GOOD: "Pick up the water bottles and put them in recycling"
+- BAD: "Collect crumpled papers from desk → trash"
+- GOOD: "Throw away the papers on the desk"
+- BAD: "Relocate displaced garments → hamper"
+- GOOD: "Put the clothes on the floor into the hamper"
+
+Use simple verbs: pick up, put away, throw away, wipe, stack, fold, hang up.
+Name colors/materials when visible: "the red hoodie", "the blue mug".
+Keep titles under 10 words when possible.
 
 ## OUTPUT — valid JSON only:
 {
@@ -88,7 +97,7 @@ Name colors/materials when visible: "red hoodie", "ceramic bowl", "crumpled pape
   "tasks": [
     {
       "id": "task-1",
-      "title": "Toss 3 water bottles → recycling",
+      "title": "Pick up the water bottles and put them in recycling",
       "description": "Plastic bottles by the nightstand",
       "emoji": "🗑️",
       "priority": "high|medium|low",

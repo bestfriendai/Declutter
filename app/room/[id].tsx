@@ -54,22 +54,18 @@ function hexToRgba(hex: string, alpha: number): string {
   return `rgba(${r},${g},${b},${alpha})`;
 }
 
-function shortLabel(title: string, maxWords = 3): string {
-  // Take text before → if present, otherwise full title
-  const before = title.split('→')[0]?.trim() || title;
-  const words = before.split(' ');
-  if (words.length <= maxWords) return before;
-  return words.slice(0, maxWords).join(' ') + '…';
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Task Rectangle on Photo
 // ─────────────────────────────────────────────────────────────────────────────
 function TaskBox({
   task,
+  number,
+  isNext,
   onToggle,
 }: {
   task: CleaningTask;
+  number: number;
+  isNext: boolean;
   onToggle: (id: string) => void;
 }) {
   const box = task.boundingBox;
@@ -77,11 +73,15 @@ function TaskBox({
 
   const done = task.completed;
   const color = done ? V1.green : getPriorityColor(task.priority);
-  const fill = done ? 'rgba(102,187,106,0.35)' : hexToRgba(color, 0.18);
-  const label = done ? 'Done!' : `${shortLabel(task.title)} · ${task.estimatedMinutes || 2}m`;
+  const fill = done
+    ? 'rgba(102,187,106,0.35)'
+    : hexToRgba(color, isNext ? 0.25 : 0.18);
 
   const minW = Math.max(box.width, 12);
   const minH = Math.max(box.height, 12);
+
+  const circleSize = isNext ? 28 : 24;
+  const borderW = isNext ? 3 : 2;
 
   return (
     <Pressable
@@ -95,7 +95,7 @@ function TaskBox({
           height: `${minH}%`,
           backgroundColor: fill,
           borderColor: color,
-          borderWidth: done ? 2.5 : 2,
+          borderWidth: done ? 2.5 : borderW,
         },
         done && {
           shadowColor: V1.green,
@@ -105,12 +105,29 @@ function TaskBox({
         },
       ]}
       accessibilityRole="button"
-      accessibilityLabel={`${done ? 'Done' : 'To do'}: ${task.title}, ${task.estimatedMinutes || 2} minutes`}
+      accessibilityLabel={`Task ${number}, ${done ? 'Done' : 'To do'}: ${task.title}, ${task.estimatedMinutes || 2} minutes`}
     >
-      {/* Label chip */}
-      <View style={[styles.taskBoxLabel, { backgroundColor: color }]}>
-        {done && <Check size={9} color="#FFF" strokeWidth={3} />}
-        <Text style={styles.taskBoxLabelText} numberOfLines={1}>{label}</Text>
+      {/* Numbered circle at top-left */}
+      <View
+        style={[
+          styles.taskNumberCircle,
+          {
+            width: circleSize,
+            height: circleSize,
+            borderRadius: circleSize / 2,
+            backgroundColor: color,
+            top: -(circleSize / 3),
+            left: -(circleSize / 3),
+          },
+        ]}
+      >
+        {done ? (
+          <Check size={circleSize * 0.5} color="#FFF" strokeWidth={3} />
+        ) : (
+          <Text style={[styles.taskNumberText, { fontSize: isNext ? 13 : 12 }]}>
+            {number}
+          </Text>
+        )}
       </View>
     </Pressable>
   );
@@ -141,6 +158,7 @@ function RoomDetailContent() {
     .filter(tk => !tk.completed)
     .reduce((sum, tk) => sum + (tk.estimatedMinutes || 2), 0);
   const allDone = totalTasks > 0 && remainingCount === 0;
+  const firstIncompleteIndex = tasks.findIndex(tk => !tk.completed);
 
   const handleToggle = useCallback((taskId: string) => {
     if (!room) return;
@@ -241,8 +259,14 @@ function RoomDetailContent() {
         <View style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(0,0,0,0.20)' }]} />
 
         {/* Task rectangles */}
-        {tasks.map(task => (
-          <TaskBox key={task.id} task={task} onToggle={handleToggle} />
+        {tasks.map((task, index) => (
+          <TaskBox
+            key={task.id}
+            task={task}
+            number={index + 1}
+            isNext={index === firstIncompleteIndex}
+            onToggle={handleToggle}
+          />
         ))}
 
         {/* Back button */}
@@ -321,7 +345,7 @@ function RoomDetailContent() {
             style={styles.expandedList}
             showsVerticalScrollIndicator={false}
           >
-            {tasks.map(task => (
+            {tasks.map((task, index) => (
               <Pressable
                 key={task.id}
                 onPress={() => handleToggle(task.id)}
@@ -342,7 +366,7 @@ function RoomDetailContent() {
                   ]}
                   numberOfLines={1}
                 >
-                  {task.title}
+                  #{index + 1} {task.title}
                 </Text>
                 <Text style={styles.listTime}>{task.estimatedMinutes || 2}m</Text>
               </Pressable>
@@ -378,23 +402,22 @@ const styles = StyleSheet.create({
   taskBox: {
     position: 'absolute',
     borderRadius: 5,
-    justifyContent: 'flex-end',
+    overflow: 'visible',
     zIndex: 5,
   },
-  taskBoxLabel: {
+  taskNumberCircle: {
     position: 'absolute',
-    bottom: -1,
-    left: -1,
-    flexDirection: 'row',
     alignItems: 'center',
-    gap: 3,
-    paddingHorizontal: 5,
-    paddingVertical: 2,
-    borderRadius: 3,
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.35,
+    shadowRadius: 3,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 4,
+    zIndex: 10,
   },
-  taskBoxLabelText: {
+  taskNumberText: {
     color: '#FFF',
-    fontSize: 9,
     fontWeight: '700',
     fontFamily: BODY_FONT,
   },

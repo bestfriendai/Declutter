@@ -1,97 +1,30 @@
 /**
- * Declutterly -- 15-Minute Blitz Session (V1 Hero Feature)
- * Matches Pencil designs: 0mb7F (timer view) + HxiD0 (single task focus)
- *
- * Unified guided cleaning session:
- * - Timer countdown (15 min default)
- * - Shows ONE task at a time (single task focus)
- * - Dusty says tip bubble
- * - Auto-advances to next task
- * - Progress bar, phase indicator
- * - Pause/resume, skip
+ * Declutterly -- 15-Minute Blitz Session
+ * Simple, focused one-task-at-a-time cleaning session.
  */
 
 import { V1, BODY_FONT, DISPLAY_FONT } from '@/constants/designTokens';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { useDeclutter } from '@/context/DeclutterContext';
-import { useReducedMotion } from '@/hooks/useReducedMotion';
 import { useTimer } from '@/hooks/useTimer';
-import { playAmbientSound, stopAmbientSound, SOUND_INFO } from '@/services/audio';
-import { STORAGE_KEYS } from '@/constants/storageKeys';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
-import { Image } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
-import { Check, Clock, Pause, X } from 'lucide-react-native';
+import { X } from 'lucide-react-native';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-    Alert,
-    Modal,
-    Pressable,
-    ScrollView,
-    StyleSheet,
-    Text,
-    View,
-} from 'react-native';
-import Animated, {
-    FadeIn,
-    FadeInDown,
-    FadeOut,
-} from 'react-native-reanimated';
+import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import Animated, { FadeIn } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ScreenErrorBoundary } from '@/components/ErrorBoundary';
-import { MascotAvatar } from '@/components/ui/MascotAvatar';
 
-const DEFAULT_BLITZ_DURATION = 15 * 60; // 15 minutes in seconds
+const DEFAULT_BLITZ_DURATION = 15 * 60;
 
-// ─── Helper: format time ─────────────────────────────────────────────────────
 function formatTime(seconds: number): string {
   const m = Math.floor(seconds / 60);
   const s = seconds % 60;
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
-// ─── Dusty tips for tasks ────────────────────────────────────────────────────
-const DUSTY_TIPS = [
-  "Start from left to right. Spray, wait 10 seconds, then wipe. Easy!",
-  "Just toss the obvious trash first. Don't think, just toss!",
-  "Put on your favorite song. This task takes about one track!",
-  "Grab a bag or box first. Then just walk and collect.",
-  "Focus on surfaces first -- it makes the biggest visual difference.",
-  "You don't have to sort everything perfectly. Good enough is great!",
-  "Set a 3-minute timer for this one. Race yourself!",
-  "Stack similar items together. Don't decide where yet, just group.",
-];
-
-function getDustyTip(index: number, task?: { tips?: string[]; resistanceHandler?: string; whyThisMatters?: string } | null): string {
-  // Prefer task-specific tips from AI, fall back to generic
-  if (task?.tips && task.tips.length > 0) {
-    return task.tips[index % task.tips.length];
-  }
-  if (task?.resistanceHandler) {
-    return task.resistanceHandler;
-  }
-  if (task?.whyThisMatters) {
-    return task.whyThisMatters;
-  }
-  return DUSTY_TIPS[index % DUSTY_TIPS.length];
-}
-
-// ─── Encouragement messages ──────────────────────────────────────────────────
-function getEncouragement(done: number, total: number): string {
-  if (done === 0) return "Let's do this!";
-  if (done === 1) return "Great start! Keep going!";
-  if (done >= total) return "You did it all! Amazing!";
-  return `You're doing amazing -- ${done} down, ${total - done} to go!`;
-}
-
-// ─── Phase dot colors ────────────────────────────────────────────────────────
-const PHASE_COLORS = [V1.green, V1.green, V1.amber, V1.coral, V1.coral];
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Main Blitz Screen
-// ─────────────────────────────────────────────────────────────────────────────
 export default function BlitzScreen() {
   return (
     <ScreenErrorBoundary screenName="blitz">
@@ -102,19 +35,19 @@ export default function BlitzScreen() {
 
 function BlitzScreenContent() {
   const insets = useSafeAreaInsets();
-  const reducedMotion = useReducedMotion();
   const rawScheme = useColorScheme();
   const isDark = rawScheme === 'dark';
   const t = isDark ? V1.dark : V1.light;
   const { duration: durationParam } = useLocalSearchParams<{ duration?: string }>();
-  const blitzDuration = durationParam ? Math.max(60, parseInt(durationParam, 10) * 60) : DEFAULT_BLITZ_DURATION;
-  const { rooms, activeRoomId, toggleTask, comebackMultiplier, mascot } = useDeclutter();
+  const blitzDuration = durationParam
+    ? Math.max(60, parseInt(durationParam, 10) * 60)
+    : DEFAULT_BLITZ_DURATION;
+  const { rooms, activeRoomId, toggleTask, comebackMultiplier } = useDeclutter();
 
-  const activeRoom = activeRoomId ? (rooms ?? []).find(r => r.id === activeRoomId) : (rooms ?? [])[0];
+  const activeRoom = activeRoomId
+    ? (rooms ?? []).find(r => r.id === activeRoomId)
+    : (rooms ?? [])[0];
 
-  // Stabilize incomplete tasks list: depend on room tasks' IDs and completion
-  // status rather than the room object reference. This prevents unnecessary
-  // re-renders when unrelated room data changes.
   const activeRoomTasks = activeRoom?.tasks;
   const tasks = useMemo(() => {
     if (!activeRoomTasks) return [];
@@ -124,169 +57,36 @@ function BlitzScreenContent() {
 
   const [currentTaskIndex, setCurrentTaskIndex] = useState(0);
   const [completedCount, setCompletedCount] = useState(0);
-  // viewMode removed — single task-focused view is the only mode
-  const completionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasEndedRef = useRef(false);
-
-  const {
-    remaining: remainingSeconds,
-    isRunning,
-    start: timerStart,
-    pause: timerPause,
-    toggle: timerToggle,
-    setSeconds: timerSetSeconds,
-  } = useTimer({
-    initialSeconds: blitzDuration,
-    autoStart: true,
-    pauseOnBackground: true,
-    onTick: (remaining) => {
-      const elapsed = blitzDuration - remaining;
-      const quarterTime = Math.floor(blitzDuration * 0.25);
-      const halfTime = Math.floor(blitzDuration * 0.5);
-      const threeQuarterTime = Math.floor(blitzDuration * 0.75);
-
-      if (elapsed === quarterTime) {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      }
-      if (elapsed === halfTime) {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      }
-      if (elapsed === threeQuarterTime) {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      }
-      if (remaining === 120) {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-      }
-      if (remaining === 30) {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-      }
-    },
-  });
-
-  // Ambient sound for blitz sessions
-  const SOUND_TYPES_LIST = ['none', 'rain', 'ocean', 'forest', 'cafe'] as const;
-  type BlitzSoundType = typeof SOUND_TYPES_LIST[number];
-  const [ambientSound, setAmbientSound] = useState<BlitzSoundType>('none');
-  const [audioError, setAudioError] = useState<string | null>(null);
-
-  useEffect(() => {
-    AsyncStorage.getItem(STORAGE_KEYS.AMBIENT_SOUND).then(val => {
-      if (val && SOUND_TYPES_LIST.includes(val as BlitzSoundType)) {
-        setAmbientSound(val as BlitzSoundType);
-      }
-    });
-  }, []);
-
-  useEffect(() => {
-    if (isRunning && ambientSound !== 'none') {
-      playAmbientSound(ambientSound).then(result => {
-        if (!result.success) {
-          setAudioError("Couldn't load sound. Continuing without audio.");
-          setAmbientSound('none');
-          AsyncStorage.setItem(STORAGE_KEYS.AMBIENT_SOUND, 'none');
-          setTimeout(() => setAudioError(null), 3000);
-        } else {
-          setAudioError(null);
-        }
-      });
-    } else {
-      stopAmbientSound();
-    }
-    return () => { stopAmbientSound(); };
-  }, [isRunning, ambientSound]);
-
-  const handleCycleBlitzSound = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setAudioError(null);
-    setAmbientSound(prev => {
-      const idx = SOUND_TYPES_LIST.indexOf(prev);
-      const next = SOUND_TYPES_LIST[(idx + 1) % SOUND_TYPES_LIST.length];
-      AsyncStorage.setItem(STORAGE_KEYS.AMBIENT_SOUND, next);
-      return next;
-    });
-  }, []);
-
-  // H6: Combo counter for task completion feedback
-  const [comboCount, setComboCount] = useState(0);
-  const comboTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Phase transition celebration state
-  const [phaseTransition, setPhaseTransition] = useState<{ from: string; to: string } | null>(null);
-  const phaseTransitionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Before photo preview
-  const [showPhotoPreview, setShowPhotoPreview] = useState(false);
-  const roomPhotoUri = activeRoom?.photos?.[0]?.uri;
-
-  // Extend timer prompt
-  const [showExtendPrompt, setShowExtendPrompt] = useState(false);
-
-  // Skip reason capture
-  const [showSkipReason, setShowSkipReason] = useState(false);
-  const [pendingSkipIndex, setPendingSkipIndex] = useState<number | null>(null);
-
-  const SKIP_REASONS = [
-    { id: 'too_hard', label: 'Too hard right now' },
-    { id: 'need_supplies', label: 'Need supplies' },
-    { id: 'not_applicable', label: "Doesn't apply" },
-    { id: 'later', label: 'Save for later' },
-  ] as const;
-
-  // Clean up combo timeout on unmount
-  useEffect(() => {
-    return () => {
-      if (comboTimeoutRef.current) clearTimeout(comboTimeoutRef.current);
-      if (completionTimeoutRef.current) clearTimeout(completionTimeoutRef.current);
-      if (phaseTransitionTimeoutRef.current) clearTimeout(phaseTransitionTimeoutRef.current);
-    };
-  }, []);
+  const completedCountRef = useRef(completedCount);
+  const remainingSecondsRef = useRef(0);
+  completedCountRef.current = completedCount;
 
   const totalTasks = tasks.length;
   const currentTask = tasks[currentTaskIndex] || null;
 
-  // Carry chain hint: if next task shares destination with current task
-  const carryChainHint = useMemo(() => {
-    if (!currentTask || currentTaskIndex >= totalTasks - 1) return null;
-    const nextTask = tasks[currentTaskIndex + 1];
-    if (!nextTask) return null;
-    const curDest = currentTask.destination?.location?.toLowerCase();
-    const nextDest = nextTask.destination?.location?.toLowerCase();
-    if (curDest && nextDest && curDest === nextDest) {
-      return `Heading to the ${currentTask.destination?.location}? Also grab the ${nextTask.title.toLowerCase()}`;
-    }
-    // Also check if both tasks are in the same zone
-    if (currentTask.zone && nextTask.zone && currentTask.zone === nextTask.zone && nextTask.targetObjects?.[0]) {
-      return `While in ${currentTask.zone}, also grab ${nextTask.targetObjects[0]}`;
-    }
-    return null;
-  }, [currentTask, currentTaskIndex, totalTasks, tasks]);
-
-  // Keep refs for values needed by handleSessionEnd to avoid stale closures
-  const completedCountRef = useRef(completedCount);
-  const remainingSecondsRef = useRef(remainingSeconds);
-  completedCountRef.current = completedCount;
+  // --- Timer ---
+  const {
+    remaining: remainingSeconds,
+    isRunning,
+    pause: timerPause,
+    toggle: timerToggle,
+  } = useTimer({
+    initialSeconds: blitzDuration,
+    autoStart: true,
+    pauseOnBackground: true,
+  });
   remainingSecondsRef.current = remainingSeconds;
 
+  // --- Session end ---
   const handleSessionEnd = useCallback(() => {
     if (hasEndedRef.current) return;
-
-    // Check if tasks remain — offer extension instead of ending
-    const remaining = tasks.filter(t => !t.completed).length;
-    if (remaining > 0 && completedCountRef.current > 0 && !showExtendPrompt) {
-      setShowExtendPrompt(true);
-      timerPause();
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-      return;
-    }
-
     hasEndedRef.current = true;
-    if (completionTimeoutRef.current) clearTimeout(completionTimeoutRef.current);
     timerPause();
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     const completed = completedCountRef.current;
-    const seconds = remainingSecondsRef.current;
-    const timeSpent = blitzDuration - seconds;
-    const xpEarned = Math.round(completed * 10 * comebackMultiplier); // 10 XP per task * comeback multiplier
+    const timeSpent = blitzDuration - remainingSecondsRef.current;
+    const xpEarned = Math.round(completed * 10 * comebackMultiplier);
     router.replace({
       pathname: '/session-complete',
       params: {
@@ -297,10 +97,9 @@ function BlitzScreenContent() {
         roomName: activeRoom?.name || '',
       },
     });
-  }, [activeRoom, blitzDuration, comebackMultiplier, tasks, showExtendPrompt, timerPause]);
+  }, [activeRoom, blitzDuration, comebackMultiplier, timerPause]);
 
-  // Timer tick, milestone haptics, and background handling are now managed by useTimer hook.
-  // Detect timer expiry to trigger session end.
+  // Timer hits 0 -> end session
   useEffect(() => {
     if (remainingSeconds === 0 && isRunning) {
       timerPause();
@@ -308,71 +107,34 @@ function BlitzScreenContent() {
     }
   }, [remainingSeconds, isRunning, handleSessionEnd, timerPause]);
 
+  // --- Complete task ---
   const handleCompleteTask = useCallback(() => {
     if (!currentTask || !activeRoom) return;
-
-    // H6: Track combo
-    if (comboTimeoutRef.current) clearTimeout(comboTimeoutRef.current);
-    setComboCount(prev => prev + 1);
-    comboTimeoutRef.current = setTimeout(() => {
-      setComboCount(0);
-    }, 60000);
-
-    // H6: Enhanced haptic for multi-completions
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    if (comboCount >= 2) {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-    }
-
     toggleTask(activeRoom.id, currentTask.id);
     setCompletedCount(c => c + 1);
 
-    // Phase transition detection
-    const currentPhase = currentTask.phase;
-    const nextTask = currentTaskIndex < totalTasks - 1 ? tasks[currentTaskIndex + 1] : null;
-    if (currentPhase && nextTask?.phase && nextTask.phase !== currentPhase) {
-      const fromName = currentTask.phaseName || `Phase ${currentPhase}`;
-      const toName = nextTask.phaseName || `Phase ${nextTask.phase}`;
-      setPhaseTransition({ from: fromName, to: toName });
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      if (phaseTransitionTimeoutRef.current) clearTimeout(phaseTransitionTimeoutRef.current);
-      phaseTransitionTimeoutRef.current = setTimeout(() => {
-        setPhaseTransition(null);
-      }, 2000);
-    }
-
-    // Check if all tasks done.
-    // NOTE: do NOT increment currentTaskIndex here. The completed task is filtered
-    // out of `tasks` (which shows only incomplete tasks), so tasks[currentTaskIndex]
-    // naturally becomes the next item. Incrementing would skip one task.
+    // If this was the last task, end session
     if (currentTaskIndex >= totalTasks - 1) {
-      // All tasks completed!
-      completionTimeoutRef.current = setTimeout(() => handleSessionEnd(), 500);
+      setTimeout(() => handleSessionEnd(), 400);
     }
-  }, [currentTask, activeRoom, currentTaskIndex, totalTasks, toggleTask, handleSessionEnd, comboCount]);
+  }, [currentTask, activeRoom, currentTaskIndex, totalTasks, toggleTask, handleSessionEnd]);
 
+  // --- Skip task (no modal, just advance) ---
   const handleSkipTask = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setPendingSkipIndex(currentTaskIndex);
-    setShowSkipReason(true);
-  }, [currentTaskIndex]);
-
-  const handleSkipWithReason = useCallback((reason: string) => {
-    if (pendingSkipIndex !== null) {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      if (pendingSkipIndex < totalTasks - 1) {
-        setCurrentTaskIndex(i => Math.min(i + 1, totalTasks - 1));
-      }
+    if (currentTaskIndex < totalTasks - 1) {
+      setCurrentTaskIndex(i => i + 1);
     }
-    setShowSkipReason(false);
-    setPendingSkipIndex(null);
-  }, [pendingSkipIndex, totalTasks]);
+  }, [currentTaskIndex, totalTasks]);
 
+  // --- Pause/resume ---
   const handlePauseResume = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     timerToggle();
   }, [timerToggle]);
 
+  // --- Close ---
   const handleClose = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     if (completedCount > 0) {
@@ -389,18 +151,14 @@ function BlitzScreenContent() {
     }
   }, [completedCount, handleSessionEnd]);
 
-  // Toggle view removed — focus view is now the only view
-
-  // ── EMPTY STATE: No tasks to blitz ──────────────────────────────────────
+  // --- Empty state ---
   if (tasks.length === 0) {
     return (
       <View style={[styles.container, { backgroundColor: t.bg }]}>
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24 }}>
+        <View style={styles.emptyContainer}>
           <Text style={{ fontSize: 40, marginBottom: 12 }}>{'\u2728'}</Text>
-          <Text style={{ color: t.text, fontSize: 24, fontWeight: '700', textAlign: 'center', marginBottom: 12, fontFamily: DISPLAY_FONT }}>
-            All caught up!
-          </Text>
-          <Text style={{ color: t.textSecondary, fontSize: 15, textAlign: 'center', marginBottom: 32, lineHeight: 22, fontFamily: BODY_FONT }}>
+          <Text style={[styles.emptyTitle, { color: t.text }]}>All caught up!</Text>
+          <Text style={[styles.emptySubtitle, { color: t.textSecondary }]}>
             No incomplete tasks to blitz right now. Scan a new room to get started.
           </Text>
           <Pressable
@@ -408,707 +166,218 @@ function BlitzScreenContent() {
               router.back();
               setTimeout(() => router.push('/camera'), 100);
             }}
-            style={{ backgroundColor: V1.coral, paddingHorizontal: 28, paddingVertical: 14, borderRadius: 24, marginBottom: 12 }}
+            style={styles.scanButton}
           >
-            <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '700', fontFamily: BODY_FONT }}>Scan New Room</Text>
+            <Text style={styles.scanButtonText}>Scan New Room</Text>
           </Pressable>
-          <Pressable
-            onPress={() => router.back()}
-            style={{ paddingHorizontal: 28, paddingVertical: 10 }}
-          >
-            <Text style={{ color: t.textSecondary, fontSize: 14, fontWeight: '500', fontFamily: BODY_FONT }}>Go Back</Text>
+          <Pressable onPress={() => router.back()} style={{ paddingVertical: 10 }}>
+            <Text style={{ color: t.textSecondary, fontSize: 14, fontWeight: '500', fontFamily: BODY_FONT }}>
+              Go Back
+            </Text>
           </Pressable>
         </View>
       </View>
     );
   }
 
-  // ── MAIN VIEW (Task-focused with small timer) ──────────────────────────
+  // --- Main view ---
+  const taskEmoji = currentTask?.emoji || '\uD83E\uDDF9'; // fallback: broom
+  const taskTitle = currentTask?.title || 'All done!';
+  const taskDescription = currentTask?.description || '';
+  const estimatedMin = currentTask?.estimatedMinutes || 2;
+
   return (
-      <View style={[styles.container, { backgroundColor: t.bg }]}>
-        {/* Mascot avatar */}
-        {mascot && (
-          <View style={{ position: 'absolute', top: insets.top + 8, right: 56, zIndex: 10 }}>
-            <MascotAvatar size={40} mood={mascot.mood} />
-          </View>
-        )}
+    <View style={[styles.container, { backgroundColor: t.bg }]}>
+      {/* Top bar: X ... timer */}
+      <View style={[styles.topBar, { paddingTop: insets.top + 8 }]}>
+        <Pressable
+          onPress={handleClose}
+          hitSlop={12}
+          accessibilityRole="button"
+          accessibilityLabel="Close blitz session"
+        >
+          <X size={24} color={t.textMuted} />
+        </Pressable>
 
-        {/* H6: Combo Badge */}
-        {comboCount > 1 && (
-          <Animated.View
-            entering={reducedMotion ? undefined : FadeInDown.springify()}
-            style={styles.comboBadge}
-          >
-            <Text style={styles.comboBadgeText}>
-              {comboCount}x Combo! {'\uD83D\uDD25'}
-            </Text>
-          </Animated.View>
-        )}
-
-        {/* Phase transition celebration overlay */}
-        {phaseTransition && (
-          <Animated.View
-            entering={reducedMotion ? undefined : FadeIn.duration(300)}
-            exiting={reducedMotion ? undefined : FadeOut.duration(300)}
-            style={styles.phaseTransitionBanner}
-          >
-            <Text style={styles.phaseTransitionText}>
-              {phaseTransition.from} Complete! {'\u2728'} Moving to {phaseTransition.to}...
-            </Text>
-          </Animated.View>
-        )}
-
-        {/* Top bar */}
-        <View style={[styles.focusTopBar, { paddingTop: insets.top + 8 }]}>
-          <Text style={[styles.focusProgress, { color: t.textSecondary }]}>
-            {completedCount + 1} of {totalTasks}
+        <Pressable
+          onPress={handlePauseResume}
+          hitSlop={12}
+          accessibilityRole="button"
+          accessibilityLabel={`${isRunning ? 'Pause' : 'Resume'} timer, ${formatTime(remainingSeconds)} remaining`}
+        >
+          <Text style={[styles.timerText, { color: t.textSecondary, opacity: isRunning ? 1 : 0.5 }]}>
+            {formatTime(remainingSeconds)}
           </Text>
-          <Pressable
-            onPress={handlePauseResume}
-            style={styles.timerBadge}
-            accessibilityRole="button"
-            accessibilityLabel={`${isRunning ? 'Pause' : 'Resume'} timer, ${formatTime(remainingSeconds)} remaining`}
-          >
-            <Clock size={12} color="#FFFFFF" />
-            <Text style={styles.timerBadgeText}>{formatTime(remainingSeconds)}</Text>
-          </Pressable>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-            {/* Before photo thumbnail */}
-            {roomPhotoUri && (
-              <Pressable
-                onPress={() => setShowPhotoPreview(true)}
-                accessibilityRole="button"
-                accessibilityLabel="View room before photo"
-                style={styles.photoThumb}
-              >
-                <Image source={{ uri: roomPhotoUri }} style={styles.photoThumbImage} contentFit="cover" />
-              </Pressable>
-            )}
-            <Pressable
-              onPress={handleClose}
-              accessibilityRole="button"
-              accessibilityLabel="Close blitz session"
-            >
-              <X size={22} color={t.textMuted} />
-            </Pressable>
-          </View>
-        </View>
-
-        {/* Before photo expanded modal */}
-        {showPhotoPreview && roomPhotoUri && (
-          <Modal transparent animationType="fade" visible={showPhotoPreview} onRequestClose={() => setShowPhotoPreview(false)}>
-            <Pressable
-              style={styles.photoModalOverlay}
-              onPress={() => setShowPhotoPreview(false)}
-            >
-              <View style={styles.photoModalContent}>
-                <Image source={{ uri: roomPhotoUri }} style={styles.photoModalImage} contentFit="contain" />
-                <Text style={styles.photoModalLabel}>Before photo</Text>
-              </View>
-            </Pressable>
-          </Modal>
-        )}
-
-        {/* Phase indicator bars */}
-        <View style={styles.phaseBars}>
-          {tasks.slice(0, Math.min(totalTasks, 5)).map((_, i) => (
-            <View
-              key={i}
-              style={[
-                styles.phaseBar,
-                {
-                  backgroundColor: i < completedCount
-                    ? PHASE_COLORS[i % PHASE_COLORS.length]
-                    : i === currentTaskIndex
-                      ? PHASE_COLORS[i % PHASE_COLORS.length]
-                      : isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)',
-                  opacity: i <= currentTaskIndex ? 1 : 0.3,
-                  flex: 1,
-                },
-              ]}
-            />
-          ))}
-        </View>
-
-        {/* Task content */}
-        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', paddingVertical: 12 }} showsVerticalScrollIndicator={false}>
-          <Animated.View entering={reducedMotion ? undefined : FadeIn.duration(300)} key={currentTaskIndex} style={styles.focusCenter}>
-            {/* Phase label */}
-            <Text style={styles.focusTaskLabel}>
-              {currentTask?.phase && currentTask?.phaseName
-                ? `Phase ${currentTask.phase} \u00B7 ${currentTask.phaseName}`
-                : `Task ${currentTaskIndex + 1}`}
-            </Text>
-            <Text style={[styles.focusTaskName, { color: t.text }]}>
-              {currentTask?.title || 'All done!'}
-            </Text>
-            {/* Zone */}
-            {currentTask?.zone && (
-              <Text style={[styles.focusDetailText, { color: t.textMuted }]}>
-                {'\uD83D\uDCCD'} {currentTask.zone}
-              </Text>
-            )}
-            {/* Target objects */}
-            {currentTask?.targetObjects && currentTask.targetObjects.length > 0 && (
-              <Text style={[styles.focusDetailText, { color: t.textMuted }]}>
-                {'\uD83C\uDFAF'} {currentTask.targetObjects.slice(0, 3).join(' \u00B7 ')}
-              </Text>
-            )}
-            {/* Destination */}
-            {currentTask?.destination?.location && (
-              <Text style={[styles.focusDetailText, { color: t.textMuted }]}>
-                {'\u2192'} {currentTask.destination.location}
-                {currentTask.destination.instructions ? ` \u00B7 ${currentTask.destination.instructions}` : ''}
-              </Text>
-            )}
-            <View style={styles.focusTimeRow}>
-              <Clock size={14} color={t.textMuted} />
-              <Text style={[styles.focusTimeText, { color: t.textSecondary }]}>
-                about {currentTask?.estimatedMinutes || 3} minutes
-              </Text>
-            </View>
-          </Animated.View>
-
-          {/* Subtask steps */}
-          {currentTask?.subtasks && currentTask.subtasks.length > 0 && (
-            <View style={[styles.focusSubtasksCard, {
-              backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
-            }]}>
-              <Text style={[styles.focusSubtasksLabel, { color: t.textMuted }]}>STEPS:</Text>
-              {currentTask.subtasks.map((st, idx) => (
-                <View key={st.id || idx} style={styles.focusSubtaskRow}>
-                  <View style={[styles.focusSubtaskCircle, {
-                    borderColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.15)',
-                  }]}>
-                    <Text style={{ fontSize: 10, fontWeight: '700', color: t.textMuted }}>{idx + 1}</Text>
-                  </View>
-                  <Text style={{ fontSize: 13, color: t.textSecondary, flex: 1, fontFamily: BODY_FONT }}>
-                    {st.title}
-                    {st.estimatedSeconds ? ` (${st.estimatedSeconds}s)` : st.estimatedMinutes ? ` (${st.estimatedMinutes}m)` : ''}
-                  </Text>
-                </View>
-              ))}
-            </View>
-          )}
-
-          {/* Carry chain hint */}
-          {carryChainHint && (
-            <View style={[styles.carryChainBanner, {
-              backgroundColor: isDark ? 'rgba(52,199,89,0.1)' : 'rgba(34,197,94,0.08)',
-              borderColor: isDark ? 'rgba(52,199,89,0.2)' : 'rgba(34,197,94,0.15)',
-            }]}>
-              <Text style={{ fontSize: 12, color: V1.green, fontWeight: '600', fontFamily: BODY_FONT }}>
-                {'\uD83D\uDCA1'} {carryChainHint}
-              </Text>
-            </View>
-          )}
-
-          {/* Dusty says bubble */}
-          <View style={[styles.dustyBubble, { backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)', borderColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }]}>
-            <Text style={styles.dustySays}>Dusty says:</Text>
-            <Text style={[styles.dustyTip, { color: t.textSecondary }]}>
-              {getDustyTip(currentTaskIndex, currentTask)}
-            </Text>
-          </View>
-        </ScrollView>
-
-        {/* Audio error toast */}
-        {audioError && (
-          <View style={{
-            marginHorizontal: 20,
-            marginBottom: 8,
-            paddingVertical: 10,
-            paddingHorizontal: 14,
-            borderRadius: 12,
-            backgroundColor: isDark ? 'rgba(255,183,77,0.12)' : 'rgba(255,183,77,0.1)',
-            borderWidth: 1,
-            borderColor: isDark ? 'rgba(255,183,77,0.25)' : 'rgba(255,183,77,0.2)',
-          }}>
-            <Text style={{
-              fontFamily: BODY_FONT, fontSize: 13, fontWeight: '500',
-              color: isDark ? '#FFB74D' : '#E65100', textAlign: 'center',
-            }}>
-              {audioError}
-            </Text>
-          </View>
-        )}
-
-        {/* Bottom action area */}
-        <View style={styles.focusActions}>
-          {/* Pause + Sound row */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 20, marginBottom: 8 }}>
-            <Pressable
-              onPress={handlePauseResume}
-              style={{
-                flexDirection: 'row', alignItems: 'center', gap: 6,
-                paddingHorizontal: 14, paddingVertical: 8, borderRadius: 12,
-                backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
-              }}
-              accessibilityRole="button"
-              accessibilityLabel={isRunning ? 'Pause timer' : 'Resume timer'}
-            >
-              {isRunning ? (
-                <Pause size={14} color={t.textSecondary} />
-              ) : (
-                <Text style={{ fontSize: 12, color: t.textSecondary }}>{'\u25B6'}</Text>
-              )}
-              <Text style={{ fontFamily: BODY_FONT, fontSize: 12, fontWeight: '500', color: t.textSecondary }}>
-                {isRunning ? 'Pause' : 'Resume'}
-              </Text>
-            </Pressable>
-            <Pressable
-              onPress={handleCycleBlitzSound}
-              style={{
-                flexDirection: 'row', alignItems: 'center', gap: 6,
-                paddingHorizontal: 14, paddingVertical: 8, borderRadius: 12,
-                backgroundColor: ambientSound !== 'none'
-                  ? (isDark ? 'rgba(100,181,246,0.15)' : 'rgba(99,102,241,0.1)')
-                  : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'),
-              }}
-              accessibilityRole="button"
-              accessibilityLabel={`Ambient sound: ${SOUND_INFO[ambientSound]?.label ?? 'Off'}`}
-            >
-              <Text style={{ fontSize: 14 }}>{SOUND_INFO[ambientSound]?.emoji ?? '\u{1F507}'}</Text>
-              <Text style={{
-                fontFamily: BODY_FONT, fontSize: 12, fontWeight: '500',
-                color: ambientSound !== 'none' ? V1.blue : t.textSecondary,
-              }}>
-                {SOUND_INFO[ambientSound]?.label ?? 'Off'}
-              </Text>
-            </Pressable>
-          </View>
-
-          {/* Done button */}
-          <Pressable
-            onPress={handleCompleteTask}
-            style={styles.bigCheckButton}
-            accessibilityRole="button"
-            accessibilityLabel={`Complete task: ${currentTask?.title || 'current task'}`}
-          >
-            <View style={styles.bigCheckCircle}>
-              <Check size={32} color={V1.green} strokeWidth={3} />
-            </View>
-            <Text style={[styles.bigCheckText, { color: t.textSecondary }]}>Tap when done</Text>
-          </Pressable>
-
-          <Pressable
-            onPress={handleSkipTask}
-            accessibilityRole="button"
-            accessibilityLabel="Skip this task"
-          >
-            <Text style={[styles.skipText, { color: t.textMuted }]}>Skip this task</Text>
-          </Pressable>
-        </View>
-
-        {/* Encouragement */}
-        <Text style={[styles.encouragement, { color: t.textMuted, paddingBottom: insets.bottom + 16 }]}>
-          {getEncouragement(completedCount, totalTasks)}
-        </Text>
-
-        {/* Extend Timer Prompt */}
-        {showExtendPrompt && (
-          <Animated.View
-            entering={FadeInDown.duration(300)}
-            style={{
-              position: 'absolute',
-              bottom: insets.bottom + 80,
-              left: 20,
-              right: 20,
-              zIndex: 200,
-              backgroundColor: isDark ? V1.dark.cardElevated : '#FFFFFF',
-              borderRadius: 20,
-              padding: 20,
-              borderWidth: 1,
-              borderColor: t.border,
-              shadowColor: '#000',
-              shadowOffset: { width: 0, height: 4 },
-              shadowOpacity: 0.08,
-              shadowRadius: 16,
-              elevation: 4,
-            }}
-          >
-            <Text style={{
-              fontFamily: DISPLAY_FONT, fontSize: 18, fontWeight: '700',
-              color: t.text, textAlign: 'center', marginBottom: 6,
-            }}>
-              Time's up! Keep going?
-            </Text>
-            <Text style={{
-              fontFamily: BODY_FONT, fontSize: 14,
-              color: t.textSecondary, textAlign: 'center', marginBottom: 16,
-            }}>
-              {tasks.filter(tk => !tk.completed).length} tasks remaining
-            </Text>
-            <View style={{ flexDirection: 'row', gap: 10 }}>
-              <Pressable
-                onPress={() => {
-                  setShowExtendPrompt(false);
-                  timerSetSeconds(5 * 60);
-                  timerStart();
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                }}
-                style={{
-                  flex: 1, backgroundColor: V1.coral,
-                  paddingVertical: 14, borderRadius: 14, alignItems: 'center',
-                }}
-              >
-                <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 15, fontFamily: BODY_FONT }}>
-                  +5 min
-                </Text>
-              </Pressable>
-              <Pressable
-                onPress={() => {
-                  setShowExtendPrompt(false);
-                  timerSetSeconds(10 * 60);
-                  timerStart();
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                }}
-                style={{
-                  flex: 1, backgroundColor: V1.amber,
-                  paddingVertical: 14, borderRadius: 14, alignItems: 'center',
-                }}
-              >
-                <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 15, fontFamily: BODY_FONT }}>
-                  +10 min
-                </Text>
-              </Pressable>
-              <Pressable
-                onPress={() => {
-                  setShowExtendPrompt(false);
-                  hasEndedRef.current = true;
-                  handleSessionEnd();
-                }}
-                style={{
-                  flex: 1, borderWidth: 1, borderColor: t.border,
-                  paddingVertical: 14, borderRadius: 14, alignItems: 'center',
-                }}
-              >
-                <Text style={{ color: t.textSecondary, fontWeight: '600', fontSize: 15, fontFamily: BODY_FONT }}>
-                  I'm done
-                </Text>
-              </Pressable>
-            </View>
-          </Animated.View>
-        )}
-
-        {/* Skip Reason Bottom Sheet */}
-        {showSkipReason && (
-          <View style={{
-            position: 'absolute', bottom: 0, left: 0, right: 0,
-            backgroundColor: isDark ? V1.dark.card : '#FFFFFF',
-            borderTopLeftRadius: 20, borderTopRightRadius: 20,
-            paddingBottom: insets.bottom + 16, paddingTop: 20, paddingHorizontal: 20,
-            zIndex: 300,
-          }}>
-            <Text style={{
-              fontFamily: DISPLAY_FONT, fontSize: 17, fontWeight: '700',
-              color: t.text, marginBottom: 16,
-            }}>
-              Why skip this one?
-            </Text>
-            {SKIP_REASONS.map(reason => (
-              <Pressable
-                key={reason.id}
-                onPress={() => handleSkipWithReason(reason.id)}
-                style={{
-                  flexDirection: 'row', alignItems: 'center', gap: 12,
-                  paddingVertical: 14, borderBottomWidth: 1,
-                  borderBottomColor: t.border,
-                }}
-              >
-                <Text style={{ fontFamily: BODY_FONT, fontSize: 15, color: t.text }}>
-                  {reason.label}
-                </Text>
-              </Pressable>
-            ))}
-            <Pressable
-              onPress={() => {
-                setShowSkipReason(false);
-                setPendingSkipIndex(null);
-              }}
-              style={{ paddingVertical: 14, alignItems: 'center' }}
-            >
-              <Text style={{ fontFamily: BODY_FONT, fontSize: 14, color: t.textMuted }}>
-                Never mind
-              </Text>
-            </Pressable>
-          </View>
-        )}
+        </Pressable>
       </View>
-    );
+
+      {/* Task counter */}
+      <Text style={[styles.taskCounter, { color: t.textSecondary }]}>
+        Task {currentTaskIndex + 1} of {totalTasks}
+      </Text>
+
+      {/* Task card */}
+      <View style={{ flex: 1, justifyContent: 'center', paddingHorizontal: 24 }}>
+        <Animated.View
+          entering={FadeIn.duration(250)}
+          key={`task-${currentTaskIndex}`}
+          style={[styles.taskCard, {
+            backgroundColor: isDark ? V1.dark.card : V1.light.card,
+            borderColor: t.border,
+          }]}
+        >
+          <Text style={styles.taskEmoji}>{taskEmoji}</Text>
+          <Text style={[styles.taskTitle, { color: t.text }]}>{taskTitle}</Text>
+          {taskDescription ? (
+            <Text style={[styles.taskDescription, { color: t.textSecondary }]}>
+              {taskDescription}
+            </Text>
+          ) : null}
+          <Text style={[styles.taskTime, { color: t.textMuted }]}>
+            ~{estimatedMin} min
+          </Text>
+        </Animated.View>
+      </View>
+
+      {/* Bottom actions */}
+      <View style={[styles.bottomArea, { paddingBottom: insets.bottom + 20 }]}>
+        <Pressable
+          onPress={handleCompleteTask}
+          style={styles.doneButton}
+          accessibilityRole="button"
+          accessibilityLabel={`Complete task: ${taskTitle}`}
+        >
+          <Text style={styles.doneButtonText}>{'\u2713'}  Done!</Text>
+        </Pressable>
+
+        <Pressable
+          onPress={handleSkipTask}
+          style={styles.skipButton}
+          accessibilityRole="button"
+          accessibilityLabel="Skip this task"
+        >
+          <Text style={[styles.skipText, { color: t.textMuted }]}>
+            Skip this {'\u2192'}
+          </Text>
+        </Pressable>
+      </View>
+    </View>
+  );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Styles
-// ─────────────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-
-  // H6: Combo badge
-  comboBadge: {
-    position: 'absolute',
-    top: 100,
-    alignSelf: 'center',
-    backgroundColor: V1.coral,
-    borderRadius: 9999,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    zIndex: 100,
+  container: {
+    flex: 1,
   },
-  comboBadgeText: {
-    color: '#FFFFFF',
-    fontWeight: '700',
-    fontSize: 16,
-    fontFamily: DISPLAY_FONT,
-  },
-
-  // ── Main View ───────────────────────────────────────────────────────────
-  focusTopBar: {
+  topBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
-    paddingBottom: 12,
+    paddingBottom: 8,
   },
-  focusProgress: {
-    color: 'rgba(255,255,255,0.5)',
-    fontSize: 14,
-    fontFamily: BODY_FONT,
-  },
-  timerBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: V1.coral,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 12,
-  },
-  timerBadgeText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '700',
+  timerText: {
+    fontSize: 18,
+    fontWeight: '600',
     fontVariant: ['tabular-nums'],
     fontFamily: DISPLAY_FONT,
   },
-
-  phaseBars: {
-    flexDirection: 'row',
-    gap: 4,
-    paddingHorizontal: 20,
-    marginBottom: 40,
+  taskCounter: {
+    fontSize: 15,
+    fontWeight: '500',
+    textAlign: 'center',
+    fontFamily: BODY_FONT,
+    marginTop: 4,
   },
-  phaseBar: {
-    height: 4,
-    borderRadius: 2,
-  },
-
-  focusCenter: {
+  taskCard: {
+    borderRadius: 20,
+    borderWidth: 1,
+    paddingVertical: 36,
+    paddingHorizontal: 24,
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 32,
+  },
+  taskEmoji: {
+    fontSize: 48,
     marginBottom: 16,
   },
-  focusTaskLabel: {
-    color: V1.coral,
-    fontSize: 13,
-    fontWeight: '600',
-    textAlign: 'center',
-    marginBottom: 8,
-    fontFamily: BODY_FONT,
-  },
-  focusTaskName: {
-    color: '#FFFFFF',
-    fontSize: 28,
+  taskTitle: {
+    fontSize: 23,
     fontWeight: '700',
     textAlign: 'center',
-    letterSpacing: -0.5,
+    lineHeight: 30,
+    fontFamily: DISPLAY_FONT,
+    marginBottom: 10,
+  },
+  taskDescription: {
+    fontSize: 15,
+    textAlign: 'center',
+    lineHeight: 22,
+    fontFamily: BODY_FONT,
     marginBottom: 12,
+  },
+  taskTime: {
+    fontSize: 14,
+    fontWeight: '500',
+    fontFamily: BODY_FONT,
+  },
+  bottomArea: {
+    paddingHorizontal: 24,
+    gap: 14,
+    alignItems: 'center',
+  },
+  doneButton: {
+    backgroundColor: V1.green,
+    height: 56,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+  },
+  doneButtonText: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '700',
     fontFamily: DISPLAY_FONT,
   },
-  focusTimeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-  },
-  focusTimeText: {
-    color: 'rgba(255,255,255,0.5)',
-    fontSize: 14,
-    fontFamily: BODY_FONT,
-  },
-
-  // ── Dusty Bubble ───────────────────────────────────────────────────────
-  dustyBubble: {
-    marginHorizontal: 20,
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 24,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.06)',
-  },
-  dustySays: {
-    color: V1.gold,
-    fontSize: 13,
-    fontWeight: '700',
-    marginBottom: 6,
-    fontFamily: BODY_FONT,
-  },
-  dustyTip: {
-    color: 'rgba(255,255,255,0.7)',
-    fontSize: 14,
-    lineHeight: 20,
-    fontFamily: BODY_FONT,
-  },
-
-  // ── Big Check ──────────────────────────────────────────────────────────
-  focusActions: {
-    alignItems: 'center',
-    gap: 16,
-    paddingBottom: 8,
-  },
-  bigCheckButton: {
-    alignItems: 'center',
-    gap: 8,
-  },
-  bigCheckCircle: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    borderWidth: 2.5,
-    borderColor: V1.green,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  bigCheckText: {
-    color: 'rgba(255,255,255,0.5)',
-    fontSize: 13,
-    fontFamily: BODY_FONT,
+  skipButton: {
+    paddingVertical: 8,
   },
   skipText: {
-    color: 'rgba(255,255,255,0.3)',
-    fontSize: 14,
+    fontSize: 15,
+    fontWeight: '500',
     fontFamily: BODY_FONT,
   },
-  encouragement: {
-    color: 'rgba(255,255,255,0.3)',
-    fontSize: 13,
+  emptyContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+  },
+  emptyTitle: {
+    fontSize: 24,
+    fontWeight: '700',
     textAlign: 'center',
-    paddingTop: 12,
-    fontFamily: BODY_FONT,
+    marginBottom: 12,
+    fontFamily: DISPLAY_FONT,
   },
-
-  // ── Focus view enrichment ───────────────────────────────────────────
-  focusDetailText: {
-    fontSize: 13,
-    fontFamily: BODY_FONT,
+  emptySubtitle: {
+    fontSize: 15,
     textAlign: 'center',
-    marginTop: 2,
+    marginBottom: 32,
+    lineHeight: 22,
+    fontFamily: BODY_FONT,
   },
-  focusSubtasksCard: {
-    marginHorizontal: 20,
-    borderRadius: 12,
-    padding: 14,
-    gap: 8,
+  scanButton: {
+    backgroundColor: V1.coral,
+    paddingHorizontal: 28,
+    paddingVertical: 14,
+    borderRadius: 24,
     marginBottom: 12,
   },
-  focusSubtasksLabel: {
-    fontFamily: BODY_FONT,
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-    marginBottom: 2,
-  },
-  focusSubtaskRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  focusSubtaskCircle: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    borderWidth: 1.5,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  // ── Carry chain hint ───────────────────────────────────────────────
-  carryChainBanner: {
-    marginHorizontal: 20,
-    borderRadius: 10,
-    borderWidth: 1,
-    padding: 10,
-    marginBottom: 8,
-  },
-
-  // ── Phase transition celebration ───────────────────────────────────
-  phaseTransitionBanner: {
-    position: 'absolute',
-    top: 120,
-    left: 20,
-    right: 20,
-    zIndex: 200,
-    backgroundColor: V1.green,
-    borderRadius: 16,
-    paddingHorizontal: 20,
-    paddingVertical: 14,
-    alignItems: 'center',
-    shadowColor: V1.green,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 12,
-    elevation: 8,
-  },
-  phaseTransitionText: {
+  scanButtonText: {
     color: '#FFFFFF',
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: '700',
-    fontFamily: DISPLAY_FONT,
-    textAlign: 'center',
-  },
-
-  // ── Before photo thumbnail ─────────────────────────────────────────
-  photoThumb: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
-    overflow: 'hidden',
-    borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.15)',
-  },
-  photoThumbImage: {
-    width: '100%',
-    height: '100%',
-  },
-  photoModalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.8)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  photoModalContent: {
-    width: '85%',
-    aspectRatio: 4 / 3,
-    borderRadius: 16,
-    overflow: 'hidden',
-  },
-  photoModalImage: {
-    width: '100%',
-    height: '100%',
-  },
-  photoModalLabel: {
-    position: 'absolute',
-    bottom: 12,
-    alignSelf: 'center',
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '600',
     fontFamily: BODY_FONT,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 8,
   },
 });
