@@ -119,10 +119,11 @@ function PaywallScreenContent() {
   const trialDays = selectedPlanObj?.trialDays ?? 0;
 
   const navigateIntoApp = useCallback(() => {
-    router.replace({
-      pathname: '/where-are-you',
-      params: preselectedRoomType ? { preselectedRoomType } : undefined,
-    });
+    if (preselectedRoomType) {
+      router.replace('/camera');
+    } else {
+      router.replace('/');
+    }
   }, [preselectedRoomType]);
 
   const handlePurchase = useCallback(async () => {
@@ -470,10 +471,7 @@ function PaywallScreenContent() {
         {/* Dev bypass button */}
         {DEV_SKIP_AUTH && (
           <Pressable
-            onPress={() => router.replace({
-              pathname: '/where-are-you',
-              params: preselectedRoomType ? { preselectedRoomType } : undefined,
-            })}
+            onPress={() => router.replace(preselectedRoomType ? '/camera' : '/')}
             style={{
               alignItems: 'center',
               paddingVertical: 12,

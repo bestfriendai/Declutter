@@ -4,9 +4,9 @@
  */
 
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
-import { router } from 'expo-router';
+
 import { MascotAvatar } from '@/components/ui/MascotAvatar';
 import { BODY_FONT, DISPLAY_FONT, SPACING } from '@/constants/designTokens';
 
@@ -92,14 +92,9 @@ export function HomeHeader({
           </Text>
         </View>
         {showMascot && (
-          <Pressable
-            onPress={() => router.push('/mascot')}
-            style={({ pressed }) => [{ opacity: pressed ? 0.88 : 1, minWidth: 44, minHeight: 44 }]}
-            accessibilityRole="button"
-            accessibilityLabel="Open mascot profile"
-          >
+          <View style={{ minWidth: 44, minHeight: 44 }}>
             <MascotAvatar mood="happy" activity="idle" size={44} imageKey="happy" />
-          </Pressable>
+          </View>
         )}
       </Animated.View>
 
