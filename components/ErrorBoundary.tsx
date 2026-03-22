@@ -14,9 +14,10 @@ import React, { Component, ReactNode } from 'react';
 import { View, Text, Pressable, StyleSheet, Linking } from 'react-native';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import * as Haptics from 'expo-haptics';
-import { Colors } from '@/constants/Colors';
+import { V1, getTheme, RADIUS, DISPLAY_FONT, BODY_FONT } from '@/constants/designTokens';
 import { router, useSegments } from 'expo-router';
 import { logger } from '@/services/logger';
+import { captureException } from '@/services/sentry';
 
 interface Props {
   children: ReactNode;
@@ -46,14 +47,16 @@ export class ErrorBoundary extends Component<Props, State> {
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
     this.setState({ errorInfo });
 
-    // Log to error reporting service (Sentry, etc.)
+    // Log to error reporting service
     logger.error('ErrorBoundary caught an error:', error, errorInfo);
+
+    // Send to Sentry in production
+    captureException(error, {
+      componentStack: errorInfo.componentStack ?? undefined,
+    });
 
     // Call optional error callback
     this.props.onError?.(error, errorInfo);
-
-    // In production, you would send this to an error tracking service
-    // Example: Sentry.captureException(error, { extra: errorInfo });
   }
 
   handleRetry = () => {
@@ -107,29 +110,29 @@ interface ErrorFallbackProps {
 function ErrorFallback({ error, retryCount, onRetry, onGoHome }: ErrorFallbackProps) {
   const colorScheme = useColorScheme() ?? 'dark';
   const isDark = colorScheme === 'dark';
-  const colors = Colors[colorScheme];
+  const t = getTheme(isDark);
 
   const showHomeButton = retryCount >= 1; // Show home button after first retry fails
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <View style={[styles.iconContainer, { backgroundColor: colors.errorMuted }]}>
+    <View style={[styles.container, { backgroundColor: t.bg }]}>
+      <View style={[styles.iconContainer, { backgroundColor: isDark ? 'rgba(255,107,107,0.15)' : 'rgba(255,107,107,0.1)' }]}>
         <Text style={styles.emoji}>{retryCount >= 2 ? '🧹' : '😵'}</Text>
       </View>
 
-      <Text style={[styles.title, { color: colors.text }]}>
+      <Text style={[styles.title, { color: t.text, fontFamily: DISPLAY_FONT }]}>
         {retryCount >= 2 ? 'Still having trouble' : 'Something went sideways'}
       </Text>
 
-      <Text style={[styles.message, { color: colors.textSecondary }]}>
+      <Text style={[styles.message, { color: t.textSecondary, fontFamily: BODY_FONT }]}>
         {retryCount >= 2
           ? "This part of the app is being stubborn. Try heading home or restarting the app."
           : "Don't worry, your data is safe. This is a glitch, not your fault."}
       </Text>
 
       {__DEV__ && error && (
-        <View style={[styles.errorDetails, { backgroundColor: colors.surfaceSecondary }]}>
-          <Text style={[styles.errorText, { color: colors.error }]} numberOfLines={4}>
+        <View style={[styles.errorDetails, { backgroundColor: t.card }]}>
+          <Text style={[styles.errorText, { color: V1.coral }]} numberOfLines={4}>
             {error.name}: {error.message}
           </Text>
         </View>
@@ -140,13 +143,13 @@ function ErrorFallback({ error, retryCount, onRetry, onGoHome }: ErrorFallbackPr
           onPress={onRetry}
           style={({ pressed }) => [
             styles.button,
-            { backgroundColor: colors.primary, opacity: pressed ? 0.8 : 1 },
+            { backgroundColor: V1.coral, opacity: pressed ? 0.8 : 1, borderRadius: RADIUS.md },
           ]}
           accessibilityRole="button"
           accessibilityLabel="Try again"
           accessibilityHint="Attempts to reload the content"
         >
-          <Text style={[styles.buttonText, { color: colors.textOnPrimary }]}>
+          <Text style={[styles.buttonText, { color: '#FFFFFF', fontFamily: BODY_FONT }]}>
             Try Again
           </Text>
         </Pressable>
@@ -157,14 +160,15 @@ function ErrorFallback({ error, retryCount, onRetry, onGoHome }: ErrorFallbackPr
             style={({ pressed }) => [
               styles.secondaryButton,
               {
-                borderColor: isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.12)',
+                borderColor: t.border,
+                borderRadius: RADIUS.md,
                 opacity: pressed ? 0.7 : 1,
               },
             ]}
             accessibilityRole="button"
             accessibilityLabel="Go to home screen"
           >
-            <Text style={[styles.secondaryBtnText, { color: colors.textSecondary }]}>
+            <Text style={[styles.secondaryBtnText, { color: t.textSecondary, fontFamily: BODY_FONT }]}>
               Go Home
             </Text>
           </Pressable>
@@ -175,7 +179,7 @@ function ErrorFallback({ error, retryCount, onRetry, onGoHome }: ErrorFallbackPr
         onPress={() => Linking.openURL('mailto:support@declutterly.app?subject=App%20Error%20Report')}
         accessibilityRole="link"
       >
-        <Text style={[styles.supportText, { color: colors.textTertiary }]}>
+        <Text style={[styles.supportText, { color: t.textMuted, fontFamily: BODY_FONT }]}>
           {retryCount >= 2
             ? 'Still broken? Tap here to report it.'
             : 'If this keeps happening, contact support.'}

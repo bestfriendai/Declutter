@@ -1,17 +1,25 @@
 /**
  * Declutterly -- Sign Up Screen (V1)
  * Matches Pencil design: OVP4z
+ *
+ * Improvements:
+ * - Memoized password strength calculation (useMemo)
+ * - Animated strength bar (withTiming)
+ * - Password criteria checklist (visual checkmarks)
+ * - In-app browser for terms/privacy (expo-web-browser)
+ * - AnimatedInput + ErrorBanner components
  */
 
 import { useAuth } from '@/context/AuthContext';
 import { useColorScheme } from '@/hooks/useColorScheme';
-import { User, Mail, Lock, Eye, EyeOff, AlertCircle } from 'lucide-react-native';
+import { useReducedMotion } from '@/hooks/useReducedMotion';
+import { User, Mail, Lock, Eye, EyeOff, Check, X } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
+import * as WebBrowser from 'expo-web-browser';
 import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -21,37 +29,22 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import Animated, { FadeInDown } from 'react-native-reanimated';
+import Animated, {
+  FadeIn,
+  FadeInDown,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-
-// ─── V1 Color Palette ────────────────────────────────────────────────────────
-const V1 = {
-  coral: '#FF6B6B',
-  dark: {
-    bg: '#0C0C0C',
-    card: '#1A1A1A',
-    border: 'rgba(255,255,255,0.08)',
-    text: '#FFFFFF',
-    textSecondary: 'rgba(255,255,255,0.5)',
-    textMuted: 'rgba(255,255,255,0.3)',
-    inputBg: '#141414',
-    inputBorder: 'rgba(255,255,255,0.12)',
-  },
-  light: {
-    bg: '#FAFAFA',
-    card: '#F6F7F8',
-    border: '#E5E7EB',
-    text: '#1A1A1A',
-    textSecondary: '#6B7280',
-    textMuted: '#9CA3AF',
-    inputBg: '#FFFFFF',
-    inputBorder: '#E5E7EB',
-  },
-};
+import { V1, BODY_FONT, DISPLAY_FONT, ANIMATION } from '@/constants/designTokens';
+import { AnimatedInput, CoralButton, ErrorBanner } from '@/components/ui';
+import { useEffect } from 'react';
 
 export default function SignupScreen() {
   const rawScheme = useColorScheme();
   const isDark = rawScheme === 'dark';
+  const reducedMotion = useReducedMotion();
   const t = isDark ? V1.dark : V1.light;
   const insets = useSafeAreaInsets();
 
@@ -63,19 +56,91 @@ export default function SignupScreen() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [shakeTrigger, setShakeTrigger] = useState(0);
 
   const emailRef = useRef<TextInput>(null);
   const passwordRef = useRef<TextInput>(null);
 
+  const iconColor = isDark ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.3)';
+
+  // Memoized password strength calculation
+  const passwordStrength = useMemo(() => {
+    if (!password) return { label: '', color: 'transparent', percent: 0, criteria: { length: false, upper: false, lower: false, number: false } };
+
+    const hasUpper = /[A-Z]/.test(password);
+    const hasLower = /[a-z]/.test(password);
+    const hasNumber = /[0-9]/.test(password);
+    const hasLength = password.length >= 8;
+    const isStrong = password.length >= 10 && hasUpper && hasLower && hasNumber;
+
+    const criteria = {
+      length: hasLength,
+      upper: hasUpper,
+      lower: hasLower,
+      number: hasNumber,
+    };
+
+    if (password.length < 6) {
+      return { label: 'Weak', color: V1.coral, percent: 25, criteria };
+    }
+    if (password.length < 8) {
+      return { label: 'Fair', color: V1.amber, percent: 50, criteria };
+    }
+    if (isStrong) {
+      return { label: 'Strong', color: V1.green, percent: 100, criteria };
+    }
+    return { label: 'Good', color: V1.gold, percent: 75, criteria };
+  }, [password]);
+
+  // Animated strength bar width
+  const strengthBarWidth = useSharedValue(0);
+
+  useEffect(() => {
+    strengthBarWidth.value = withTiming(passwordStrength.percent, {
+      duration: reducedMotion ? 0 : ANIMATION.duration.normal,
+    });
+  }, [passwordStrength.percent, strengthBarWidth, reducedMotion]);
+
+  const strengthBarAnimStyle = useAnimatedStyle(() => ({
+    width: `${strengthBarWidth.value}%`,
+  }));
+
+  // Auto-dismiss error on input change
+  const handleEmailChange = useCallback((text: string) => {
+    setEmail(text);
+    if (error) setError('');
+  }, [error]);
+
+  const handlePasswordChange = useCallback((text: string) => {
+    setPassword(text);
+    if (error) setError('');
+  }, [error]);
+
+  const handleNameChange = useCallback((text: string) => {
+    setName(text);
+    if (error) setError('');
+  }, [error]);
+
+  const triggerErrorShake = useCallback(() => {
+    setShakeTrigger((prev) => prev + 1);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+  }, []);
+
   const handleSignup = useCallback(async () => {
     if (!email.trim()) {
       setError('Please enter your email.');
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      triggerErrorShake();
+      return;
+    }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email.trim())) {
+      setError('Please enter a valid email address.');
+      triggerErrorShake();
       return;
     }
     if (password.length < 8) {
       setError('Password must be at least 8 characters.');
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      triggerErrorShake();
       return;
     }
 
@@ -87,32 +152,45 @@ export default function SignupScreen() {
       const result = await signUp(
         email.trim(),
         password,
-        name.trim() || undefined
+        name.trim() || undefined,
       );
       if (result.success) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         router.replace('/');
       } else {
         setError(result.error ?? 'Sign up failed. Please try again.');
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        triggerErrorShake();
       }
     } catch (e: unknown) {
       setError(
-        e instanceof Error ? e.message : 'Sign up failed. Please try again.'
+        e instanceof Error ? e.message : 'Sign up failed. Please try again.',
       );
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      triggerErrorShake();
     } finally {
       setLoading(false);
     }
-  }, [name, email, password, signUp]);
+  }, [name, email, password, signUp, triggerErrorShake]);
 
   const togglePassword = useCallback(() => {
     Haptics.selectionAsync();
     setShowPassword((v) => !v);
   }, []);
 
-  const placeholderColor = isDark ? 'rgba(255,255,255,0.3)' : '#9CA3AF';
-  const iconColor = isDark ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.3)';
+  const openTerms = useCallback(async () => {
+    try {
+      await WebBrowser.openBrowserAsync('https://declutterly.app/terms');
+    } catch {
+      // Fallback handled by expo-web-browser
+    }
+  }, []);
+
+  const openPrivacy = useCallback(async () => {
+    try {
+      await WebBrowser.openBrowserAsync('https://declutterly.app/privacy');
+    } catch {
+      // Fallback handled by expo-web-browser
+    }
+  }, []);
 
   return (
     <View style={[styles.container, { backgroundColor: t.bg }]}>
@@ -135,7 +213,7 @@ export default function SignupScreen() {
         >
           {/* Header */}
           <Animated.View
-            entering={FadeInDown.delay(0).duration(350)}
+            entering={reducedMotion ? undefined : FadeInDown.delay(0).duration(ANIMATION.duration.normal)}
             style={styles.headerSection}
           >
             <Text style={[styles.heading, { color: t.text }]}>
@@ -147,253 +225,189 @@ export default function SignupScreen() {
           </Animated.View>
 
           {/* Full name input */}
-          <Animated.View entering={FadeInDown.delay(80).duration(350)}>
-            <View
-              style={[
-                styles.inputField,
-                {
-                  backgroundColor: t.inputBg,
-                  borderColor: t.inputBorder,
-                },
-              ]}
-            >
-              <User size={18} color={iconColor} />
-              <TextInput
-                style={[styles.inputText, { color: t.text }]}
-                placeholder="Full name"
-                placeholderTextColor={placeholderColor}
-                value={name}
-                onChangeText={setName}
-                autoCapitalize="words"
-                autoComplete="name"
-                textContentType="name"
-                returnKeyType="next"
-                onSubmitEditing={() => emailRef.current?.focus()}
-                accessibilityLabel="Full name"
-              />
-            </View>
+          <Animated.View entering={reducedMotion ? undefined : FadeInDown.delay(ANIMATION.stagger.normal).duration(ANIMATION.duration.normal)}>
+            <AnimatedInput
+              isDark={isDark}
+              icon={<User size={18} color={iconColor} />}
+              placeholder="Full name"
+              value={name}
+              onChangeText={handleNameChange}
+              editable={!loading}
+              autoCapitalize="words"
+              autoComplete="name"
+              textContentType="name"
+              returnKeyType="next"
+              onSubmitEditing={() => emailRef.current?.focus()}
+              accessibilityLabel="Full name"
+            />
           </Animated.View>
 
           {/* Email input */}
-          <Animated.View entering={FadeInDown.delay(120).duration(350)}>
-            <View
-              style={[
-                styles.inputField,
-                {
-                  backgroundColor: t.inputBg,
-                  borderColor: t.inputBorder,
-                },
-              ]}
-            >
-              <Mail size={18} color={iconColor} />
-              <TextInput
-                ref={emailRef}
-                style={[styles.inputText, { color: t.text }]}
-                placeholder="Email address"
-                placeholderTextColor={placeholderColor}
-                value={email}
-                onChangeText={setEmail}
-                keyboardType="email-address"
-                autoCapitalize="none"
-                autoCorrect={false}
-                autoComplete="email"
-                textContentType="emailAddress"
-                returnKeyType="next"
-                onSubmitEditing={() => passwordRef.current?.focus()}
-                accessibilityLabel="Email address"
-              />
-            </View>
+          <Animated.View entering={reducedMotion ? undefined : FadeInDown.delay(ANIMATION.stagger.normal * 2).duration(ANIMATION.duration.normal)}>
+            <AnimatedInput
+              isDark={isDark}
+              icon={<Mail size={18} color={iconColor} />}
+              inputRef={emailRef}
+              placeholder="Email address"
+              value={email}
+              onChangeText={handleEmailChange}
+              editable={!loading}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoCorrect={false}
+              autoComplete="email"
+              textContentType="emailAddress"
+              returnKeyType="next"
+              onSubmitEditing={() => passwordRef.current?.focus()}
+              accessibilityLabel="Email address"
+              hasError={!!error}
+            />
           </Animated.View>
 
           {/* Password input */}
-          <Animated.View entering={FadeInDown.delay(160).duration(350)}>
-            <View
-              style={[
-                styles.inputField,
-                {
-                  backgroundColor: t.inputBg,
-                  borderColor: t.inputBorder,
-                },
-              ]}
-            >
-              <Lock size={18} color={iconColor} />
-              <TextInput
-                ref={passwordRef}
-                style={[styles.inputText, { color: t.text }]}
-                placeholder="Password"
-                placeholderTextColor={placeholderColor}
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry={!showPassword}
-                autoComplete="new-password"
-                textContentType="newPassword"
-                returnKeyType="done"
-                onSubmitEditing={handleSignup}
-                accessibilityLabel="Password"
-              />
-              <Pressable
-                onPress={togglePassword}
-                hitSlop={12}
-                style={styles.eyeButton}
-              >
-                {showPassword ? (
-                  <EyeOff size={18} color={iconColor} />
-                ) : (
-                  <Eye size={18} color={iconColor} />
-                )}
-              </Pressable>
-            </View>
+          <Animated.View entering={reducedMotion ? undefined : FadeInDown.delay(ANIMATION.stagger.normal * 3).duration(ANIMATION.duration.normal)}>
+            <AnimatedInput
+              isDark={isDark}
+              icon={<Lock size={18} color={iconColor} />}
+              inputRef={passwordRef}
+              placeholder="Password"
+              value={password}
+              onChangeText={handlePasswordChange}
+              editable={!loading}
+              secureTextEntry={!showPassword}
+              autoComplete="new-password"
+              textContentType="newPassword"
+              returnKeyType="done"
+              onSubmitEditing={handleSignup}
+              accessibilityLabel="Password"
+              hasError={!!error}
+              rightElement={
+                <Pressable
+                  onPress={togglePassword}
+                  hitSlop={12}
+                  style={styles.eyeButton}
+                  accessibilityRole="button"
+                  accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showPassword ? (
+                    <EyeOff size={18} color={iconColor} />
+                  ) : (
+                    <Eye size={18} color={iconColor} />
+                  )}
+                </Pressable>
+              }
+            />
           </Animated.View>
 
-          {/* Password strength */}
-          {password.length > 0 && password.length < 8 && (
+          {/* Password strength bar + criteria */}
+          {password.length > 0 && (
             <Animated.View
-              entering={FadeInDown.duration(250)}
-              style={styles.strengthRow}
+              entering={reducedMotion ? undefined : FadeIn.duration(250)}
+              style={styles.strengthSection}
             >
-              <View
-                style={[
-                  styles.strengthTrack,
-                  {
-                    backgroundColor: isDark
-                      ? 'rgba(255,255,255,0.06)'
-                      : 'rgba(0,0,0,0.06)',
-                  },
-                ]}
-              >
+              {/* Animated strength bar */}
+              <View style={styles.strengthRow}>
                 <View
                   style={[
-                    styles.strengthFill,
+                    styles.strengthTrack,
                     {
-                      width: `${Math.min(100, (password.length / 8) * 100)}%`,
-                      backgroundColor:
-                        password.length < 4
-                          ? '#FF453A'
-                          : password.length < 6
-                            ? '#FFD60A'
-                            : '#32D74B',
+                      backgroundColor: isDark
+                        ? 'rgba(255,255,255,0.06)'
+                        : 'rgba(0,0,0,0.06)',
                     },
                   ]}
+                >
+                  <Animated.View
+                    style={[
+                      styles.strengthFill,
+                      { backgroundColor: passwordStrength.color },
+                      strengthBarAnimStyle,
+                    ]}
+                  />
+                </View>
+                <Text
+                  style={[
+                    styles.strengthHint,
+                    { color: passwordStrength.color },
+                  ]}
+                >
+                  {passwordStrength.label}
+                </Text>
+              </View>
+
+              {/* Password criteria checklist */}
+              <View style={styles.criteriaList}>
+                <CriteriaItem
+                  met={passwordStrength.criteria.length}
+                  label="At least 8 characters"
+                  isDark={isDark}
+                />
+                <CriteriaItem
+                  met={passwordStrength.criteria.upper}
+                  label="Uppercase letter"
+                  isDark={isDark}
+                />
+                <CriteriaItem
+                  met={passwordStrength.criteria.lower}
+                  label="Lowercase letter"
+                  isDark={isDark}
+                />
+                <CriteriaItem
+                  met={passwordStrength.criteria.number}
+                  label="Number"
+                  isDark={isDark}
                 />
               </View>
-              <Text
-                style={[
-                  styles.strengthHint,
-                  {
-                    color:
-                      password.length < 4
-                        ? '#FF453A'
-                        : password.length < 6
-                          ? '#FFD60A'
-                          : '#32D74B',
-                  },
-                ]}
-              >
-                {8 - password.length} more{' '}
-                {8 - password.length === 1 ? 'character' : 'characters'}
-              </Text>
             </Animated.View>
           )}
 
           {/* Error */}
           {error ? (
-            <Animated.View
-              entering={FadeInDown.duration(350)}
-              style={styles.errorBanner}
-            >
-              <AlertCircle size={16} color="#FF453A" />
-              <Text style={styles.errorText}>{error}</Text>
-            </Animated.View>
+            <ErrorBanner
+              message={error}
+              autoDismissMs={5000}
+              onDismiss={() => setError('')}
+              shakeTrigger={shakeTrigger}
+            />
           ) : null}
 
-          {/* Sign Up button */}
-          <Animated.View entering={FadeInDown.delay(200).duration(350)}>
-            <Pressable
-              onPress={handleSignup}
-              disabled={loading}
-              style={({ pressed }) => [
-                styles.coralButton,
-                { opacity: loading ? 0.7 : pressed ? 0.85 : 1 },
-              ]}
-            >
-              {loading ? (
-                <ActivityIndicator color="#FFFFFF" />
-              ) : (
-                <Text style={styles.coralButtonText}>Sign Up</Text>
-              )}
-            </Pressable>
-          </Animated.View>
-
-          {/* Divider */}
-          <Animated.View
-            entering={FadeInDown.delay(240).duration(350)}
-            style={styles.dividerRow}
-          >
-            <View
-              style={[
-                styles.dividerLine,
-                {
-                  backgroundColor: isDark
-                    ? 'rgba(255,255,255,0.08)'
-                    : '#E5E7EB',
-                },
-              ]}
-            />
-            <Text style={[styles.dividerText, { color: t.textMuted }]}>
-              or
+          {/* Terms & Privacy - now opens in-app browser */}
+          <Animated.View entering={reducedMotion ? undefined : FadeInDown.delay(ANIMATION.stagger.normal * 4).duration(ANIMATION.duration.normal)}>
+            <Text style={[styles.termsText, { color: t.textMuted }]}>
+              By signing up, you agree to our{' '}
+              <Text
+                style={[styles.termsLink, { color: V1.coral }]}
+                onPress={openTerms}
+                accessibilityRole="link"
+              >
+                Terms of Service
+              </Text>
+              {' '}and{' '}
+              <Text
+                style={[styles.termsLink, { color: V1.coral }]}
+                onPress={openPrivacy}
+                accessibilityRole="link"
+              >
+                Privacy Policy
+              </Text>
             </Text>
-            <View
-              style={[
-                styles.dividerLine,
-                {
-                  backgroundColor: isDark
-                    ? 'rgba(255,255,255,0.08)'
-                    : '#E5E7EB',
-                },
-              ]}
-            />
           </Animated.View>
 
-          {/* Social buttons */}
-          <Animated.View
-            entering={FadeInDown.delay(280).duration(350)}
-            style={styles.socialSection}
-          >
-            <Pressable
-              style={[
-                styles.socialButton,
-                {
-                  backgroundColor: t.inputBg,
-                  borderColor: t.inputBorder,
-                },
-              ]}
-            >
-              <Text style={[styles.appleIcon, { color: t.text }]}>{'\uF8FF'}</Text>
-              <Text style={[styles.socialButtonText, { color: t.text }]}>
-                Continue with Apple
-              </Text>
-            </Pressable>
-
-            <Pressable
-              style={[
-                styles.socialButton,
-                {
-                  backgroundColor: t.inputBg,
-                  borderColor: t.inputBorder,
-                },
-              ]}
-            >
-              <Text style={[styles.googleIcon, { color: V1.coral }]}>G</Text>
-              <Text style={[styles.socialButtonText, { color: t.text }]}>
-                Continue with Google
-              </Text>
-            </Pressable>
+          {/* Sign Up button */}
+          <Animated.View entering={reducedMotion ? undefined : FadeInDown.delay(ANIMATION.stagger.normal * 5).duration(ANIMATION.duration.normal)}>
+            <CoralButton
+              title="Sign Up"
+              onPress={handleSignup}
+              loading={loading}
+              flat
+              style={styles.signUpButton}
+            />
           </Animated.View>
 
           {/* Sign In link */}
           <View style={{ flex: 1 }} />
           <Animated.View
-            entering={FadeInDown.delay(320).duration(350)}
+            entering={reducedMotion ? undefined : FadeInDown.delay(ANIMATION.stagger.normal * 6).duration(ANIMATION.duration.normal)}
             style={styles.linkRow}
           >
             <Text style={[styles.linkText, { color: t.textMuted }]}>
@@ -402,7 +416,7 @@ export default function SignupScreen() {
             <Pressable
               onPress={() => {
                 Haptics.selectionAsync();
-                router.push('/auth/login');
+                router.replace('/auth/login');
               }}
               hitSlop={8}
             >
@@ -417,6 +431,36 @@ export default function SignupScreen() {
   );
 }
 
+/** Individual criteria check item */
+function CriteriaItem({
+  met,
+  label,
+  isDark,
+}: {
+  met: boolean;
+  label: string;
+  isDark: boolean;
+}) {
+  const t = isDark ? V1.dark : V1.light;
+  return (
+    <View style={styles.criteriaRow}>
+      {met ? (
+        <Check size={12} color={V1.green} strokeWidth={3} />
+      ) : (
+        <X size={12} color={t.textMuted} strokeWidth={2} />
+      )}
+      <Text
+        style={[
+          styles.criteriaText,
+          { color: met ? V1.green : t.textMuted },
+        ]}
+      >
+        {label}
+      </Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1 },
   keyboardView: { flex: 1 },
@@ -425,7 +469,7 @@ const styles = StyleSheet.create({
     flexGrow: 1,
   },
 
-  // ── Header ──
+  // -- Header --
   headerSection: {
     gap: 8,
     marginBottom: 32,
@@ -434,40 +478,31 @@ const styles = StyleSheet.create({
     fontSize: 32,
     fontWeight: '700',
     letterSpacing: -0.6,
+    fontFamily: DISPLAY_FONT,
   },
   subtitle: {
     fontSize: 15,
     lineHeight: 22,
+    fontFamily: BODY_FONT,
   },
 
-  // ── Inputs ──
-  inputField: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    height: 52,
-    borderRadius: 14,
-    borderWidth: 1,
-    paddingHorizontal: 16,
-    gap: 12,
-    marginBottom: 12,
-  },
-  inputText: {
-    flex: 1,
-    fontSize: 15,
-  },
+  // -- Inputs --
   eyeButton: {
     padding: 4,
     minWidth: 30,
     alignItems: 'center',
   },
 
-  // ── Password strength ──
+  // -- Password strength --
+  strengthSection: {
+    marginBottom: 16,
+  },
   strengthRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
     paddingHorizontal: 4,
-    marginBottom: 12,
+    marginBottom: 8,
   },
   strengthTrack: {
     flex: 1,
@@ -481,81 +516,46 @@ const styles = StyleSheet.create({
   },
   strengthHint: {
     fontSize: 11,
-  },
-
-  // ── Error ──
-  errorBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: 'rgba(255,59,48,0.12)',
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 16,
-  },
-  errorText: {
-    fontSize: 13,
-    color: '#FF453A',
-    flex: 1,
-  },
-
-  // ── Coral button ──
-  coralButton: {
-    backgroundColor: '#FF6B6B',
-    borderRadius: 28,
-    height: 56,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 24,
-  },
-  coralButtonText: {
-    color: '#FFFFFF',
-    fontSize: 17,
-    fontWeight: '700',
-  },
-
-  // ── Divider ──
-  dividerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    marginBottom: 24,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-  },
-  dividerText: {
-    fontSize: 14,
-  },
-
-  // ── Social ──
-  socialSection: {
-    gap: 12,
-    marginBottom: 24,
-  },
-  socialButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    height: 52,
-    borderRadius: 26,
-    borderWidth: 1,
-    gap: 10,
-  },
-  appleIcon: {
-    fontSize: 18,
-  },
-  googleIcon: {
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  socialButtonText: {
-    fontSize: 15,
+    fontFamily: BODY_FONT,
     fontWeight: '600',
   },
 
-  // ── Link row ──
+  // -- Criteria checklist --
+  criteriaList: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    paddingHorizontal: 4,
+  },
+  criteriaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    minWidth: '45%',
+  },
+  criteriaText: {
+    fontSize: 11,
+    fontFamily: BODY_FONT,
+  },
+
+  // -- Terms --
+  termsText: {
+    fontSize: 12,
+    lineHeight: 18,
+    textAlign: 'center',
+    marginBottom: 16,
+    fontFamily: BODY_FONT,
+  },
+  termsLink: {
+    fontWeight: '500',
+  },
+
+  // -- Button --
+  signUpButton: {
+    marginBottom: 24,
+  },
+
+  // -- Link row --
   linkRow: {
     flexDirection: 'row',
     justifyContent: 'center',
@@ -564,9 +564,11 @@ const styles = StyleSheet.create({
   },
   linkText: {
     fontSize: 14,
+    fontFamily: BODY_FONT,
   },
   linkTextBold: {
     fontSize: 14,
     fontWeight: '600',
+    fontFamily: BODY_FONT,
   },
 });

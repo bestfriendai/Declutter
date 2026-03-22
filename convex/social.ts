@@ -1,6 +1,41 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { internalMutation, mutation, query } from "./_generated/server";
 import { getAuthUserId } from "@convex-dev/auth/server";
+import { sanitizeInput } from "./shared";
+import { internal } from "./_generated/api";
+
+/**
+ * Expire challenges past their endDate. Called daily by cron.
+ * Marks active challenges that have passed endDate as "expired" and sets isActive to false.
+ */
+export const expireChallenges = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const now = Date.now();
+
+    // Find all active challenges — use the by_isActive index
+    const activeChallenges = await ctx.db
+      .query("challenges")
+      .withIndex("by_isActive", (q) => q.eq("isActive", true))
+      .collect();
+
+    let expiredCount = 0;
+    for (const challenge of activeChallenges) {
+      if (challenge.endDate < now) {
+        // Check if any participant completed
+        const anyCompleted = challenge.participants?.some((p) => p.completed) ?? false;
+
+        await ctx.db.patch(challenge._id, {
+          status: anyCompleted ? "completed" : "expired",
+          isActive: false,
+        });
+        expiredCount++;
+      }
+    }
+
+    return { expiredCount };
+  },
+});
 
 function generateInviteCode(): string {
   // Use crypto.randomUUID() for cryptographically secure randomness.
@@ -30,6 +65,20 @@ export const createChallenge = mutation({
     const userId = await getAuthUserId(ctx);
     if (!userId) throw new Error("Not authenticated");
 
+    // Rate limit: max 5 active challenges per user
+    const userChallenges = await ctx.db
+      .query("challenges")
+      .withIndex("by_creatorId", (q) => q.eq("creatorId", userId))
+      .filter((q) => q.eq(q.field("isActive"), true))
+      .collect();
+    if (userChallenges.length >= 5) {
+      throw new Error("Challenge limit reached (max 5 active). Complete or end a challenge first.");
+    }
+
+    const sanitizedTitle = sanitizeInput(args.title, 100);
+    const sanitizedDescription = sanitizeInput(args.description, 500);
+    if (!sanitizedTitle) throw new Error("Challenge title cannot be empty");
+
     const user = await ctx.db.get(userId);
     const creatorName = user?.name?.trim() || "Declutterer";
 
@@ -58,8 +107,8 @@ export const createChallenge = mutation({
     return await ctx.db.insert("challenges", {
       creatorId: userId,
       creatorName,
-      title: args.title,
-      description: args.description,
+      title: sanitizedTitle,
+      description: sanitizedDescription,
       type: args.type ?? "tasks_count",
       target: args.target ?? 10,
       startDate,
@@ -89,13 +138,19 @@ export const joinChallenge = mutation({
 
     const challenge = await ctx.db
       .query("challenges")
-      .filter((q) => q.eq(q.field("inviteCode"), args.inviteCode))
+      .withIndex("by_inviteCode", (q) => q.eq("inviteCode", args.inviteCode))
       .first();
 
     if (!challenge) throw new Error("Challenge not found");
     if (!challenge.isActive) throw new Error("Challenge is no longer active");
 
     const participants = challenge.participants ?? [];
+
+    // Cap at 50 participants to prevent unbounded array growth
+    if (participants.length >= 50) {
+      throw new Error("This challenge is full (max 50 participants)");
+    }
+
     if (participants.some((participant) => participant.userId === userId)) {
       return challenge._id;
     }
@@ -173,6 +228,28 @@ export const updateChallengeProgress = mutation({
       participants: nextParticipants,
     });
 
+    // ── Check if challenge is now complete (all participants reached target) ──
+    const allCompleted = nextParticipants.length > 0 &&
+      nextParticipants.every((p) => p.completed);
+
+    if (allCompleted && challenge.status !== "completed") {
+      // Mark challenge as completed
+      await ctx.db.patch(args.id, {
+        status: "completed",
+        isActive: false,
+      });
+
+      // Send push notification to all participants
+      for (const participant of nextParticipants) {
+        await ctx.scheduler.runAfter(0, internal.notifications._sendPushNotification, {
+          userId: participant.userId,
+          title: "Challenge Complete! \u{1F389}",
+          body: `Everyone finished "${challenge.title}"! Great teamwork!`,
+          data: { type: "challenge", challengeId: args.id },
+        });
+      }
+    }
+
     return args.id;
   },
 });
@@ -183,17 +260,24 @@ export const listChallenges = query({
     const userId = await getAuthUserId(ctx);
     if (!userId) return [];
 
-    // Get challenges created by user
+    // Get challenges created by user (uses index)
     const created = await ctx.db
       .query("challenges")
-      .filter((q) => q.eq(q.field("creatorId"), userId))
+      .withIndex("by_creatorId", (q) => q.eq("creatorId", userId))
       .collect();
 
-    // Get all challenges to find ones user has joined
-    const allChallenges = await ctx.db.query("challenges").collect();
-    const joined = allChallenges.filter(
+    // For challenges the user has joined but didn't create, we need to scan
+    // active challenges only. This is a known limitation since participants
+    // are stored as an embedded array. Use the by_isActive index to avoid
+    // full table scans, then filter by creatorId in-memory.
+    const activeChallenges = await ctx.db
+      .query("challenges")
+      .withIndex("by_isActive", (q) => q.eq("isActive", true))
+      .filter((q) => q.neq(q.field("creatorId"), userId))
+      .take(200); // Cap to prevent unbounded reads
+
+    const joined = activeChallenges.filter(
       (c) =>
-        c.creatorId !== userId &&
         (c.participants ?? []).some(
           (participant) => participant.userId === userId
         )
@@ -202,6 +286,57 @@ export const listChallenges = query({
     return [...created, ...joined].sort(
       (left, right) => (right.createdAt ?? 0) - (left.createdAt ?? 0)
     );
+  },
+});
+
+export const incrementMyProgress = mutation({
+  args: { increment: v.number() },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) return;
+
+    // Find all active challenges where user is a participant (uses index)
+    const challenges = await ctx.db
+      .query("challenges")
+      .withIndex("by_isActive", (q) => q.eq("isActive", true))
+      .collect();
+
+    for (const challenge of challenges) {
+      const participants = challenge.participants ?? [];
+      const userIdx = participants.findIndex((p) => p.userId === userId);
+      if (userIdx === -1) continue;
+
+      const updated = [...participants];
+      const newProgress = Math.min(
+        (updated[userIdx].progress ?? 0) + args.increment,
+        challenge.target ?? 999
+      );
+      updated[userIdx] = {
+        ...updated[userIdx],
+        progress: newProgress,
+        completed: newProgress >= (challenge.target ?? 999),
+      };
+
+      await ctx.db.patch(challenge._id, { participants: updated });
+
+      // If just completed, fire notification
+      if (updated[userIdx].completed && !participants[userIdx].completed) {
+        try {
+          await ctx.scheduler.runAfter(
+            0,
+            internal.notifications._sendPushNotification,
+            {
+              userId,
+              title: "Challenge Complete! \u{1F3C6}",
+              body: `You completed "${challenge.title}"!`,
+              data: { type: "challenge", challengeId: challenge._id },
+            }
+          );
+        } catch {
+          // Best-effort notification
+        }
+      }
+    }
   },
 });
 
@@ -270,22 +405,56 @@ export const updateConnection = mutation({
   },
 });
 
+export const removeConnection = mutation({
+  args: { connectionId: v.id("connections") },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Not authenticated");
+
+    const connection = await ctx.db.get(args.connectionId);
+    if (!connection) throw new Error("Connection not found");
+    if (connection.userId !== userId && connection.friendId !== userId) {
+      throw new Error("Not authorized");
+    }
+
+    await ctx.db.delete(args.connectionId);
+  },
+});
+
 export const listConnections = query({
   args: {},
   handler: async (ctx) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) return [];
 
-    const connections = await ctx.db
+    // Query both sides of the connection using indexes
+    const connectionsAsUser = await ctx.db
       .query("connections")
-      .filter((q) =>
-        q.or(
-          q.eq(q.field("userId"), userId),
-          q.eq(q.field("friendId"), userId)
-        )
-      )
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .collect();
+    const connectionsAsFriend = await ctx.db
+      .query("connections")
+      .withIndex("by_friendId", (q) => q.eq("friendId", userId))
       .collect();
 
-    return connections;
+    const allConnections = [...connectionsAsUser, ...connectionsAsFriend];
+
+    // Join friend user data so the client has display names
+    const enriched = await Promise.all(
+      allConnections.map(async (conn) => {
+        // The "other" user is whichever side isn't the current user
+        const otherUserId =
+          conn.userId === userId ? conn.friendId : conn.userId;
+        const otherUser = await ctx.db.get(otherUserId);
+        return {
+          ...conn,
+          friendName: otherUser?.name?.trim() || null,
+          friendEmail: otherUser?.email || null,
+          friendImage: otherUser?.image || null,
+        };
+      })
+    );
+
+    return enriched;
   },
 });

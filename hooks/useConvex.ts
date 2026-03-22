@@ -236,6 +236,10 @@ export function useUpdateConnection() {
   return useMutation(api.social.updateConnection);
 }
 
+export function useRemoveConnection() {
+  return useMutation(api.social.removeConnection);
+}
+
 // ==================
 // GEMINI AI HOOKS
 // ==================
@@ -276,9 +280,7 @@ export function useStreakFreeze() {
   return useMutation(api.stats.useStreakFreeze);
 }
 
-export function useGrantStreakFreezes() {
-  return useMutation(api.stats.grantStreakFreezes);
-}
+// grantStreakFreezes is now internal — not callable from clients
 
 // ==================
 // ACCOUNTABILITY HOOKS
@@ -344,9 +346,7 @@ export function useUserLeague() {
   return useQuery(api.leaderboard.getUserLeague);
 }
 
-export function useUpdateWeeklyXP() {
-  return useMutation(api.leaderboard.updateWeeklyXP);
-}
+// updateWeeklyXP is now internal — XP is updated automatically by stats.incrementTask
 
 // ==================
 // NOTIFICATION HOOKS
@@ -360,9 +360,7 @@ export function useRemovePushToken() {
   return useMutation(api.notifications.removePushToken);
 }
 
-export function useSendPushNotification() {
-  return useAction(api.notifications.sendPushNotification);
-}
+// sendPushNotification is now internal — use purpose-specific mutations instead
 
 // ==================
 // VARIABLE REWARDS HOOKS
@@ -372,9 +370,7 @@ export function useUnclaimedRewards() {
   return useQuery(api.variableRewards.getUnclaimedRewards);
 }
 
-export function useCheckForReward() {
-  return useMutation(api.variableRewards.checkForReward);
-}
+// checkForReward is now internal — rewards are generated automatically by stats.incrementTask
 
 export function useClaimReward() {
   return useMutation(api.variableRewards.claimReward);

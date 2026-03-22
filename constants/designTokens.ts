@@ -24,6 +24,8 @@ export const V1 = {
     text: '#FFFFFF',
     textSecondary: 'rgba(255,255,255,0.5)',
     textMuted: 'rgba(255,255,255,0.3)',
+    inputBg: '#141414',
+    inputBorder: 'rgba(255,255,255,0.12)',
   },
   light: {
     bg: '#FAFAFA',
@@ -33,6 +35,8 @@ export const V1 = {
     text: '#1A1A1A',
     textSecondary: '#6B7280',
     textMuted: '#9CA3AF',
+    inputBg: '#FFFFFF',
+    inputBorder: '#E5E7EB',
   },
 } as const;
 
@@ -103,5 +107,78 @@ export function cardStyleSm(isDark: boolean) {
     borderWidth: 1,
     borderRadius: RADIUS.md,
     ...(isDark ? {} : CARD_SHADOW_SM),
+  } as const;
+}
+
+// ─── Animation Constants ───────────────────────────────────────────────────
+export const ANIMATION = {
+  spring: {
+    gentle: { damping: 20, stiffness: 150, mass: 0.8 },
+    snappy: { damping: 15, stiffness: 300, mass: 0.8 },
+    bouncy: { damping: 8, stiffness: 200, mass: 0.8 },
+    stiff: { damping: 20, stiffness: 400, mass: 0.6 },
+  },
+  duration: {
+    instant: 100,
+    fast: 200,
+    normal: 350,
+    slow: 600,
+    entrance: 500,
+  },
+  stagger: {
+    fast: 50,
+    normal: 80,
+    slow: 120,
+  },
+} as const;
+
+// ─── Button Style Helpers ──────────────────────────────────────────────────
+export function coralButtonStyle() {
+  return {
+    backgroundColor: V1.coral,
+    borderRadius: 28,
+    height: 56,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+  } as const;
+}
+
+export function coralButtonTextStyle() {
+  return {
+    color: '#FFFFFF',
+    fontSize: 17,
+    fontWeight: '700' as const,
+    fontFamily: BODY_FONT,
+    letterSpacing: 0.3,
+  } as const;
+}
+
+export function outlineButtonStyle(isDark: boolean) {
+  const t = isDark ? V1.dark : V1.light;
+  return {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    gap: 8,
+    height: 52,
+    borderRadius: 26,
+    borderWidth: 1.5,
+    borderColor: t.border,
+  } as const;
+}
+
+// ─── Input Field Style Helper ──────────────────────────────────────────────
+export function inputFieldStyle(isDark: boolean) {
+  const t = isDark ? V1.dark : V1.light;
+  return {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    height: 52,
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingHorizontal: 16,
+    gap: 12,
+    backgroundColor: t.inputBg,
+    borderColor: t.inputBorder,
   } as const;
 }

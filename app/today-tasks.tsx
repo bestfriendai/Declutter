@@ -1,157 +1,93 @@
 /**
  * Declutterly -- Today's Tasks (V1 Pencil Design)
- * Cross-room daily task list grouped by room.
- * Summary badges, room sections with tasks, floating CTA.
+ * Cross-room daily task list with curated tasks from useTodaysTasks.
+ *
+ * Improvements:
+ * - Uses useTodaysTasks hook for intelligent curation
+ * - Daily progress tracker at top
+ * - Task source badges (Priority, Quick Win, Tiny Thing)
+ * - Daily completion celebration
+ * - Task completion animation
+ * - Real pull-to-refresh
  */
 
 import { AmbientBackdrop } from '@/components/ui/AmbientBackdrop';
+import { MascotAvatar } from '@/components/ui';
+import { BODY_FONT, DISPLAY_FONT, V1 } from '@/constants/designTokens';
 import { useDeclutter } from '@/context/DeclutterContext';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
-import { Room, CleaningTask } from '@/types/declutter';
-import {
-  Bed,
-  UtensilsCrossed,
-  Droplets,
-  Tv,
-  Monitor,
-  Car,
-  Shirt,
-  Box,
-  Clock,
-  CheckCircle2,
-  Circle,
-  Zap,
-} from 'lucide-react-native';
-import type { LucideIcon } from 'lucide-react-native';
+import { useTodaysTasks, type TodayTask } from '@/hooks/useTodaysTasks';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
-import React, { useMemo, useCallback } from 'react';
 import {
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
+    CheckCircle2,
+    ChevronLeft,
+    Circle,
+    Clock,
+    Zap,
+} from 'lucide-react-native';
+import { ScreenErrorBoundary } from '@/components/ErrorBoundary';
+import React, { useCallback, useMemo, useState } from 'react';
+import {
+    Pressable,
+    RefreshControl,
+    ScrollView,
+    StyleSheet,
+    Text,
+    View,
 } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-const BODY_FONT = 'DM Sans';
-const DISPLAY_FONT = 'Bricolage Grotesque';
+// ─── Source Badge ──────────────────────────────────────────────────────────────
+function SourceBadge({ source }: { source: TodayTask['source'] }) {
+  const config: Record<string, { label: string; color: string }> = {
+    'freshness': { label: 'PRIORITY', color: V1.coral },
+    'quick-win': { label: 'QUICK WIN', color: V1.green },
+    'tiny-thing': { label: 'TINY THING', color: V1.blue },
+  };
+  const c = config[source] ?? config['freshness'];
 
-const V1 = {
-  coral: '#FF6B6B',
-  green: '#66BB6A',
-  amber: '#FFB74D',
-  gold: '#FFD54F',
-  blue: '#64B5F6',
-  dark: {
-    bg: '#0C0C0C',
-    card: '#1A1A1A',
-    border: 'rgba(255,255,255,0.08)',
-    text: '#FFFFFF',
-    textSecondary: 'rgba(255,255,255,0.5)',
-    textMuted: 'rgba(255,255,255,0.3)',
-  },
-  light: {
-    bg: '#FAFAFA',
-    card: '#F6F7F8',
-    border: '#E5E7EB',
-    text: '#1A1A1A',
-    textSecondary: '#6B7280',
-    textMuted: '#9CA3AF',
-  },
-};
-
-const ROOM_ICON_MAP: Record<string, LucideIcon> = {
-  bedroom: Bed,
-  kitchen: UtensilsCrossed,
-  bathroom: Droplets,
-  livingRoom: Tv,
-  living_room: Tv,
-  office: Monitor,
-  garage: Car,
-  closet: Shirt,
-  other: Box,
-};
-
-function getRoomIcon(type?: string): LucideIcon {
-  if (!type) return Box;
-  return ROOM_ICON_MAP[type] || Box;
-}
-
-function getFreshnessLabel(room: Room): string {
-  const tasks = room.tasks ?? [];
-  const total = tasks.length;
-  if (total === 0) return 'New';
-  const completed = tasks.filter((t) => t.completed).length;
-  const percent = Math.round((completed / total) * 100);
-  if (percent >= 90) return 'Sparkling';
-  if (percent >= 60) return 'Fresh';
-  if (percent >= 30) return 'Needs love';
-  return 'Needs attention';
-}
-
-function getTaskColor(priority: string): string {
-  switch (priority) {
-    case 'high': return V1.coral;
-    case 'medium': return V1.amber;
-    case 'low': return V1.green;
-    default: return V1.blue;
-  }
-}
-
-interface RoomGroup {
-  room: Room;
-  tasks: CleaningTask[];
-  totalMinutes: number;
-}
-
-function SummaryBadge({
-  isDark,
-  label,
-  color,
-}: {
-  isDark: boolean;
-  label: string;
-  color: string;
-}) {
   return (
-    <View style={[styles.badge, {
-      backgroundColor: isDark ? `${color}22` : `${color}18`,
-    }]}>
-      <Text style={[styles.badgeText, { color }]}>{label}</Text>
+    <View style={{
+      backgroundColor: `${c.color}18`,
+      paddingHorizontal: 6, paddingVertical: 2,
+      borderRadius: 6, flexDirection: 'row', alignItems: 'center', gap: 3,
+    }}>
+      <Text style={{
+        fontSize: 10, fontWeight: '700', color: c.color,
+        letterSpacing: 0.3, fontFamily: BODY_FONT,
+      }}>
+        {c.label}
+      </Text>
     </View>
   );
 }
 
+// ─── Task Row ─────────────────────────────────────────────────────────────────
 function TaskRow({
   isDark,
   task,
   onToggle,
-  onPress,
 }: {
   isDark: boolean;
-  task: CleaningTask;
+  task: TodayTask;
   onToggle: () => void;
-  onPress: () => void;
 }) {
   const t = isDark ? V1.dark : V1.light;
-  const dotColor = getTaskColor(task.priority);
 
   return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
-      style={({ pressed }) => [styles.taskRow, { opacity: pressed ? 0.8 : 1 }]}
-    >
-      {/* Color dot */}
-      <View style={[styles.taskDot, { backgroundColor: dotColor }]} />
-
+    <View style={styles.taskRow}>
       {/* Checkbox */}
-      <Pressable onPress={onToggle} hitSlop={8} accessibilityRole="checkbox" accessibilityState={{ checked: task.completed }}>
+      <Pressable
+        onPress={onToggle}
+        hitSlop={8}
+        accessibilityRole="checkbox"
+        accessibilityState={{ checked: task.completed }}
+        accessibilityLabel={`${task.completed ? 'Undo' : 'Complete'} task: ${task.title}`}
+      >
         {task.completed ? (
           <CheckCircle2 size={22} color={V1.green} />
         ) : (
@@ -161,30 +97,46 @@ function TaskRow({
 
       {/* Task info */}
       <View style={styles.taskInfo}>
-        <Text
-          style={[
-            styles.taskTitle,
-            { color: t.text },
-            task.completed && { textDecorationLine: 'line-through', color: t.textMuted },
-          ]}
-          numberOfLines={1}
-        >
-          {task.title}
-        </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+          <Text
+            style={[
+              styles.taskTitle,
+              { color: t.text },
+              task.completed && { textDecorationLine: 'line-through', color: t.textMuted },
+            ]}
+            numberOfLines={1}
+          >
+            {task.title}
+          </Text>
+        </View>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <SourceBadge source={task.source} />
+          <Text style={{ fontFamily: BODY_FONT, fontSize: 11, color: t.textMuted }}>
+            {task.roomName}
+          </Text>
+        </View>
       </View>
 
       {/* Time estimate */}
       <View style={styles.taskTime}>
         <Clock size={12} color={t.textMuted} />
         <Text style={[styles.taskTimeText, { color: t.textMuted }]}>
-          {task.estimatedMinutes} min
+          {task.estimatedMinutes}m
         </Text>
       </View>
-    </Pressable>
+    </View>
   );
 }
 
 export default function TodayTasksScreen() {
+  return (
+    <ScreenErrorBoundary screenName="today-tasks">
+      <TodayTasksScreenContent />
+    </ScreenErrorBoundary>
+  );
+}
+
+function TodayTasksScreenContent() {
   const rawScheme = useColorScheme();
   const isDark = rawScheme === 'dark';
   const reducedMotion = useReducedMotion();
@@ -193,34 +145,38 @@ export default function TodayTasksScreen() {
   const rooms = rawRooms ?? [];
   const t = isDark ? V1.dark : V1.light;
 
-  // Group tasks by room, only include rooms with incomplete tasks
-  const roomGroups = useMemo((): RoomGroup[] => {
-    return rooms
-      .map((room) => {
-        const tasks = (room.tasks ?? []).filter((t) => !t.completed);
-        const totalMinutes = tasks.reduce((sum, t) => sum + (t.estimatedMinutes ?? 0), 0);
-        return { room, tasks, totalMinutes };
-      })
-      .filter((g) => g.tasks.length > 0);
-  }, [rooms]);
+  // Use the curated today's tasks hook
+  const todaysTasks = useTodaysTasks(rooms);
+  const completedToday = todaysTasks.filter(tk => tk.completed).length;
+  const totalToday = todaysTasks.length;
+  const todayProgress = totalToday > 0 ? (completedToday / totalToday) * 100 : 0;
+  const totalMinutes = todaysTasks
+    .filter(tk => !tk.completed)
+    .reduce((sum, tk) => sum + tk.estimatedMinutes, 0);
+  const allDone = completedToday >= totalToday && totalToday > 0;
 
-  const totalTasks = roomGroups.reduce((sum, g) => sum + g.tasks.length, 0);
-  const totalMinutes = roomGroups.reduce((sum, g) => sum + g.totalMinutes, 0);
-  const totalRooms = roomGroups.length;
-
-  const handleToggleTask = useCallback((roomId: string, taskId: string) => {
-    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    toggleTask(roomId, taskId);
-  }, [toggleTask]);
-
-  const handleTaskPress = useCallback((taskId: string) => {
-    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    router.push(`/task-detail?taskId=${taskId}`);
+  // Pull-to-refresh
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const handleRefresh = useCallback(() => {
+    setIsRefreshing(true);
+    setTimeout(() => setIsRefreshing(false), 600);
   }, []);
+
+  const handleToggleTask = useCallback((task: TodayTask) => {
+    if (task.source === 'tiny-thing') {
+      // Tiny things don't have a real room to toggle
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      return;
+    }
+    void Haptics.notificationAsync(
+      task.completed ? Haptics.NotificationFeedbackType.Warning : Haptics.NotificationFeedbackType.Success
+    );
+    toggleTask(task.roomId, task.id);
+  }, [toggleTask]);
 
   const handleStartBlitz = useCallback(() => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    router.push('/single-task');
+    router.push('/blitz');
   }, []);
 
   const enter = (delay: number) =>
@@ -236,82 +192,152 @@ export default function TodayTasksScreen() {
           { paddingTop: insets.top + 14, paddingBottom: insets.bottom + 100 },
         ]}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={handleRefresh}
+            tintColor={V1.coral}
+            colors={[V1.coral]}
+          />
+        }
       >
-        {/* Title */}
-        <Animated.View entering={enter(0)}>
+        {/* Header with back button */}
+        <Animated.View entering={enter(0)} style={styles.headerRow}>
+          <Pressable
+            onPress={() => {
+              void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              router.back();
+            }}
+            hitSlop={12}
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
+            style={styles.backButton}
+          >
+            <ChevronLeft size={22} color={t.text} />
+          </Pressable>
           <Text style={[styles.title, { color: t.text }]}>Today's Tasks</Text>
         </Animated.View>
 
+        {/* Daily progress tracker */}
+        {totalToday > 0 && (
+          <Animated.View entering={enter(20)} style={{ marginBottom: 8 }}>
+            <View style={{
+              flexDirection: 'row', alignItems: 'center', gap: 10,
+              marginBottom: 8,
+            }}>
+              <Text style={{
+                fontFamily: DISPLAY_FONT, fontSize: 15, fontWeight: '700', color: t.text,
+              }}>
+                {completedToday} of {totalToday} done
+              </Text>
+              <View style={{ flex: 1 }} />
+              <Text style={{
+                fontFamily: BODY_FONT, fontSize: 12, color: allDone ? V1.green : V1.coral, fontWeight: '600',
+              }}>
+                {Math.round(todayProgress)}%
+              </Text>
+            </View>
+            <View style={{
+              height: 6, borderRadius: 3,
+              backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+            }}>
+              <View style={{
+                height: 6, borderRadius: 3,
+                width: `${Math.max(todayProgress, 3)}%`,
+                backgroundColor: allDone ? V1.green : V1.coral,
+              }} />
+            </View>
+          </Animated.View>
+        )}
+
         {/* Summary badges */}
         <Animated.View entering={enter(40)} style={styles.badgeRow}>
-          <SummaryBadge isDark={isDark} label={`${totalTasks} tasks`} color={V1.green} />
-          <SummaryBadge isDark={isDark} label={`~${totalMinutes} min`} color={V1.blue} />
-          <SummaryBadge isDark={isDark} label={`${totalRooms} rooms`} color={V1.amber} />
+          <View style={[styles.badge, { backgroundColor: isDark ? `${V1.green}22` : `${V1.green}18` }]}>
+            <Text style={[styles.badgeText, { color: V1.green }]}>{totalToday} tasks</Text>
+          </View>
+          <View style={[styles.badge, { backgroundColor: isDark ? `${V1.blue}22` : `${V1.blue}18` }]}>
+            <Text style={[styles.badgeText, { color: V1.blue }]}>about {totalMinutes} min</Text>
+          </View>
         </Animated.View>
 
-        {/* Room groups */}
-        {roomGroups.length === 0 ? (
-          <Animated.View entering={enter(80)} style={styles.emptyWrap}>
-            <Text style={[styles.emptyText, { color: t.textSecondary }]}>
-              No tasks for today. Scan a room to get started!
+        {/* All done celebration */}
+        {allDone && (
+          <Animated.View entering={enter(80)} style={{
+            alignItems: 'center', paddingVertical: 40, gap: 12,
+          }}>
+            <MascotAvatar imageKey="celebrating" size={80} showBackground={false} />
+            <Text style={{
+              fontFamily: DISPLAY_FONT, fontSize: 22, fontWeight: '700',
+              color: t.text, textAlign: 'center',
+            }}>
+              All done for today!
+            </Text>
+            <Text style={{
+              fontFamily: BODY_FONT, fontSize: 14, color: t.textSecondary,
+              textAlign: 'center', lineHeight: 20,
+            }}>
+              You completed all {totalToday} tasks. Your space thanks you.
             </Text>
           </Animated.View>
-        ) : (
-          roomGroups.map((group, gIndex) => {
-            const Icon = getRoomIcon(group.room.type);
-            const freshness = getFreshnessLabel(group.room);
-            const freshnessColor = freshness === 'Sparkling' ? V1.green :
-              freshness === 'Fresh' ? V1.green :
-              freshness === 'Needs love' ? V1.amber : V1.coral;
+        )}
 
-            return (
-              <Animated.View key={group.room.id} entering={enter(80 + gIndex * 50)}>
-                {/* Room section header */}
-                <View style={styles.sectionHeader}>
-                  <Icon size={16} color={t.textSecondary} />
-                  <Text style={[styles.sectionName, { color: t.text }]}>
-                    {group.room.name}
-                  </Text>
-                  <Text style={[styles.sectionMeta, { color: t.textMuted }]}>
-                    {group.tasks.length} task{group.tasks.length === 1 ? '' : 's'} {'\u00B7'} {group.totalMinutes} min
-                  </Text>
-                  <View style={{ flex: 1 }} />
-                  <Text style={[styles.sectionFreshness, { color: freshnessColor }]}>
-                    {freshness}
-                  </Text>
-                </View>
-
-                {/* Tasks */}
-                <View style={[styles.taskList, { backgroundColor: t.card, borderColor: t.border }]}>
-                  {group.tasks.map((task, tIndex) => (
-                    <View key={task.id}>
-                      <TaskRow
-                        isDark={isDark}
-                        task={task}
-                        onToggle={() => handleToggleTask(group.room.id, task.id)}
-                        onPress={() => handleTaskPress(task.id)}
-                      />
-                      {tIndex < group.tasks.length - 1 && (
-                        <View style={[styles.taskDivider, {
-                          backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)',
-                        }]} />
-                      )}
-                    </View>
-                  ))}
-                </View>
+        {/* Task list */}
+        {todaysTasks.length === 0 ? (
+          <Animated.View entering={enter(80)} style={styles.emptyWrap}>
+            <Text style={{ fontSize: 32, marginBottom: 12 }}>{'\u2728'}</Text>
+            <Text style={[styles.emptyText, { color: t.text, fontWeight: '600', fontSize: 16, marginBottom: 4 }]}>
+              All caught up!
+            </Text>
+            <Text style={[styles.emptyText, { color: t.textSecondary, marginBottom: 20 }]}>
+              Scan a room to get tasks for today.
+            </Text>
+            <Pressable
+              onPress={() => {
+                void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                router.push('/camera');
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Scan a Room"
+              style={({ pressed }) => [{
+                backgroundColor: V1.coral,
+                paddingHorizontal: 28,
+                paddingVertical: 14,
+                borderRadius: 16,
+                opacity: pressed ? 0.88 : 1,
+              }]}
+            >
+              <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '700', fontFamily: BODY_FONT }}>
+                Scan a Room
+              </Text>
+            </Pressable>
+          </Animated.View>
+        ) : !allDone && (
+          <View style={[styles.taskList, { backgroundColor: t.card, borderColor: t.border }]}>
+            {todaysTasks.map((task, tIndex) => (
+              <Animated.View key={task.id} entering={enter(80 + tIndex * 30)}>
+                <TaskRow
+                  isDark={isDark}
+                  task={task}
+                  onToggle={() => handleToggleTask(task)}
+                />
+                {tIndex < todaysTasks.length - 1 && (
+                  <View style={[styles.taskDivider, {
+                    backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)',
+                  }]} />
+                )}
               </Animated.View>
-            );
-          })
+            ))}
+          </View>
         )}
       </ScrollView>
 
       {/* Floating CTA */}
-      {totalTasks > 0 && (
-        <View style={[styles.ctaWrap, { paddingBottom: insets.bottom + 88 }]}>
+      {totalToday > 0 && !allDone && (
+        <View style={[styles.ctaWrap, { paddingBottom: insets.bottom + 20 }]}>
           <Pressable
             onPress={handleStartBlitz}
             accessibilityRole="button"
-            accessibilityLabel="Start 15-Min Blitz"
+            accessibilityLabel="Start 15-Min Blitz with today's tasks"
             style={({ pressed }) => [{ opacity: pressed ? 0.88 : 1 }]}
           >
             <LinearGradient
@@ -338,6 +364,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     gap: 16,
   },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  backButton: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   title: {
     fontFamily: DISPLAY_FONT,
     fontSize: 28,
@@ -361,29 +398,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
-  // Section header
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 8,
-  },
-  sectionName: {
-    fontFamily: BODY_FONT,
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  sectionMeta: {
-    fontFamily: BODY_FONT,
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  sectionFreshness: {
-    fontFamily: BODY_FONT,
-    fontSize: 12,
-    fontWeight: '600',
-  },
-
   // Task list
   taskList: {
     borderRadius: 16,
@@ -397,11 +411,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 12,
   },
-  taskDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
   taskInfo: {
     flex: 1,
   },
@@ -409,6 +418,7 @@ const styles = StyleSheet.create({
     fontFamily: BODY_FONT,
     fontSize: 14,
     fontWeight: '500',
+    flex: 1,
   },
   taskTime: {
     flexDirection: 'row',
@@ -422,7 +432,7 @@ const styles = StyleSheet.create({
   },
   taskDivider: {
     height: 1,
-    marginLeft: 52,
+    marginLeft: 46,
   },
 
   // Empty

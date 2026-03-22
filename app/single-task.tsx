@@ -5,50 +5,30 @@
  */
 
 import { AmbientBackdrop } from '@/components/ui/AmbientBackdrop';
+import { MascotAvatar } from '@/components/ui/MascotAvatar';
+import { BODY_FONT, DISPLAY_FONT, V1 } from '@/constants/designTokens';
 import { useDeclutter } from '@/context/DeclutterContext';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
+import { useTimer } from '@/hooks/useTimer';
 import { CleaningTask } from '@/types/declutter';
-import { X, Clock, CheckCircle } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
-import { router } from 'expo-router';
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { router, useLocalSearchParams } from 'expo-router';
+import { CheckCircle, Clock, X } from 'lucide-react-native';
+import { ScreenErrorBoundary } from '@/components/ErrorBoundary';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
+    Alert,
+    Pressable,
+    ScrollView,
+    StyleSheet,
+    Text,
+    View,
 } from 'react-native';
-import Animated, { FadeInDown, FadeIn } from 'react-native-reanimated';
+import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-const BODY_FONT = 'DM Sans';
-const DISPLAY_FONT = 'Bricolage Grotesque';
-const BLITZ_DURATION_SECONDS = 15 * 60; // 15 minutes
-
-const V1 = {
-  coral: '#FF6B6B',
-  green: '#66BB6A',
-  amber: '#FFB74D',
-  gold: '#FFD54F',
-  blue: '#64B5F6',
-  dark: {
-    bg: '#0C0C0C',
-    card: '#1A1A1A',
-    border: 'rgba(255,255,255,0.08)',
-    text: '#FFFFFF',
-    textSecondary: 'rgba(255,255,255,0.5)',
-    textMuted: 'rgba(255,255,255,0.3)',
-  },
-  light: {
-    bg: '#FAFAFA',
-    card: '#F6F7F8',
-    border: '#E5E7EB',
-    text: '#1A1A1A',
-    textSecondary: '#6B7280',
-    textMuted: '#9CA3AF',
-  },
-};
+const DEFAULT_BLITZ_DURATION_SECONDS = 15 * 60; // 15 minutes
 
 const PHASE_COLORS = [V1.green, V1.green, V1.coral, V1.amber, V1.blue];
 
@@ -69,18 +49,30 @@ function getDustyTip(task: CleaningTask): string {
 }
 
 export default function SingleTaskScreen() {
+  return (
+    <ScreenErrorBoundary screenName="single-task">
+      <SingleTaskScreenContent />
+    </ScreenErrorBoundary>
+  );
+}
+
+function SingleTaskScreenContent() {
   const rawScheme = useColorScheme();
   const isDark = rawScheme === 'dark';
   const reducedMotion = useReducedMotion();
   const insets = useSafeAreaInsets();
-  const { rooms: rawRooms, toggleTask } = useDeclutter();
+  const { rooms: rawRooms, toggleTask, mascot } = useDeclutter();
   const rooms = rawRooms ?? [];
   const t = isDark ? V1.dark : V1.light;
+  const params = useLocalSearchParams<{ roomId?: string; taskId?: string; duration?: string }>();
 
-  // Gather all incomplete tasks across rooms
+  // Gather incomplete tasks, filtered to a specific room if roomId is provided
   const allTasks = useMemo(() => {
     const tasks: Array<{ task: CleaningTask; roomId: string; roomName: string }> = [];
-    rooms.forEach((room) => {
+    const sourceRooms = params.roomId
+      ? rooms.filter((r) => r.id === params.roomId)
+      : rooms;
+    sourceRooms.forEach((room) => {
       (room.tasks ?? []).forEach((task) => {
         if (!task.completed) {
           tasks.push({ task, roomId: room.id, roomName: room.name });
@@ -88,28 +80,76 @@ export default function SingleTaskScreen() {
       });
     });
     return tasks;
-  }, [rooms]);
+  }, [rooms, params.roomId]);
 
-  const [currentIndex, setCurrentIndex] = useState(0);
+  // If a specific taskId was passed, start at that task's index
+  const initialIndex = useMemo(() => {
+    if (params.taskId) {
+      const idx = allTasks.findIndex((t) => t.task.id === params.taskId);
+      if (idx >= 0) return idx;
+    }
+    return 0;
+  }, []);
+
+  // Calculate timer duration: use param, or estimate from remaining tasks, or default 15 min
+  const blitzDurationSeconds = useMemo(() => {
+    if (params.duration) {
+      const parsed = parseInt(params.duration, 10);
+      if (!isNaN(parsed) && parsed > 0) return parsed * 60;
+    }
+    // Calculate from total estimated time of remaining tasks
+    if (allTasks.length > 0) {
+      const totalMinutes = allTasks.reduce((sum, t) => sum + (t.task.estimatedMinutes || 3), 0);
+      return Math.max(totalMinutes * 60, 5 * 60); // At least 5 minutes
+    }
+    return DEFAULT_BLITZ_DURATION_SECONDS;
+  }, []);
+
+  const [currentIndex, setCurrentIndex] = useState(initialIndex);
   const [completedCount, setCompletedCount] = useState(0);
-  const [secondsLeft, setSecondsLeft] = useState(BLITZ_DURATION_SECONDS);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Start timer
+  const {
+    remaining: secondsLeft,
+    isRunning: _timerRunning,
+    isComplete: timerExpired,
+  } = useTimer({
+    initialSeconds: blitzDurationSeconds,
+    autoStart: true,
+    pauseOnBackground: true,
+  });
+
+  // Decision help state
+  const [showDecisionHelp, setShowDecisionHelp] = useState(false);
+
+  // Undo support
+  const [undoTask, setUndoTask] = useState<{ roomId: string; taskId: string; title: string } | null>(null);
+  const undoTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Clean up undo timeout on unmount
   useEffect(() => {
-    timerRef.current = setInterval(() => {
-      setSecondsLeft((prev) => {
-        if (prev <= 1) {
-          if (timerRef.current) clearInterval(timerRef.current);
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
     return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
+      if (undoTimeoutRef.current) clearTimeout(undoTimeoutRef.current);
     };
   }, []);
+
+  // Navigate to session-complete when timer expires
+  useEffect(() => {
+    if (secondsLeft === 0 && completedCount > 0) {
+      const elapsedSeconds = blitzDurationSeconds;
+      const elapsedMinutes = Math.max(1, Math.round(elapsedSeconds / 60));
+      const xpEarned = completedCount * 10;
+      router.replace({
+        pathname: '/session-complete',
+        params: {
+          tasksCompleted: String(completedCount),
+          timeSpent: String(elapsedMinutes),
+          xpEarned: String(xpEarned),
+          roomId: currentTask?.roomId ?? '',
+          roomName: currentTask?.roomName ?? '',
+        },
+      });
+    }
+  }, [secondsLeft]);
 
   const totalTasks = allTasks.length;
   const currentTask = allTasks[currentIndex];
@@ -119,37 +159,91 @@ export default function SingleTaskScreen() {
     if (!currentTask) return;
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     toggleTask(currentTask.roomId, currentTask.task.id);
-    setCompletedCount((c) => c + 1);
+    const newCompleted = completedCount + 1;
+    setCompletedCount(newCompleted);
+    setShowDecisionHelp(false);
+
+    // Show undo toast
+    if (undoTimeoutRef.current) clearTimeout(undoTimeoutRef.current);
+    setUndoTask({ roomId: currentTask.roomId, taskId: currentTask.task.id, title: currentTask.task.title });
+    undoTimeoutRef.current = setTimeout(() => setUndoTask(null), 4000);
+
     if (currentIndex < totalTasks - 1) {
       setCurrentIndex((i) => i + 1);
     } else {
-      // All done
-      router.back();
+      // All done - navigate to session complete with stats
+      const elapsedSeconds = blitzDurationSeconds - secondsLeft;
+      const elapsedMinutes = Math.max(1, Math.round(elapsedSeconds / 60));
+      const xpEarned = newCompleted * 10;
+      router.replace({
+        pathname: '/session-complete',
+        params: {
+          tasksCompleted: String(newCompleted),
+          timeSpent: String(elapsedMinutes),
+          xpEarned: String(xpEarned),
+          roomId: currentTask.roomId,
+          roomName: currentTask.roomName,
+        },
+      });
     }
-  }, [currentTask, currentIndex, totalTasks, toggleTask]);
+  }, [currentTask, currentIndex, totalTasks, toggleTask, completedCount, secondsLeft]);
 
   const handleSkip = useCallback(() => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     if (currentIndex < totalTasks - 1) {
       setCurrentIndex((i) => i + 1);
     } else {
-      router.back();
+      // Last task skipped — navigate to session complete with stats
+      const elapsedSeconds = blitzDurationSeconds - secondsLeft;
+      const elapsedMinutes = Math.max(1, Math.round(elapsedSeconds / 60));
+      const xpEarned = completedCount * 10;
+      if (completedCount > 0) {
+        router.replace({
+          pathname: '/session-complete',
+          params: {
+            tasksCompleted: String(completedCount),
+            timeSpent: String(elapsedMinutes),
+            xpEarned: String(xpEarned),
+            roomId: currentTask?.roomId ?? '',
+            roomName: currentTask?.roomName ?? '',
+          },
+        });
+      } else {
+        router.back();
+      }
     }
-  }, [currentIndex, totalTasks]);
+  }, [currentIndex, totalTasks, blitzDurationSeconds, secondsLeft, completedCount, currentTask]);
 
   const handleClose = useCallback(() => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    router.back();
-  }, []);
+    if (_timerRunning || completedCount > 0) {
+      Alert.alert(
+        'Leave session?',
+        'Your progress on completed tasks is saved, but the timer will reset.',
+        [
+          { text: 'Stay', style: 'cancel' },
+          { text: 'Leave', style: 'destructive', onPress: () => router.back() },
+        ],
+      );
+    } else {
+      router.back();
+    }
+  }, [_timerRunning, completedCount]);
 
   if (!currentTask) {
     return (
       <View style={[styles.container, { backgroundColor: t.bg }]}>
         <View style={[styles.centered, { paddingTop: insets.top + 40 }]}>
+          <Text style={{ fontSize: 48, marginBottom: 16 }}>{'\u2728'}</Text>
           <Text style={[styles.doneTitle, { color: t.text }]}>All done!</Text>
           <Text style={[styles.doneSubtitle, { color: t.textSecondary }]}>
             You completed {completedCount} task{completedCount === 1 ? '' : 's'}. Amazing!
           </Text>
+          {completedCount > 0 && (
+            <Text style={{ fontFamily: BODY_FONT, fontSize: 14, color: V1.green, fontWeight: '600', marginBottom: 16 }}>
+              +{completedCount * 10} XP earned
+            </Text>
+          )}
           <Pressable onPress={handleClose} style={styles.doneButton}>
             <Text style={styles.doneButtonText}>Back to Tasks</Text>
           </Pressable>
@@ -158,13 +252,29 @@ export default function SingleTaskScreen() {
     );
   }
 
+  const ENCOURAGEMENTS = [
+    'You got this. One task at a time.',
+    'Great start! Keep going!',
+    "You're on a roll!",
+    'Look at you go!',
+    'Momentum is building!',
+    'Almost there, keep pushing!',
+    'Your space is transforming!',
+  ];
   const encouragement = completedCount > 0
-    ? `You're doing amazing \u2014 ${completedCount} down, ${totalTasks - currentIndex} to go!`
-    : 'You got this. One task at a time.';
+    ? ENCOURAGEMENTS[Math.min(completedCount, ENCOURAGEMENTS.length - 1)]
+    : ENCOURAGEMENTS[0];
 
   return (
     <View style={[styles.container, { backgroundColor: t.bg }]}>
       <AmbientBackdrop isDark={isDark} variant="progress" />
+
+      {/* Mascot avatar */}
+      {mascot && (
+        <View style={{ position: 'absolute', top: insets.top + 8, right: 16, zIndex: 10 }}>
+          <MascotAvatar size={40} mood={mascot.mood} />
+        </View>
+      )}
 
       {/* Top bar */}
       <View style={[styles.topBar, { paddingTop: insets.top + 8 }]}>
@@ -180,7 +290,12 @@ export default function SingleTaskScreen() {
           </Text>
         </View>
 
-        <Pressable onPress={handleClose} hitSlop={12}>
+        <Pressable
+          onPress={handleClose}
+          hitSlop={12}
+          accessibilityRole="button"
+          accessibilityLabel="Close single task view"
+        >
           <X size={22} color={t.textSecondary} />
         </Pressable>
       </View>
@@ -206,17 +321,95 @@ export default function SingleTaskScreen() {
       </Animated.View>
 
       {/* Task content */}
-      <View style={styles.taskContent}>
+      <ScrollView
+        style={styles.taskContent}
+        contentContainerStyle={styles.taskContentInner}
+        showsVerticalScrollIndicator={false}
+      >
         <Animated.View entering={reducedMotion ? undefined : FadeInDown.duration(350)} style={styles.taskCenter}>
-          <Text style={[styles.phaseLabel, { color: V1.coral }]}>{phaseLabel}</Text>
+          {/* Phase info */}
+          <Text style={[styles.phaseLabel, { color: V1.coral }]}>
+            {currentTask.task.phase && currentTask.task.phaseName
+              ? `Phase ${currentTask.task.phase} · ${currentTask.task.phaseName}`
+              : phaseLabel}
+          </Text>
           <Text style={[styles.taskName, { color: t.text }]}>{currentTask.task.title}</Text>
           <View style={styles.taskMeta}>
             <Clock size={14} color={t.textMuted} />
             <Text style={[styles.taskMetaText, { color: t.textMuted }]}>
-              ~{currentTask.task.estimatedMinutes} minutes
+              EST {currentTask.task.estimatedMinutes} min
             </Text>
           </View>
+          {/* Location + destination context */}
+          {(currentTask.task.targetObjects?.[0] || currentTask.task.destination?.location || currentTask.task.zone) && (
+            <View style={{
+              backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+              borderRadius: 10,
+              padding: 12,
+              marginTop: 8,
+              gap: 6,
+              width: '100%',
+            }}>
+              {currentTask.task.zone && (
+                <Text style={{ fontSize: 13, color: isDark ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.5)' }}>
+                  📍 Zone: {currentTask.task.zone}
+                </Text>
+              )}
+              {currentTask.task.targetObjects?.[0] && (
+                <Text style={{ fontSize: 13, color: isDark ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.5)' }}>
+                  🎯 {currentTask.task.targetObjects.slice(0, 3).join(' · ')}
+                </Text>
+              )}
+              {currentTask.task.destination?.location && (
+                <Text style={{ fontSize: 13, color: isDark ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.5)' }}>
+                  → {currentTask.task.destination.location}
+                  {currentTask.task.destination.instructions ? ` · ${currentTask.task.destination.instructions}` : ''}
+                </Text>
+              )}
+            </View>
+          )}
         </Animated.View>
+
+        {/* Subtasks — the step-by-step breakdown */}
+        {currentTask.task.subtasks && currentTask.task.subtasks.length > 0 && (
+          <Animated.View entering={reducedMotion ? undefined : FadeInDown.duration(350).delay(80)}>
+            <View style={[styles.subtasksCard, {
+              backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
+            }]}>
+              <Text style={[styles.subtasksLabel, { color: t.textSecondary }]}>STEPS:</Text>
+              {currentTask.task.subtasks.map((st, idx) => (
+                <View key={st.id || idx} style={styles.subtaskStepRow}>
+                  <View style={[styles.subtaskStepCircle, {
+                    borderColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.15)',
+                  }]}>
+                    <Text style={{ fontSize: 10, fontWeight: '700', color: t.textMuted }}>{idx + 1}</Text>
+                  </View>
+                  <Text style={{ fontSize: 13, color: t.textSecondary, flex: 1 }}>
+                    {st.title}
+                    {st.estimatedSeconds ? ` (${st.estimatedSeconds}s)` : ''}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          </Animated.View>
+        )}
+
+        {/* Mental benefit — ADHD motivation */}
+        {currentTask.task.mentalBenefit && (
+          <Animated.View entering={reducedMotion ? undefined : FadeInDown.duration(350).delay(90)}>
+            <View style={[styles.mentalBenefitCard, {
+              backgroundColor: isDark ? 'rgba(52,199,89,0.1)' : 'rgba(34,197,94,0.08)',
+              borderColor: isDark ? 'rgba(52,199,89,0.2)' : 'rgba(34,197,94,0.15)',
+            }]}>
+              <Text style={{ fontSize: 12, fontWeight: '700', color: V1.green, marginBottom: 4 }}>
+                🧠 Why this helps:
+              </Text>
+              <Text style={{ fontSize: 13, color: t.textSecondary, lineHeight: 19 }}>
+                {currentTask.task.mentalBenefit}
+              </Text>
+            </View>
+          </Animated.View>
+        )}
 
         {/* Dusty says tip */}
         <Animated.View entering={reducedMotion ? undefined : FadeInDown.duration(350).delay(100)}>
@@ -230,7 +423,90 @@ export default function SingleTaskScreen() {
             </Text>
           </View>
         </Animated.View>
-      </View>
+
+        {/* Decision Points */}
+        {currentTask?.task?.decisionPoints && currentTask.task.decisionPoints.length > 0 && (
+          <Animated.View entering={reducedMotion ? undefined : FadeInDown.duration(350).delay(120)}>
+            {!showDecisionHelp ? (
+              <Pressable
+                onPress={() => {
+                  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  setShowDecisionHelp(true);
+                }}
+                style={[styles.decisionHelpButton, {
+                  backgroundColor: isDark ? 'rgba(255,107,107,0.08)' : 'rgba(255,107,107,0.06)',
+                  borderColor: isDark ? 'rgba(255,107,107,0.15)' : 'rgba(255,107,107,0.12)',
+                }]}
+              >
+                <Text style={[styles.decisionHelpText, { color: V1.coral }]}>
+                  Need help deciding?
+                </Text>
+              </Pressable>
+            ) : (
+              <View style={[styles.decisionCard, {
+                backgroundColor: isDark ? 'rgba(255,107,107,0.08)' : 'rgba(255,107,107,0.06)',
+                borderColor: isDark ? 'rgba(255,107,107,0.15)' : 'rgba(255,107,107,0.12)',
+              }]}>
+                <Pressable
+                  onPress={() => setShowDecisionHelp(false)}
+                  style={{ alignSelf: 'flex-end' }}
+                  hitSlop={8}
+                >
+                  <Text style={{ fontFamily: BODY_FONT, fontSize: 12, color: t.textMuted }}>Hide</Text>
+                </Pressable>
+                {currentTask.task.decisionPoints.map((dp, i) => (
+                  <View key={dp.id || i} style={{ gap: 8 }}>
+                    <Text style={{ fontFamily: BODY_FONT, fontSize: 14, fontWeight: '600', color: t.text }}>
+                      {dp.question}
+                    </Text>
+                    {dp.options && dp.options.length > 0 && (
+                      <View style={{ gap: 6 }}>
+                        {dp.options.map((opt, oi) => {
+                          const isDefault = opt.answer === dp.fiveSecondDefault;
+                          return (
+                            <View
+                              key={oi}
+                              style={{
+                                backgroundColor: isDefault
+                                  ? (isDark ? 'rgba(102,187,106,0.15)' : 'rgba(102,187,106,0.12)')
+                                  : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'),
+                                borderRadius: 10,
+                                paddingHorizontal: 12,
+                                paddingVertical: 8,
+                                borderWidth: isDefault ? 1 : 0,
+                                borderColor: V1.green + '40',
+                              }}
+                            >
+                              <Text style={{ fontFamily: BODY_FONT, fontSize: 13, color: t.text }}>
+                                {opt.answer}
+                              </Text>
+                              {opt.action && (
+                                <Text style={{ fontFamily: BODY_FONT, fontSize: 12, color: t.textMuted, marginTop: 2 }}>
+                                  {opt.action}
+                                </Text>
+                              )}
+                              {isDefault && (
+                                <Text style={{ fontFamily: BODY_FONT, fontSize: 11, color: V1.green, fontWeight: '600', marginTop: 2 }}>
+                                  5-second default
+                                </Text>
+                              )}
+                            </View>
+                          );
+                        })}
+                      </View>
+                    )}
+                    {dp.emotionalSupport && (
+                      <Text style={{ fontFamily: BODY_FONT, fontSize: 12, fontStyle: 'italic', color: t.textMuted }}>
+                        {dp.emotionalSupport}
+                      </Text>
+                    )}
+                  </View>
+                ))}
+              </View>
+            )}
+          </Animated.View>
+        )}
+      </ScrollView>
 
       {/* Bottom actions */}
       <View style={[styles.bottomArea, { paddingBottom: insets.bottom + 24 }]}>
@@ -248,7 +524,7 @@ export default function SingleTaskScreen() {
         <Text style={[styles.checkLabel, { color: t.textSecondary }]}>Tap when done</Text>
 
         {/* Skip */}
-        <Pressable onPress={handleSkip} hitSlop={8}>
+        <Pressable onPress={handleSkip} hitSlop={16}>
           <Text style={[styles.skipText, { color: t.textMuted }]}>Skip this task</Text>
         </Pressable>
 
@@ -257,6 +533,55 @@ export default function SingleTaskScreen() {
           {encouragement}
         </Text>
       </View>
+
+      {/* Undo Toast */}
+      {undoTask && (
+        <Animated.View
+          entering={FadeInDown.duration(250)}
+          style={{
+            position: 'absolute',
+            bottom: insets.bottom + 120,
+            left: 20,
+            right: 20,
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            paddingHorizontal: 20,
+            paddingVertical: 14,
+            borderRadius: 14,
+            backgroundColor: isDark ? '#2A2A2A' : '#333333',
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: 0.2,
+            shadowRadius: 8,
+            elevation: 6,
+            zIndex: 50,
+          }}
+        >
+          <Text style={{ color: '#FFFFFF', fontSize: 14, fontWeight: '600', fontFamily: BODY_FONT, flex: 1 }} numberOfLines={1}>
+            Task complete!
+          </Text>
+          <Pressable
+            onPress={() => {
+              if (undoTask) {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                toggleTask(undoTask.roomId, undoTask.taskId);
+                setCompletedCount(c => Math.max(0, c - 1));
+                setCurrentIndex(i => Math.max(0, i - 1));
+                setUndoTask(null);
+                if (undoTimeoutRef.current) clearTimeout(undoTimeoutRef.current);
+              }
+            }}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="Undo task completion"
+          >
+            <Text style={{ color: V1.coral, fontSize: 14, fontWeight: '700', fontFamily: BODY_FONT, marginLeft: 16 }}>
+              Undo
+            </Text>
+          </Pressable>
+        </Animated.View>
+      )}
     </View>
   );
 }
@@ -309,8 +634,12 @@ const styles = StyleSheet.create({
   taskContent: {
     flex: 1,
     paddingHorizontal: 20,
+  },
+  taskContentInner: {
     justifyContent: 'center',
-    gap: 24,
+    gap: 16,
+    flexGrow: 1,
+    paddingVertical: 12,
   },
   taskCenter: {
     alignItems: 'center',
@@ -340,6 +669,38 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
 
+  // Subtasks card
+  subtasksCard: {
+    borderRadius: 12,
+    padding: 14,
+    gap: 8,
+  },
+  subtasksLabel: {
+    fontFamily: BODY_FONT,
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    marginBottom: 4,
+  },
+  subtaskStepRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  subtaskStepCircle: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // Mental benefit card
+  mentalBenefitCard: {
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 14,
+  },
   // Tip card
   tipCard: {
     borderRadius: 16,
@@ -390,6 +751,25 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     textAlign: 'center',
     marginTop: 4,
+  },
+
+  // Decision help
+  decisionHelpButton: {
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  decisionHelpText: {
+    fontFamily: BODY_FONT,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  decisionCard: {
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 14,
+    gap: 12,
   },
 
   // Done state

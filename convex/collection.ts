@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { internalMutation, mutation, query } from "./_generated/server";
 import { getAuthUserId } from "@convex-dev/auth/server";
 
 export const listItems = query({
@@ -10,7 +10,7 @@ export const listItems = query({
 
     return await ctx.db
       .query("collectedItems")
-      .filter((q) => q.eq(q.field("userId"), userId))
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
       .collect();
   },
 });
@@ -23,7 +23,7 @@ export const getStats = query({
 
     const stats = await ctx.db
       .query("collectionStats")
-      .filter((q) => q.eq(q.field("userId"), userId))
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
       .first();
 
     if (!stats) {
@@ -62,10 +62,20 @@ export const collect = mutation({
       taskId: args.taskId,
     });
 
+    // Check if this collectibleId is already owned by the user (for unique count)
+    // We just inserted the item above, so if there's only 1 match, it's new.
+    const allMatchingItems = await ctx.db
+      .query("collectedItems")
+      .withIndex("by_userId_collectibleId", (q) =>
+        q.eq("userId", userId).eq("collectibleId", args.collectibleId)
+      )
+      .collect();
+    const isNewUnique = allMatchingItems.length === 1; // only the one we just inserted
+
     // Update stats
     const stats = await ctx.db
       .query("collectionStats")
-      .filter((q) => q.eq(q.field("userId"), userId))
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
       .first();
 
     const validRarities = ["common", "uncommon", "rare", "epic", "legendary"] as const;
@@ -76,18 +86,20 @@ export const collect = mutation({
     if (stats) {
       await ctx.db.patch(stats._id, {
         totalCollected: (stats.totalCollected ?? 0) + 1,
+        // Only increment uniqueCollected and rarity counts for truly new unique items
+        ...(isNewUnique ? { uniqueCollected: (stats.uniqueCollected ?? 0) + 1 } : {}),
         lastCollected: Date.now(),
-        ...(rarity === "common" && { commonCount: (stats.commonCount ?? 0) + 1 }),
-        ...(rarity === "uncommon" && { uncommonCount: (stats.uncommonCount ?? 0) + 1 }),
-        ...(rarity === "rare" && { rareCount: (stats.rareCount ?? 0) + 1 }),
-        ...(rarity === "epic" && { epicCount: (stats.epicCount ?? 0) + 1 }),
-        ...(rarity === "legendary" && { legendaryCount: (stats.legendaryCount ?? 0) + 1 }),
+        ...(isNewUnique && rarity === "common" && { commonCount: (stats.commonCount ?? 0) + 1 }),
+        ...(isNewUnique && rarity === "uncommon" && { uncommonCount: (stats.uncommonCount ?? 0) + 1 }),
+        ...(isNewUnique && rarity === "rare" && { rareCount: (stats.rareCount ?? 0) + 1 }),
+        ...(isNewUnique && rarity === "epic" && { epicCount: (stats.epicCount ?? 0) + 1 }),
+        ...(isNewUnique && rarity === "legendary" && { legendaryCount: (stats.legendaryCount ?? 0) + 1 }),
       });
     } else {
       await ctx.db.insert("collectionStats", {
         userId,
         totalCollected: 1,
-        uniqueCollected: 1,
+        uniqueCollected: 1, // first item is always unique
         commonCount: rarity === "common" ? 1 : 0,
         uncommonCount: rarity === "uncommon" ? 1 : 0,
         rareCount: rarity === "rare" ? 1 : 0,
@@ -101,8 +113,13 @@ export const collect = mutation({
   },
 });
 
-export const updateStats = mutation({
+/**
+ * INTERNAL: Update collection stats. Not callable from clients to prevent
+ * manipulation of collection counts. Stats are updated automatically via `collect`.
+ */
+export const updateStats = internalMutation({
   args: {
+    userId: v.id("users"),
     totalCollected: v.optional(v.number()),
     uniqueCollected: v.optional(v.number()),
     commonCount: v.optional(v.number()),
@@ -113,12 +130,9 @@ export const updateStats = mutation({
     lastCollected: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
-
     const existing = await ctx.db
       .query("collectionStats")
-      .filter((q) => q.eq(q.field("userId"), userId))
+      .withIndex("by_userId", (q) => q.eq("userId", args.userId))
       .first();
 
     if (existing) {
@@ -135,7 +149,7 @@ export const updateStats = mutation({
       return existing._id;
     } else {
       return await ctx.db.insert("collectionStats", {
-        userId,
+        userId: args.userId,
         totalCollected: args.totalCollected ?? 0,
         uniqueCollected: args.uniqueCollected ?? 0,
         commonCount: args.commonCount ?? 0,

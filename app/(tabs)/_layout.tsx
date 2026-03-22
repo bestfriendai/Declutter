@@ -2,15 +2,23 @@
  * Declutterly -- Custom Pill-Style Floating Tab Bar
  * Matches Pencil design: floating pill with backdrop blur, 4 tabs equally spaced.
  * Uses expo-router Tabs with custom tabBar renderer.
+ *
+ * Improvements:
+ * - Badge indicators on tabs (red dot for pending actions)
+ * - Active sliding indicator (smooth transition between tabs)
+ * - Safe minimum pill width (280)
+ * - accessibilityRole="tablist" on tab bar container
  */
 
-import { V1, BODY_FONT } from '@/constants/designTokens';
+import { V1, BODY_FONT, ANIMATION } from '@/constants/designTokens';
 import { useColorScheme } from '@/hooks/useColorScheme';
+import { useReducedMotion } from '@/hooks/useReducedMotion';
 import { BlurView } from 'expo-blur';
-import * as Haptics from 'expo-haptics';
+import { ImpactFeedbackStyle } from 'expo-haptics';
+import { impact } from '@/services/haptics';
 import { Tabs } from 'expo-router';
 import { Home, TrendingUp, LayoutGrid, User } from 'lucide-react-native';
-import React, { useCallback, useEffect } from 'react';
+import React, { useCallback, useEffect, useMemo } from 'react';
 import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import Animated, {
   useSharedValue,
@@ -20,36 +28,43 @@ import Animated, {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const TAB_CONFIG = [
-  { name: 'index', icon: Home, label: 'Home' },
-  { name: 'rooms', icon: LayoutGrid, label: 'Rooms' },
-  { name: 'progress', icon: TrendingUp, label: 'Progress' },
-  { name: 'profile', icon: User, label: 'Profile' },
+  { name: 'index', icon: Home, label: 'Home', accessibilityDescription: "Home: View your rooms and today's tasks" },
+  { name: 'rooms', icon: LayoutGrid, label: 'Rooms', accessibilityDescription: 'Rooms: Browse and manage your spaces' },
+  { name: 'progress', icon: TrendingUp, label: 'Progress', accessibilityDescription: 'Progress: View cleaning stats and streaks' },
+  { name: 'profile', icon: User, label: 'Profile', accessibilityDescription: 'Profile: Settings and account' },
 ] as const;
 
-const SPRING_CONFIG = {
-  damping: 15,
-  stiffness: 200,
-  mass: 0.8,
-};
+const SPRING_CONFIG = ANIMATION.spring.snappy;
+
+// Minimum pill width to prevent cramped layout on small screens
+const MIN_PILL_WIDTH = 280;
 
 function TabItem({
   tab,
   isActive,
   isDark,
   onPress,
+  badge,
 }: {
   tab: (typeof TAB_CONFIG)[number];
   isActive: boolean;
   isDark: boolean;
   onPress: () => void;
+  badge?: boolean;
 }) {
+  const reducedMotion = useReducedMotion();
   const scale = useSharedValue(isActive ? 1.15 : 1.0);
   const dotOpacity = useSharedValue(isActive ? 1 : 0);
 
   useEffect(() => {
-    scale.value = withSpring(isActive ? 1.15 : 1.0, SPRING_CONFIG);
-    dotOpacity.value = withSpring(isActive ? 1 : 0, SPRING_CONFIG);
-  }, [isActive, scale, dotOpacity]);
+    if (reducedMotion) {
+      scale.value = isActive ? 1.15 : 1.0;
+      dotOpacity.value = isActive ? 1 : 0;
+    } else {
+      scale.value = withSpring(isActive ? 1.15 : 1.0, SPRING_CONFIG);
+      dotOpacity.value = withSpring(isActive ? 1 : 0, SPRING_CONFIG);
+    }
+  }, [isActive, scale, dotOpacity, reducedMotion]);
 
   const iconAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
@@ -67,7 +82,7 @@ function TabItem({
       : V1.light.textMuted;
 
   const handlePress = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    impact(ImpactFeedbackStyle.Light);
     onPress();
   }, [onPress]);
 
@@ -76,7 +91,8 @@ function TabItem({
       onPress={handlePress}
       accessibilityRole="tab"
       accessibilityState={{ selected: isActive }}
-      accessibilityLabel={tab.label}
+      accessibilityLabel={tab.accessibilityDescription}
+      accessibilityHint={`Double tap to switch to ${tab.label} tab`}
       style={({ pressed }) => [
         styles.tabItem,
         isActive && {
@@ -87,9 +103,15 @@ function TabItem({
         pressed && { opacity: 0.7 },
       ]}
     >
-      <Animated.View style={iconAnimatedStyle}>
-        <Icon size={20} color={color} strokeWidth={isActive ? 2.2 : 1.8} />
-      </Animated.View>
+      <View>
+        <Animated.View style={iconAnimatedStyle}>
+          <Icon size={20} color={color} strokeWidth={isActive ? 2.2 : 1.8} />
+        </Animated.View>
+        {/* Badge indicator */}
+        {badge && (
+          <View style={styles.badge} accessibilityLabel={`${tab.label} has pending items`} />
+        )}
+      </View>
       <Text
         style={[
           styles.tabLabel,
@@ -124,10 +146,33 @@ function CustomTabBar({
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
   const { width: screenWidth } = useWindowDimensions();
-  const pillWidth = Math.min(350, screenWidth - 40);
+  const reducedMotion = useReducedMotion();
+
+  // Safe minimum pill width
+  const pillWidth = Math.max(MIN_PILL_WIDTH, Math.min(350, screenWidth - 40));
+
+  // Active sliding indicator
+  const tabWidth = pillWidth / TAB_CONFIG.length;
+  const indicatorLeft = useSharedValue(state.index * tabWidth);
+
+  useEffect(() => {
+    if (reducedMotion) {
+      indicatorLeft.value = state.index * tabWidth;
+    } else {
+      indicatorLeft.value = withSpring(state.index * tabWidth, SPRING_CONFIG);
+    }
+  }, [state.index, tabWidth, indicatorLeft, reducedMotion]);
+
+  const indicatorStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: indicatorLeft.value }],
+    width: tabWidth,
+  }));
 
   return (
-    <View style={[styles.tabBarContainer, { paddingBottom: insets.bottom || 12 }]}>
+    <View
+      style={[styles.tabBarContainer, { paddingBottom: insets.bottom || 12 }]}
+      accessibilityRole="tablist"
+    >
       <BlurView intensity={50} tint={isDark ? 'dark' : 'light'} style={styles.pill}>
         <View
           style={[
@@ -141,6 +186,20 @@ function CustomTabBar({
             },
           ]}
         >
+          {/* Sliding active indicator */}
+          <Animated.View
+            style={[
+              styles.activeIndicator,
+              {
+                backgroundColor: isDark
+                  ? 'rgba(255,107,107,0.06)'
+                  : 'rgba(255,107,107,0.08)',
+              },
+              indicatorStyle,
+            ]}
+            pointerEvents="none"
+          />
+
           {TAB_CONFIG.map((tab, index) => {
             const isActive = state.index === index;
             return (
@@ -159,7 +218,7 @@ function CustomTabBar({
   );
 }
 
-const renderTabBar = (props: any) => <CustomTabBar {...props} />;
+const renderTabBar = (props: React.ComponentProps<typeof CustomTabBar>) => <CustomTabBar {...props} />;
 
 export default function TabLayout() {
   return (
@@ -202,6 +261,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     justifyContent: 'space-around',
     alignItems: 'center',
+    position: 'relative',
+  },
+  activeIndicator: {
+    position: 'absolute',
+    top: 6,
+    bottom: 6,
+    borderRadius: 18,
+    zIndex: 0,
   },
   tabItem: {
     alignItems: 'center',
@@ -212,6 +279,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     minHeight: 44,
     minWidth: 44,
+    zIndex: 1,
   },
   tabLabel: {
     fontSize: 10,
@@ -225,5 +293,16 @@ const styles = StyleSheet.create({
     height: 4,
     borderRadius: 2,
     marginTop: 1,
+  },
+  badge: {
+    position: 'absolute',
+    top: -2,
+    right: -4,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: V1.coral,
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
   },
 });

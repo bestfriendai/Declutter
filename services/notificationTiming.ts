@@ -14,8 +14,10 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Notifications, notificationsAvailable } from '@/services/notificationsRuntime';
 
-const STORAGE_KEY = '@declutterly_session_times';
-const LAST_SENT_KEY = '@declutterly_last_notification_sent';
+import { STORAGE_KEYS } from '@/constants/storageKeys';
+
+const STORAGE_KEY = STORAGE_KEYS.SESSION_TIMES;
+const LAST_SENT_KEY = STORAGE_KEYS.LAST_NOTIFICATION_SENT;
 const MAX_STORED_SESSIONS = 50; // Last 50 sessions for better pattern detection
 const QUIET_HOURS_START = 22; // 10 PM
 const QUIET_HOURS_END = 8;   // 8 AM
@@ -144,7 +146,7 @@ export async function scheduleOptimalNotification(): Promise<string | null> {
   if (!timing) return null;
 
   // Cancel existing optimal notification
-  const existingId = await AsyncStorage.getItem('optimal-notification-id');
+  const existingId = await AsyncStorage.getItem(STORAGE_KEYS.OPTIMAL_NOTIFICATION_ID);
   if (existingId) {
     try { await Notifications.cancelScheduledNotificationAsync(existingId); } catch {}
   }
@@ -168,7 +170,7 @@ export async function scheduleOptimalNotification(): Promise<string | null> {
       },
     });
 
-    await AsyncStorage.setItem('optimal-notification-id', id);
+    await AsyncStorage.setItem(STORAGE_KEYS.OPTIMAL_NOTIFICATION_ID, id);
     await AsyncStorage.setItem(LAST_SENT_KEY, Date.now().toString());
     return id;
   } catch (error) {
@@ -193,7 +195,7 @@ export async function getNotificationStats(): Promise<{
     }
   }
   const timing = await getOptimalNotificationTime();
-  const existingId = await AsyncStorage.getItem('optimal-notification-id');
+  const existingId = await AsyncStorage.getItem(STORAGE_KEYS.OPTIMAL_NOTIFICATION_ID);
 
   return {
     optimalTime: timing ? `${timing.hour}:${timing.minute.toString().padStart(2, '0')}` : null,
@@ -203,7 +205,7 @@ export async function getNotificationStats(): Promise<{
 }
 
 // Notification channel protection — track opt-outs to avoid over-sending
-const OPT_OUT_KEY = '@declutterly_notification_optouts';
+const OPT_OUT_KEY = STORAGE_KEYS.NOTIFICATION_OPTOUTS;
 
 export async function recordNotificationDismiss(): Promise<void> {
   const stored = await AsyncStorage.getItem(OPT_OUT_KEY);
@@ -213,10 +215,10 @@ export async function recordNotificationDismiss(): Promise<void> {
   // If user has dismissed 5+ notifications, reduce frequency
   if (count >= 5) {
     // Cancel optimal notifications — user doesn't want them
-    const existingId = await AsyncStorage.getItem('optimal-notification-id');
+    const existingId = await AsyncStorage.getItem(STORAGE_KEYS.OPTIMAL_NOTIFICATION_ID);
     if (existingId) {
       try { await Notifications.cancelScheduledNotificationAsync(existingId); } catch {}
-      await AsyncStorage.removeItem('optimal-notification-id');
+      await AsyncStorage.removeItem(STORAGE_KEYS.OPTIMAL_NOTIFICATION_ID);
     }
   }
 }

@@ -1,82 +1,59 @@
 /**
  * Declutterly -- Analysis Screen (V1)
- * Combines Pencil designs: 7iGXL (scanning), ldgnk (AI detection), 30nGD (results)
+ * Thin orchestrator importing sub-components from components/analysis/
  *
  * Flow: Scanning animation -> AI detection overlay -> Results grouped by detected items
  * -> "Start with 3 easy wins" CTA -> Task Customize screen
+ *
+ * Improvements:
+ * - 45-second analysis timeout with Promise.race
+ * - Cancel/back button during scanning phase
+ * - Rotating encouraging messages during scan
+ * - Estimated progress bar (simulated)
+ * - Photo retake from error state
+ * - Offline detection with fallback tasks
  */
 
+import { ScreenErrorBoundary } from '@/components/ErrorBoundary';
+import { ScanningPhase, DetectionPhase, ResultsPhase } from '@/components/analysis';
+import { V1, BODY_FONT, DISPLAY_FONT } from '@/constants/designTokens';
+import { useAuth } from '@/context/AuthContext';
+import { useDeclutter } from '@/context/DeclutterContext';
+import { useColorScheme } from '@/hooks/useColorScheme';
+import { useReducedMotion } from '@/hooks/useReducedMotion';
+import { useSubscription, FREE_ROOM_LIMIT } from '@/hooks/useSubscription';
+import { analyzeRoomImage } from '@/services/ai';
+import { getUserCleaningProfile } from '@/services/taskOptimizer';
+import { CleaningTask, RoomType } from '@/types/declutter';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Haptics from 'expo-haptics';
-import { Image } from 'expo-image';
-import { LinearGradient } from 'expo-linear-gradient';
 import { router, useLocalSearchParams } from 'expo-router';
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Alert, useWindowDimensions } from 'react-native';
+
+import { STORAGE_KEYS } from '@/constants/storageKeys';
+const GUEST_SCAN_KEY = STORAGE_KEYS.GUEST_SCAN_COUNT;
 import {
-  Alert,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-  Dimensions,
-} from 'react-native';
-import { useColorScheme } from '@/hooks/useColorScheme';
-import Animated, {
+  cancelAnimation,
   Easing,
-  FadeIn,
-  FadeInDown,
   useAnimatedStyle,
   useSharedValue,
   withRepeat,
   withSequence,
   withTiming,
-  cancelAnimation,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ChevronLeft, Check } from 'lucide-react-native';
-import { useDeclutter } from '@/context/DeclutterContext';
-import { analyzeRoomImage } from '@/services/ai';
-import { CleaningTask, RoomType } from '@/types/declutter';
+import NetInfo from '@react-native-community/netinfo';
 
-// ─── V1 Design Tokens ────────────────────────────────────────────────────────
-const V1 = {
-  coral: '#FF6B6B',
-  green: '#66BB6A',
-  amber: '#FFB74D',
-  gold: '#FFD54F',
-  blue: '#64B5F6',
-  dark: {
-    bg: '#0C0C0C',
-    card: '#1A1A1A',
-    border: 'rgba(255,255,255,0.08)',
-    text: '#FFFFFF',
-    textSecondary: 'rgba(255,255,255,0.5)',
-    textMuted: 'rgba(255,255,255,0.3)',
-  },
-  light: {
-    bg: '#FAFAFA',
-    card: '#F6F7F8',
-    border: '#E5E7EB',
-    text: '#1A1A1A',
-    textSecondary: '#6B7280',
-    textMuted: '#9CA3AF',
-  },
-};
-
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-
-// ─── Scanning steps ──────────────────────────────────────────────────────────
-const SCAN_STEPS = [
-  { label: 'Scanning your space', done: false },
-  { label: 'Spotting areas to tidy', done: false },
-  { label: 'Building your task list', done: false },
-];
-
-// ─── Area colors for detection overlay ───────────────────────────────────────
+// ── Area colors ─────────────────────────────────────────────────────────────
 const AREA_COLORS = [V1.coral, V1.amber, V1.blue, V1.green, V1.gold];
 
-// ─── Types ───────────────────────────────────────────────────────────────────
+// ── Constants ───────────────────────────────────────────────────────────────
+const MAX_RETRIES = 2;
+const ANALYSIS_TIMEOUT_MS = 45000; // 45 seconds
+
+// ── Types ───────────────────────────────────────────────────────────────────
 interface DetectedArea {
   name: string;
   taskCount: number;
@@ -89,34 +66,113 @@ interface AnalysisResult {
   totalItems: number;
   totalMinutes: number;
   tasks: CleaningTask[];
+  doomPiles?: Array<{
+    location: string;
+    description: string;
+    itemTypes?: string[];
+    anxietyLevel?: 'high' | 'medium' | 'low';
+    estimatedMinutes?: number;
+    recommendedApproach?: string;
+  }>;
+  taskClusters?: Array<{
+    clusterType: string;
+    taskIds: string[];
+    clusterLabel: string;
+    rationale: string;
+    combinedEstimatedMinutes: number;
+    savingsMinutes: number;
+    emoji: string;
+  }>;
+  photoQualityWarning?: string | null;
+  supplyChecklist?: string[];
+  detectedObjects?: Array<{
+    name: string;
+    category?: string;
+    zone?: string;
+    suggestedAction?: string;
+    confidence?: number;
+  }>;
+  zones?: Array<{
+    name: string;
+    type?: string;
+    clutterDensity?: string;
+    itemCount?: number;
+  }>;
+  timeProfiles?: {
+    minimal?: { tasks: string[]; expectedImpact: number; estimatedMinutes?: number };
+    quick?: { tasks: string[]; expectedImpact: number; estimatedMinutes?: number };
+    standard?: { tasks: string[]; expectedImpact: number; estimatedMinutes?: number };
+    complete?: { tasks: string[]; expectedImpact: number; estimatedMinutes?: number };
+  } | null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Main Analysis Screen
 // ─────────────────────────────────────────────────────────────────────────────
 export default function AnalysisScreen() {
-  const { photoUri, roomType, roomName } = useLocalSearchParams<{
+  return (
+    <ScreenErrorBoundary screenName="analysis">
+      <AnalysisScreenContent />
+    </ScreenErrorBoundary>
+  );
+}
+
+function AnalysisScreenContent() {
+  const { photoUri, roomType, roomName, energyLevel, timeAvailable } = useLocalSearchParams<{
     photoUri: string;
     roomType: RoomType;
     roomName: string;
+    energyLevel?: string;
+    timeAvailable?: string;
   }>();
 
   const rawScheme = useColorScheme();
   const isDark = rawScheme === 'dark';
+  const reducedMotion = useReducedMotion();
   const t = isDark ? V1.dark : V1.light;
   const insets = useSafeAreaInsets();
+  const { width: SCREEN_WIDTH } = useWindowDimensions();
 
-  const { addRoom, setTasksForRoom, addPhotoToRoom, setActiveRoom } = useDeclutter();
+  const { addRoom, setTasksForRoom, addPhotoToRoom, setActiveRoom, rooms, settings, user } =
+    useDeclutter();
+  const { isPro } = useSubscription();
+  const { isAnonymous } = useAuth();
 
   const [phase, setPhase] = useState<'scanning' | 'detection' | 'results'>('scanning');
   const [scanStep, setScanStep] = useState(0);
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [isCreating, setIsCreating] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
+  const [isOffline, setIsOffline] = useState(false);
+
+  // Track network status for offline fallback
+  useEffect(() => {
+    const unsubscribe = NetInfo.addEventListener((state) => {
+      setIsOffline(state.isConnected === false || state.isInternetReachable === false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const cancelledRef = useRef(false);
 
   // Scanning animation
   const pulseScale = useSharedValue(1);
+  const pulseStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: pulseScale.value }],
+  }));
 
-  useEffect(() => {
+  // Analysis with 45-second timeout via Promise.race
+  const runAnalysis = useCallback(async () => {
+    cancelledRef.current = false;
+
+    setError(null);
+    setAnalysisResult(null);
+    setPhase('scanning');
+    setScanStep(0);
+
     // Start pulse animation
     pulseScale.value = withRepeat(
       withSequence(
@@ -126,99 +182,282 @@ export default function AnalysisScreen() {
       -1,
     );
 
-    // Simulate scan steps and perform AI analysis
-    const runAnalysis = async () => {
+    try {
+      if (!photoUri) {
+        if (!cancelledRef.current) {
+          setError('Photo not found. Please take another photo to continue.');
+          setPhase('results');
+        }
+        return;
+      }
+
+      // Check room limit BEFORE starting analysis
+      if (!isPro && rooms.length >= FREE_ROOM_LIMIT) {
+        if (!cancelledRef.current) {
+          Alert.alert('Room limit reached', 'Upgrade to Pro to add more rooms.', [
+            { text: 'Cancel', style: 'cancel', onPress: () => router.back() },
+            { text: 'Upgrade', onPress: () => router.push('/paywall') },
+          ]);
+        }
+        return;
+      }
+
+      // Offline detection — offer fallback tasks immediately
+      let isOffline = false;
       try {
-        // Step 1: Scanning
-        setScanStep(0);
-        await new Promise(r => setTimeout(r, 1200));
+        const netState = await NetInfo.fetch();
+        isOffline = !(netState.isConnected && netState.isInternetReachable);
+      } catch {
+        // If NetInfo fails, assume online
+      }
 
-        // Step 2: Spotting
-        setScanStep(1);
-
-        // Read image and analyze
-        let analysisData: any = null;
-        try {
-          const base64 = await FileSystem.readAsStringAsync(photoUri!, { encoding: 'base64' });
-          analysisData = await analyzeRoomImage(base64, `Room type: ${roomType || 'bedroom'}`);
-        } catch (aiError) {
-          // If AI fails, generate fallback tasks
-          console.warn('AI analysis failed, using fallback:', aiError);
-        }
-
-        // Step 3: Building task list
-        setScanStep(2);
-        await new Promise(r => setTimeout(r, 800));
-
-        // Process results
-        let tasks: CleaningTask[] = [];
-        let areas: DetectedArea[] = [];
-
-        if (analysisData?.tasks && analysisData.tasks.length > 0) {
-          tasks = analysisData.tasks;
-          // Group tasks by zone/area
-          const zoneMap = new Map<string, CleaningTask[]>();
-          tasks.forEach(task => {
-            const zone = task.zone || 'General';
-            if (!zoneMap.has(zone)) zoneMap.set(zone, []);
-            zoneMap.get(zone)!.push(task);
-          });
-          areas = Array.from(zoneMap.entries()).map(([name, zoneTasks], i) => ({
-            name,
-            taskCount: zoneTasks.length,
-            tasks: zoneTasks.map(t => t.title),
-            color: AREA_COLORS[i % AREA_COLORS.length],
-          }));
-        } else {
-          // Fallback: generate basic tasks
-          tasks = generateFallbackTasks(roomType || 'bedroom');
-          areas = [
-            { name: 'General cleaning', taskCount: tasks.length, tasks: tasks.map(t => t.title), color: V1.coral },
-          ];
-        }
-
-        const totalMinutes = tasks.reduce((sum, t) => sum + (t.estimatedMinutes || 3), 0);
-
+      if (isOffline) {
+        if (cancelledRef.current) return;
+        const fallbackTasks = generateFallbackTasks(roomType || 'bedroom');
+        const totalMinutes = fallbackTasks.reduce((sum, tk) => sum + (tk.estimatedMinutes || 3), 0);
         setAnalysisResult({
-          areas,
-          totalItems: tasks.length,
+          areas: [
+            {
+              name: 'General cleaning',
+              taskCount: fallbackTasks.length,
+              tasks: fallbackTasks.map((tk) => tk.title),
+              color: V1.coral,
+            },
+          ],
+          totalItems: fallbackTasks.length,
           totalMinutes,
-          tasks,
+          tasks: fallbackTasks,
         });
-
-        // Briefly show detection overlay
-        setPhase('detection');
-        await new Promise(r => setTimeout(r, 2000));
-
-        // Show results
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         setPhase('results');
-      } catch (err) {
-        setError('Something went wrong. Please try again.');
-        setPhase('results');
+        return;
       }
-    };
 
-    runAnalysis();
+      // Step 1: Scanning
+      setScanStep(0);
+      // Step 2: Spotting
+      setScanStep(1);
 
+      let analysisData: any = null;
+      try {
+        // Timeout wrapper
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('Analysis timed out')), ANALYSIS_TIMEOUT_MS),
+        );
+
+        const analyzePromise = (async () => {
+          const [base64, cleaningProfile] = await Promise.all([
+            FileSystem.readAsStringAsync(photoUri, { encoding: 'base64' }),
+            getUserCleaningProfile(),
+          ]);
+          if (cancelledRef.current) return null;
+
+          const taskHistorySummary =
+            cleaningProfile.taskHistory.length > 0
+              ? cleaningProfile.taskHistory
+                  .map(
+                    (h) =>
+                      `${h.category}: ${Math.round(h.completionRate * 100)}% completion, ${Math.round(h.skipRate * 100)}% skip rate`,
+                  )
+                  .join('; ')
+              : '';
+
+          const preferencesSummary = [
+            `Preferred task size: ${cleaningProfile.preferences.preferredTaskSize}`,
+            `Session length: ${cleaningProfile.preferences.preferredSessionLength} min`,
+            cleaningProfile.preferences.prefersQuickWinsFirst ? 'Prefers quick wins first' : '',
+            cleaningProfile.preferences.avoidsDecisionTasks ? 'Avoids decision-heavy tasks' : '',
+            cleaningProfile.preferences.needsMoreBreakdown ? 'Needs extra task breakdown' : '',
+          ]
+            .filter(Boolean)
+            .join(', ');
+
+          const energyPatternsSummary =
+            cleaningProfile.energyPatterns.length > 0
+              ? cleaningProfile.energyPatterns
+                  .map((p) => {
+                    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+                    return `${days[p.dayOfWeek]}: avg energy ${p.averageEnergy.toFixed(1)}/4`;
+                  })
+                  .join(', ')
+              : '';
+
+          return analyzeRoomImage(
+            base64,
+            `Room type: ${roomType || 'bedroom'}`,
+            energyLevel || 'moderate',
+            timeAvailable ? parseInt(timeAvailable, 10) : 30,
+            undefined,
+            {
+              taskHistory: taskHistorySummary,
+              preferences: preferencesSummary,
+              energyPatterns: energyPatternsSummary,
+              taskBreakdownLevel: settings.taskBreakdownLevel,
+            },
+          );
+        })();
+
+        // Race: analysis vs timeout
+        analysisData = await Promise.race([analyzePromise, timeoutPromise]);
+      } catch (aiError: any) {
+        if (__DEV__) console.warn('AI analysis failed or timed out:', aiError?.message);
+      }
+
+      // Step 3: Building task list
+      setScanStep(2);
+      if (cancelledRef.current) return;
+
+      // Process results
+      let tasks: CleaningTask[] = [];
+      let areas: DetectedArea[] = [];
+
+      if (analysisData?.tasks && analysisData.tasks.length > 0) {
+        tasks = analysisData.tasks;
+        const phaseMap = new Map<string, CleaningTask[]>();
+        tasks.forEach((task) => {
+          const phaseKey = task.phase
+            ? `Phase ${task.phase}: ${task.phaseName || ''}`
+            : task.zone || 'General';
+          if (!phaseMap.has(phaseKey)) phaseMap.set(phaseKey, []);
+          phaseMap.get(phaseKey)!.push(task);
+        });
+        areas = Array.from(phaseMap.entries()).map(([name, phaseTasks], i) => ({
+          name,
+          taskCount: phaseTasks.length,
+          tasks: phaseTasks.map((tk) => tk.title),
+          color: AREA_COLORS[i % AREA_COLORS.length],
+        }));
+      } else {
+        tasks = generateFallbackTasks(roomType || 'bedroom');
+        areas = [
+          {
+            name: 'General cleaning',
+            taskCount: tasks.length,
+            tasks: tasks.map((tk) => tk.title),
+            color: V1.coral,
+          },
+        ];
+      }
+
+      const totalMinutes = tasks.reduce((sum, tk) => sum + (tk.estimatedMinutes || 3), 0);
+
+      // Photo quality warning
+      let photoQualityWarning: string | null = null;
+      if (analysisData?.photoQuality && analysisData.photoQuality.confidence < 0.6) {
+        const issues: string[] = [];
+        if (analysisData.photoQuality.lighting === 'dim') issues.push('dim lighting');
+        if (analysisData.photoQuality.clarity === 'blurry') issues.push('blurry');
+        if (analysisData.photoQuality.coverage === 'limited') issues.push('limited coverage');
+        if (issues.length > 0) {
+          photoQualityWarning = `Lower confidence analysis (${issues.join(', ')}). Retaking with better lighting may improve results.`;
+        }
+      }
+
+      if (cancelledRef.current) return;
+
+      setAnalysisResult({
+        areas,
+        totalItems: tasks.length,
+        totalMinutes,
+        tasks,
+        doomPiles: analysisData?.doomPiles || [],
+        taskClusters: analysisData?.taskClusters || [],
+        photoQualityWarning,
+        supplyChecklist: analysisData?.supplyChecklist || [],
+        detectedObjects: analysisData?.detectedObjects || [],
+        zones: analysisData?.zones || [],
+        timeProfiles: analysisData?.timeProfiles || null,
+      });
+
+      // Briefly show detection overlay
+      setPhase('detection');
+      await new Promise((r) => setTimeout(r, 800));
+      if (cancelledRef.current) return;
+
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setPhase('results');
+    } catch (err) {
+      if (cancelledRef.current) return;
+      setError("Let's try a different angle -- sometimes the lighting or angle makes it tricky.");
+      setPhase('results');
+    }
+  }, [
+    photoUri,
+    pulseScale,
+    roomType,
+    isPro,
+    rooms.length,
+    settings.taskBreakdownLevel,
+    energyLevel,
+    timeAvailable,
+  ]);
+
+  // Retry handler
+  const handleRetry = useCallback(() => {
+    if (retryCount >= MAX_RETRIES) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setRetryCount((prev) => prev + 1);
+    void runAnalysis();
+  }, [retryCount, runAnalysis]);
+
+  // Run analysis on mount
+  useEffect(() => {
+    void runAnalysis();
     return () => {
+      cancelledRef.current = true;
       cancelAnimation(pulseScale);
     };
   }, []);
 
-  const pulseStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: pulseScale.value }],
-  }));
+  // Create room handler
+  const handleCreateRoom = useCallback(async () => {
+    if (!analysisResult || isCreating) return;
 
-  const handleEasyWins = useCallback(async () => {
-    if (!analysisResult) return;
+    // Guest gate: after 1 free scan, prompt signup
+    if (isAnonymous) {
+      try {
+        const countStr = await AsyncStorage.getItem(GUEST_SCAN_KEY);
+        const count = parseInt(countStr ?? '0');
+        if (count >= 1) {
+          Alert.alert(
+            'Create an account to save your progress',
+            'You\'ve tried your first scan! Sign up to save rooms, track progress, and unlock all features.',
+            [
+              { text: 'Maybe Later', style: 'cancel' },
+              { text: 'Sign Up', onPress: () => router.push('/auth/signup') },
+            ],
+          );
+          return;
+        }
+        await AsyncStorage.setItem(GUEST_SCAN_KEY, String(count + 1));
+      } catch {
+        // Non-critical - allow through
+      }
+    }
+
+    if (!isPro && rooms.length >= FREE_ROOM_LIMIT) {
+      Alert.alert('Room limit reached', 'Upgrade to Pro to add more rooms.', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Upgrade', onPress: () => router.push('/paywall') },
+      ]);
+      return;
+    }
+
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
-    // Create room and add tasks (just easy wins)
-    const easyTasks = analysisResult.tasks
-      .sort((a, b) => (a.estimatedMinutes || 3) - (b.estimatedMinutes || 3))
-      .slice(0, 3);
+    const allTasksSorted = [...analysisResult.tasks].sort((a, b) => {
+      const phaseA = a.phase ?? 99;
+      const phaseB = b.phase ?? 99;
+      if (phaseA !== phaseB) return phaseA - phaseB;
+      const impactOrder: Record<string, number> = { high: 0, medium: 1, low: 2 };
+      return (
+        (impactOrder[a.visualImpact || 'medium'] ?? 1) -
+        (impactOrder[b.visualImpact || 'medium'] ?? 1)
+      );
+    });
 
+    setIsCreating(true);
+    setCreateError(null);
     try {
       const room = await addRoom({
         name: roomName || 'Room',
@@ -236,19 +475,68 @@ export default function AnalysisScreen() {
         });
       }
 
-      setTasksForRoom(room.id, easyTasks);
+      setTasksForRoom(room.id, allTasksSorted);
       setActiveRoom(room.id);
-      router.replace(`/room/${room.id}`);
+      router.replace({ pathname: '/room/[id]', params: { id: room.id } });
     } catch (err) {
-      Alert.alert('Error', 'Failed to create room');
+      setCreateError("Couldn't save your room. Tap to try again.");
+    } finally {
+      setIsCreating(false);
     }
-  }, [analysisResult, roomName, roomType, photoUri]);
+  }, [analysisResult, isCreating, roomName, roomType, photoUri, isPro, rooms.length]);
+
+  // Create room with only selected tasks (from inline customization)
+  const handleCreateRoomWithTasks = useCallback(async (selectedTaskIds: Set<string>) => {
+    if (!analysisResult || isCreating) return;
+
+    const selectedTasks = analysisResult.tasks.filter(tk => selectedTaskIds.has(tk.id));
+    if (selectedTasks.length === 0) return;
+
+    // Sort: phase first, then visual impact
+    const sortedTasks = [...selectedTasks].sort((a, b) => {
+      const phaseA = a.phase ?? 99;
+      const phaseB = b.phase ?? 99;
+      if (phaseA !== phaseB) return phaseA - phaseB;
+      const impactOrder: Record<string, number> = { high: 0, medium: 1, low: 2 };
+      return (
+        (impactOrder[a.visualImpact || 'medium'] ?? 1) -
+        (impactOrder[b.visualImpact || 'medium'] ?? 1)
+      );
+    });
+
+    setIsCreating(true);
+    setCreateError(null);
+    try {
+      const room = await addRoom({
+        name: roomName || 'Room',
+        type: (roomType as RoomType) || 'bedroom',
+        emoji: getRoomEmoji(roomType as RoomType),
+        messLevel: 50,
+        aiSummary: `${sortedTasks.length} tasks selected`,
+      });
+
+      if (photoUri) {
+        await addPhotoToRoom(room.id, {
+          uri: photoUri,
+          timestamp: new Date(),
+          type: 'before',
+        });
+      }
+
+      setTasksForRoom(room.id, sortedTasks);
+      setActiveRoom(room.id);
+      router.replace({ pathname: '/room/[id]', params: { id: room.id } });
+    } catch (err) {
+      setCreateError("Couldn't save your room. Tap to try again.");
+    } finally {
+      setIsCreating(false);
+    }
+  }, [analysisResult, isCreating, roomName, roomType, photoUri]);
 
   const handleSeeAllTasks = useCallback(() => {
     if (!analysisResult) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    // Navigate to task customize
-    (router.push as any)({
+    router.push({
       pathname: '/task-customize',
       params: {
         photoUri: photoUri || '',
@@ -261,611 +549,152 @@ export default function AnalysisScreen() {
 
   const handleBack = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    cancelledRef.current = true;
     router.back();
   }, []);
+
+  const handleUseFallback = useCallback(() => {
+    const fallbackTasks = generateFallbackTasks(roomType || 'bedroom');
+    const totalMinutes = fallbackTasks.reduce((sum, tk) => sum + (tk.estimatedMinutes || 3), 0);
+    setAnalysisResult({
+      areas: [
+        {
+          name: 'General cleaning',
+          taskCount: fallbackTasks.length,
+          tasks: fallbackTasks.map((tk) => tk.title),
+          color: V1.coral,
+        },
+      ],
+      totalItems: fallbackTasks.length,
+      totalMinutes,
+      tasks: fallbackTasks,
+    });
+    setError(null);
+  }, [roomType]);
 
   // ── SCANNING PHASE ──────────────────────────────────────────────────────
   if (phase === 'scanning') {
     return (
-      <View style={[styles.container, { backgroundColor: '#0C0C0C' }]}>
-        {/* Photo with scanning effect */}
-        <View style={styles.scanPhotoContainer}>
-          {photoUri && (
-            <Animated.View style={[styles.scanPhotoWrapper, pulseStyle]}>
-              <Image source={{ uri: photoUri }} style={styles.scanPhoto} contentFit="cover" />
-              {/* Corner brackets (coral) */}
-              <View style={[styles.scanBracket, styles.scanBracketTL]} />
-              <View style={[styles.scanBracket, styles.scanBracketTR]} />
-              <View style={[styles.scanBracket, styles.scanBracketBL]} />
-              <View style={[styles.scanBracket, styles.scanBracketBR]} />
-            </Animated.View>
-          )}
-        </View>
-
-        {/* Scanning text */}
-        <View style={styles.scanTextSection}>
-          <Text style={styles.scanTitle}>Taking a calm look...</Text>
-          <Text style={styles.scanSubtitle}>No judgment -- just finding where to start</Text>
-
-          {/* Steps */}
-          <View style={styles.scanSteps}>
-            {SCAN_STEPS.map((step, i) => (
-              <View key={i} style={styles.scanStepRow}>
-                <View style={[
-                  styles.scanStepDot,
-                  i < scanStep
-                    ? { backgroundColor: V1.green }
-                    : i === scanStep
-                      ? { backgroundColor: V1.coral, borderWidth: 0 }
-                      : { borderColor: 'rgba(255,255,255,0.2)', borderWidth: 1.5, backgroundColor: 'transparent' },
-                ]}>
-                  {i < scanStep && <Check size={10} color="#FFFFFF" strokeWidth={3} />}
-                </View>
-                <Text style={[
-                  styles.scanStepText,
-                  { color: i <= scanStep ? '#FFFFFF' : 'rgba(255,255,255,0.3)' },
-                ]}>
-                  {step.label}
-                </Text>
-              </View>
-            ))}
-          </View>
-        </View>
-      </View>
+      <ScanningPhase
+        photoUri={photoUri || null}
+        scanStep={scanStep}
+        reducedMotion={reducedMotion}
+        topInset={insets.top}
+        pulseStyle={pulseStyle}
+        onBack={handleBack}
+        isOffline={isOffline}
+        onUseFallback={handleUseFallback}
+      />
     );
   }
 
-  // ── DETECTION PHASE (overlay) ───────────────────────────────────────────
+  // ── DETECTION PHASE ─────────────────────────────────────────────────────
   if (phase === 'detection') {
     return (
-      <View style={[styles.container, { backgroundColor: '#0C0C0C' }]}>
-        {/* Header */}
-        <View style={[styles.detectionHeader, { paddingTop: insets.top + 8 }]}>
-          <Pressable onPress={handleBack} hitSlop={12}>
-            <ChevronLeft size={24} color="#FFFFFF" />
-          </Pressable>
-          <Text style={styles.detectionTitle}>
-            AI Found {analysisResult?.totalItems || 0} Items
-          </Text>
-          <View style={{ width: 24 }} />
-        </View>
-
-        {/* Photo with detection boxes */}
-        <View style={styles.detectionPhotoContainer}>
-          {photoUri && (
-            <Image source={{ uri: photoUri }} style={styles.detectionPhoto} contentFit="cover" />
-          )}
-
-          {/* Fake detection boxes */}
-          {analysisResult?.areas.map((area, i) => (
-            <Animated.View
-              key={area.name}
-              entering={FadeIn.delay(i * 200).duration(400)}
-              style={[
-                styles.detectionBox,
-                {
-                  borderColor: area.color,
-                  top: `${20 + i * 20}%`,
-                  left: `${10 + (i % 2) * 30}%`,
-                  width: '45%',
-                  height: '25%',
-                },
-              ]}
-            >
-              <View style={[styles.detectionLabel, { backgroundColor: area.color }]}>
-                <Text style={styles.detectionLabelText}>{area.name}</Text>
-              </View>
-            </Animated.View>
-          ))}
-        </View>
-
-        {/* Detection summary */}
-        <View style={styles.detectionSummary}>
-          <Text style={styles.detectionSummaryTitle}>
-            {analysisResult?.areas.length || 0} areas detected
-          </Text>
-          <View style={styles.detectionPills}>
-            {analysisResult?.areas.map(area => (
-              <View key={area.name} style={[styles.detectionPill, { backgroundColor: area.color }]}>
-                <Text style={styles.detectionPillText}>
-                  {area.name} {'\u00B7'} {area.taskCount} tasks
-                </Text>
-              </View>
-            ))}
-          </View>
-        </View>
-
-        {/* CTA */}
-        <View style={[styles.detectionCta, { paddingBottom: insets.bottom + 20 }]}>
-          <Pressable onPress={() => setPhase('results')} style={[styles.ctaButton, { backgroundColor: V1.coral }]}>
-            <Text style={styles.ctaButtonText}>See Task Breakdown</Text>
-          </Pressable>
-        </View>
-      </View>
+      <DetectionPhase
+        photoUri={photoUri || null}
+        areas={analysisResult?.areas || []}
+        totalItems={analysisResult?.totalItems || 0}
+        reducedMotion={reducedMotion}
+        topInset={insets.top}
+        bottomInset={insets.bottom}
+        onBack={handleBack}
+        onContinue={() => setPhase('results')}
+      />
     );
   }
 
   // ── RESULTS PHASE ───────────────────────────────────────────────────────
   return (
-    <View style={[styles.container, { backgroundColor: t.bg }]}>
-      {/* Header */}
-      <View style={[styles.resultsHeader, { paddingTop: insets.top + 8 }]}>
-        <Pressable onPress={handleBack} hitSlop={12}>
-          <ChevronLeft size={24} color={t.text} />
-        </Pressable>
-        <Text style={[styles.resultsTitle, { color: t.text }]}>Results</Text>
-        <View style={{ width: 24 }} />
-      </View>
-
-      <ScrollView
-        contentContainerStyle={{ paddingBottom: insets.bottom + 120 }}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Photo thumbnail */}
-        {photoUri && (
-          <Animated.View entering={FadeInDown.duration(400)} style={styles.resultPhotoContainer}>
-            <Image source={{ uri: photoUri }} style={styles.resultPhoto} contentFit="cover" />
-          </Animated.View>
-        )}
-
-        {/* Summary pills */}
-        {analysisResult && (
-          <Animated.View entering={FadeInDown.delay(50).duration(400)} style={styles.summaryPills}>
-            <View style={[styles.summaryPill, { backgroundColor: isDark ? 'rgba(102,187,106,0.15)' : 'rgba(102,187,106,0.1)' }]}>
-              <Text style={[styles.summaryPillText, { color: V1.green }]}>
-                {analysisResult.totalItems} things spotted
-              </Text>
-            </View>
-            <View style={[styles.summaryPill, { backgroundColor: isDark ? 'rgba(255,183,77,0.15)' : 'rgba(255,183,77,0.1)' }]}>
-              <Text style={[styles.summaryPillText, { color: V1.amber }]}>
-                ~{analysisResult.totalMinutes} min total
-              </Text>
-            </View>
-          </Animated.View>
-        )}
-
-        {/* Error state — V1 Pencil "AI Error" design */}
-        {error && (
-          <View style={styles.errorContainer}>
-            <View style={styles.errorIconWrap}>
-              <View style={styles.errorIconCircle}>
-                <Text style={styles.errorIconText}>!</Text>
-              </View>
-            </View>
-            <Text style={[styles.errorTitle, { color: t.text }]}>Hmm, that didn't work</Text>
-            <Text style={[styles.errorDescription, { color: t.textSecondary }]}>
-              Our AI had trouble analyzing your photo. This can happen with tricky lighting or angles. Let's try again!
-            </Text>
-            <Pressable
-              onPress={handleBack}
-              style={({ pressed }) => [{ opacity: pressed ? 0.88 : 1, width: '100%' }]}
-            >
-              <LinearGradient
-                colors={[V1.coral, '#FF5252']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.errorCTA}
-              >
-                <Text style={styles.errorCTAText}>Try Again</Text>
-              </LinearGradient>
-            </Pressable>
-            <Pressable onPress={() => setError(null)}>
-              <Text style={styles.errorFallbackLink}>Use suggested tasks instead</Text>
-            </Pressable>
-            <Text style={[styles.errorFallbackHint, { color: t.textMuted }]}>
-              We'll give you a starter task list for your room type
-            </Text>
-          </View>
-        )}
-
-        {/* Area cards */}
-        {analysisResult?.areas.map((area, index) => (
-          <Animated.View
-            key={area.name}
-            entering={FadeInDown.delay(100 + index * 60).duration(400)}
-            style={styles.areaCardContainer}
-          >
-            <View style={[styles.areaCard, { backgroundColor: t.card, borderColor: t.border }]}>
-              <View style={styles.areaCardHeader}>
-                <Text style={[styles.areaName, { color: t.text }]}>{area.name}</Text>
-                <View style={[styles.areaCountPill, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)' }]}>
-                  <Text style={[styles.areaCountText, { color: t.textSecondary }]}>
-                    {area.taskCount} tasks
-                  </Text>
-                </View>
-              </View>
-              <Text style={[styles.areaTasks, { color: t.textSecondary }]} numberOfLines={2}>
-                {area.tasks.join(' \u00B7 ')}
-              </Text>
-            </View>
-          </Animated.View>
-        ))}
-      </ScrollView>
-
-      {/* Bottom CTAs */}
-      {analysisResult && (
-        <View style={[styles.bottomCtas, { paddingBottom: insets.bottom + 20, backgroundColor: t.bg }]}>
-          <Pressable onPress={handleEasyWins} style={[styles.ctaButton, { backgroundColor: V1.coral }]}>
-            <Text style={styles.ctaButtonText}>Start with 3 easy wins</Text>
-          </Pressable>
-          <Pressable onPress={handleSeeAllTasks}>
-            <Text style={[styles.seeAllText, { color: V1.coral }]}>
-              See all {analysisResult.totalItems} tasks
-            </Text>
-          </Pressable>
-        </View>
-      )}
-    </View>
+    <ResultsPhase
+      photoUri={photoUri || null}
+      analysisResult={analysisResult}
+      tasks={analysisResult?.tasks}
+      error={error}
+      isDark={isDark}
+      reducedMotion={reducedMotion}
+      topInset={insets.top}
+      bottomInset={insets.bottom}
+      retryCount={retryCount}
+      maxRetries={MAX_RETRIES}
+      isCreating={isCreating}
+      createError={createError}
+      onBack={handleBack}
+      onRetry={handleRetry}
+      onRetakePhoto={() => router.back()}
+      onCreateRoom={handleCreateRoom}
+      onCreateRoomWithTasks={handleCreateRoomWithTasks}
+      onSeeAllTasks={handleSeeAllTasks}
+      onUseFallback={handleUseFallback}
+    />
   );
 }
 
 // ─── Fallback task generator ─────────────────────────────────────────────────
 function generateFallbackTasks(roomType: RoomType): CleaningTask[] {
-  const baseTasks: Record<string, Pick<CleaningTask, 'title' | 'description' | 'estimatedMinutes'>[]> = {
+  const baseTasks: Record<
+    string,
+    Pick<
+      CleaningTask,
+      'title' | 'description' | 'estimatedMinutes' | 'phase' | 'phaseName' | 'visualImpact' | 'difficulty' | 'destination'
+    >[]
+  > = {
     bedroom: [
-      { title: 'Pick up clothes from floor', description: 'Gather all loose clothing', estimatedMinutes: 3 },
-      { title: 'Make the bed', description: 'Straighten sheets and pillows', estimatedMinutes: 2 },
-      { title: 'Clear bedside table', description: 'Remove clutter from nightstand', estimatedMinutes: 5 },
-      { title: 'Sort desk papers', description: 'Organize loose papers', estimatedMinutes: 4 },
-      { title: 'Put away clean laundry', description: 'Fold and store clean clothes', estimatedMinutes: 5 },
+      { title: 'Grab any visible clothing off the floor near the bed -> laundry basket', description: "Scoop up everything within arm's reach", estimatedMinutes: 3, phase: 1, phaseName: 'Operation Floor Rescue', visualImpact: 'high', difficulty: 'quick' },
+      { title: 'Straighten the sheets and pillows on the bed', description: 'Pull the duvet up, fluff the pillows -- instant room transformation', estimatedMinutes: 2, phase: 1, phaseName: 'Operation Floor Rescue', visualImpact: 'high', difficulty: 'quick' },
+      { title: 'Clear items from the nightstand surface -> where they belong', description: 'Cups to kitchen, books to shelf, trash to bin', estimatedMinutes: 5, phase: 2, phaseName: 'Counter Strike', visualImpact: 'medium', difficulty: 'medium' },
+      { title: "Stack loose papers on the desk into one pile -> don't sort yet", description: 'Just gather into a single stack for now', estimatedMinutes: 4, phase: 2, phaseName: 'Counter Strike', visualImpact: 'medium', difficulty: 'medium' },
+      { title: 'Fold and put away clean laundry -> closet or dresser', description: 'Quick fold, no need to be perfect', estimatedMinutes: 5, phase: 3, phaseName: 'The Final Sparkle', visualImpact: 'medium', difficulty: 'medium' },
     ],
     kitchen: [
-      { title: 'Wipe counters', description: 'Clean all counter surfaces', estimatedMinutes: 4 },
-      { title: 'Load dishwasher', description: 'Put dirty dishes in dishwasher', estimatedMinutes: 5 },
-      { title: 'Take out trash', description: 'Empty kitchen trash', estimatedMinutes: 3 },
-      { title: 'Clear sink', description: 'Wash remaining dishes', estimatedMinutes: 5 },
-      { title: 'Wipe stovetop', description: 'Clean the stove surface', estimatedMinutes: 3 },
+      { title: 'Wipe down the main counter surface with a paper towel', description: 'Clear crumbs and spills from the primary counter', estimatedMinutes: 4, phase: 1, phaseName: 'Operation Floor Rescue', visualImpact: 'high', difficulty: 'quick' },
+      { title: 'Load dirty dishes from the sink -> dishwasher or drying rack', description: 'Biggest visual impact in the kitchen', estimatedMinutes: 5, phase: 1, phaseName: 'Operation Floor Rescue', visualImpact: 'high', difficulty: 'medium' },
+      { title: 'Tie up the trash bag and carry to bin outside', description: 'Grab the bag, tie it, walk it out', estimatedMinutes: 3, phase: 1, phaseName: 'Operation Floor Rescue', visualImpact: 'high', difficulty: 'quick' },
+      { title: 'Clear remaining dishes from the counter -> sink or dishwasher', description: 'Get all dishes off surfaces', estimatedMinutes: 5, phase: 2, phaseName: 'Counter Strike', visualImpact: 'medium', difficulty: 'medium' },
+      { title: 'Wipe down the stovetop surface with cleaning spray', description: 'Spray, wait 10 seconds, wipe', estimatedMinutes: 3, phase: 2, phaseName: 'Counter Strike', visualImpact: 'medium', difficulty: 'quick' },
     ],
     bathroom: [
-      { title: 'Wipe mirror', description: 'Clean bathroom mirror', estimatedMinutes: 2 },
-      { title: 'Clean sink', description: 'Scrub the sink', estimatedMinutes: 3 },
-      { title: 'Wipe counter', description: 'Clean bathroom counter', estimatedMinutes: 3 },
-      { title: 'Hang towels', description: 'Organize towels neatly', estimatedMinutes: 2 },
+      { title: 'Wipe the bathroom mirror with a damp cloth', description: 'Instant sparkle', estimatedMinutes: 2, phase: 1, phaseName: 'Operation Floor Rescue', visualImpact: 'high', difficulty: 'quick' },
+      { title: 'Scrub the sink basin with soap and water', description: 'Quick scrub, rinse, done', estimatedMinutes: 3, phase: 1, phaseName: 'Operation Floor Rescue', visualImpact: 'high', difficulty: 'quick' },
+      { title: 'Clear items from the bathroom counter -> cabinet or basket', description: 'Put products back where they go', estimatedMinutes: 3, phase: 2, phaseName: 'Counter Strike', visualImpact: 'medium', difficulty: 'quick' },
+      { title: 'Hang up towels neatly on the towel rack', description: 'Straighten and fold over rack', estimatedMinutes: 2, phase: 1, phaseName: 'Operation Floor Rescue', visualImpact: 'medium', difficulty: 'quick' },
     ],
     default: [
-      { title: 'Pick up floor items', description: 'Gather items from the floor', estimatedMinutes: 5 },
-      { title: 'Clear surfaces', description: 'Remove clutter from surfaces', estimatedMinutes: 5 },
-      { title: 'Take out trash', description: 'Empty trash bin', estimatedMinutes: 3 },
+      { title: 'Pick up any visible items from the floor -> their proper spot', description: 'Gather everything on the floor within reach', estimatedMinutes: 5, phase: 1, phaseName: 'Operation Floor Rescue', visualImpact: 'high', difficulty: 'quick' },
+      { title: 'Clear the main surface area -> items to where they belong', description: 'Focus on one flat surface at a time', estimatedMinutes: 5, phase: 2, phaseName: 'Counter Strike', visualImpact: 'high', difficulty: 'medium' },
+      { title: 'Collect visible trash and toss in bag -> trash bin', description: 'Grab a bag and do one sweep', estimatedMinutes: 3, phase: 1, phaseName: 'Operation Floor Rescue', visualImpact: 'high', difficulty: 'quick' },
     ],
   };
 
   const tasks = baseTasks[roomType] || baseTasks.default;
-  return tasks.map((t, i) => ({
+  return tasks.map((task, i) => ({
     id: `task-${Date.now()}-${i}`,
-    title: t.title,
-    description: t.description,
-    emoji: '🧹',
-    priority: i < 2 ? 'high' as const : i < 4 ? 'medium' as const : 'low' as const,
-    difficulty: (t.estimatedMinutes || 3) <= 3 ? 'quick' as const : 'medium' as const,
-    estimatedMinutes: t.estimatedMinutes,
+    title: task.title,
+    description: task.description,
+    emoji: '\uD83E\uDDF9',
+    priority: i < 2 ? ('high' as const) : i < 4 ? ('medium' as const) : ('low' as const),
+    difficulty:
+      task.difficulty ||
+      ((task.estimatedMinutes || 3) <= 3 ? ('quick' as const) : ('medium' as const)),
+    estimatedMinutes: task.estimatedMinutes,
     completed: false,
+    phase: task.phase,
+    phaseName: task.phaseName,
+    visualImpact: task.visualImpact,
+    destination: task.destination,
   }));
 }
 
 function getRoomEmoji(type: RoomType): string {
   const map: Record<string, string> = {
-    bedroom: '🛏️', kitchen: '🍳', bathroom: '🚿', livingRoom: '🛋️',
-    office: '💻', garage: '🔧', closet: '👕', other: '🏠',
+    bedroom: '\uD83D\uDECF\uFE0F',
+    kitchen: '\uD83C\uDF73',
+    bathroom: '\uD83D\uDEBF',
+    livingRoom: '\uD83D\uDECB\uFE0F',
+    office: '\uD83D\uDCBB',
+    garage: '\uD83D\uDD27',
+    closet: '\uD83D\uDC55',
+    other: '\uD83C\uDFE0',
   };
-  return map[type] || '🏠';
+  return map[type] || '\uD83C\uDFE0';
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Styles
-// ─────────────────────────────────────────────────────────────────────────────
-const styles = StyleSheet.create({
-  container: { flex: 1 },
-
-  // ── Scanning Phase ─────────────────────────────────────────────────────
-  scanPhotoContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingTop: 80,
-  },
-  scanPhotoWrapper: {
-    width: SCREEN_WIDTH * 0.7,
-    height: SCREEN_WIDTH * 0.7,
-    borderRadius: 16,
-    overflow: 'hidden',
-    position: 'relative',
-  },
-  scanPhoto: {
-    width: '100%',
-    height: '100%',
-  },
-  scanBracket: {
-    position: 'absolute',
-    width: 30,
-    height: 30,
-  },
-  scanBracketTL: {
-    top: 8,
-    left: 8,
-    borderTopWidth: 3,
-    borderLeftWidth: 3,
-    borderColor: V1.coral,
-  },
-  scanBracketTR: {
-    top: 8,
-    right: 8,
-    borderTopWidth: 3,
-    borderRightWidth: 3,
-    borderColor: V1.coral,
-  },
-  scanBracketBL: {
-    bottom: 8,
-    left: 8,
-    borderBottomWidth: 3,
-    borderLeftWidth: 3,
-    borderColor: V1.coral,
-  },
-  scanBracketBR: {
-    bottom: 8,
-    right: 8,
-    borderBottomWidth: 3,
-    borderRightWidth: 3,
-    borderColor: V1.coral,
-  },
-  scanTextSection: {
-    alignItems: 'center',
-    paddingHorizontal: 32,
-    paddingBottom: 60,
-    paddingTop: 32,
-  },
-  scanTitle: {
-    color: '#FFFFFF',
-    fontSize: 22,
-    fontWeight: '700',
-    marginBottom: 8,
-  },
-  scanSubtitle: {
-    color: 'rgba(255,255,255,0.5)',
-    fontSize: 15,
-    fontStyle: 'italic',
-    marginBottom: 28,
-  },
-  scanSteps: {
-    gap: 16,
-    alignItems: 'flex-start',
-  },
-  scanStepRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  scanStepDot: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  scanStepText: {
-    fontSize: 15,
-    fontWeight: '500',
-  },
-
-  // ── Detection Phase ────────────────────────────────────────────────────
-  detectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingBottom: 12,
-  },
-  detectionTitle: {
-    color: '#FFFFFF',
-    fontSize: 17,
-    fontWeight: '600',
-  },
-  detectionPhotoContainer: {
-    flex: 1,
-    marginHorizontal: 16,
-    borderRadius: 16,
-    overflow: 'hidden',
-    position: 'relative',
-  },
-  detectionPhoto: {
-    width: '100%',
-    height: '100%',
-  },
-  detectionBox: {
-    position: 'absolute',
-    borderWidth: 2,
-    borderRadius: 8,
-  },
-  detectionLabel: {
-    position: 'absolute',
-    top: -1,
-    left: -1,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 4,
-  },
-  detectionLabelText: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  detectionSummary: {
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-  },
-  detectionSummaryTitle: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 10,
-  },
-  detectionPills: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  detectionPill: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
-  },
-  detectionPillText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  detectionCta: {
-    paddingHorizontal: 20,
-  },
-
-  // ── Results Phase ──────────────────────────────────────────────────────
-  resultsHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingBottom: 8,
-  },
-  resultsTitle: {
-    fontSize: 17,
-    fontWeight: '600',
-  },
-  resultPhotoContainer: {
-    marginHorizontal: 20,
-    height: 180,
-    borderRadius: 16,
-    overflow: 'hidden',
-    marginBottom: 16,
-  },
-  resultPhoto: {
-    width: '100%',
-    height: '100%',
-  },
-  summaryPills: {
-    flexDirection: 'row',
-    gap: 8,
-    paddingHorizontal: 20,
-    marginBottom: 20,
-  },
-  summaryPill: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
-  },
-  summaryPillText: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  areaCardContainer: {
-    paddingHorizontal: 20,
-    marginBottom: 10,
-  },
-  areaCard: {
-    padding: 16,
-    borderRadius: 14,
-    borderWidth: 1,
-  },
-  areaCardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  areaName: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  areaCountPill: {
-    paddingHorizontal: 10,
-    paddingVertical: 3,
-    borderRadius: 10,
-  },
-  areaCountText: {
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  areaTasks: {
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  errorContainer: {
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 32,
-    gap: 12,
-  },
-  errorIconWrap: {
-    marginBottom: 8,
-  },
-  errorIconCircle: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: 'rgba(255,107,107,0.15)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: 'rgba(255,107,107,0.3)',
-  },
-  errorIconText: {
-    color: V1.coral,
-    fontSize: 24,
-    fontWeight: '700',
-  },
-  errorTitle: {
-    fontSize: 22,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-  errorDescription: {
-    fontSize: 14,
-    lineHeight: 20,
-    textAlign: 'center',
-    marginBottom: 8,
-  },
-  errorCTA: {
-    height: 52,
-    borderRadius: 26,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  errorCTAText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  errorFallbackLink: {
-    color: V1.coral,
-    fontSize: 14,
-    fontWeight: '600',
-    marginTop: 4,
-  },
-  errorFallbackHint: {
-    fontSize: 12,
-    textAlign: 'center',
-  },
-  bottomCtas: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    paddingHorizontal: 20,
-    paddingTop: 12,
-    gap: 12,
-    alignItems: 'center',
-  },
-  ctaButton: {
-    width: '100%',
-    paddingVertical: 16,
-    borderRadius: 28,
-    alignItems: 'center',
-  },
-  ctaButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  seeAllText: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-});

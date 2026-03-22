@@ -4,76 +4,59 @@
  * Mascot avatar, benefit cards with icons, coral CTA.
  */
 
-import { api } from '@/convex/_generated/api';
+import { MascotAvatar } from '@/components/ui';
 import { convex } from '@/config/convex';
+import { V1 } from '@/constants/designTokens';
+import { api } from '@/convex/_generated/api';
 import { useColorScheme } from '@/hooks/useColorScheme';
-import { registerForPushNotifications } from '@/services/notifications';
-import { Bell, Flame, Trophy, Heart } from 'lucide-react-native';
+import { useReducedMotion } from '@/hooks/useReducedMotion';
+import {
+  registerForPushNotifications,
+  scheduleShameFreeReminder,
+  scheduleComebackNudge,
+} from '@/services/notifications';
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { Bell, Flame, Heart, Trophy } from 'lucide-react-native';
 import React, { useState } from 'react';
 import {
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
+    Pressable,
+    StyleSheet,
+    Text,
+    View,
 } from 'react-native';
 import Animated, {
-  FadeIn,
-  FadeInDown,
+    FadeIn,
+    FadeInDown,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-// ─── V1 Color Palette ────────────────────────────────────────────────────────
-const V1 = {
-  coral: '#FF6B6B',
-  amber: '#FFB74D',
-  green: '#66BB6A',
-  blue: '#64B5F6',
-  dark: {
-    bg: '#0C0C0C',
-    card: '#1A1A1A',
-    border: 'rgba(255,255,255,0.08)',
-    text: '#FFFFFF',
-    textSecondary: 'rgba(255,255,255,0.5)',
-    textMuted: 'rgba(255,255,255,0.3)',
-  },
-  light: {
-    bg: '#FAFAFA',
-    card: '#F6F7F8',
-    border: '#E5E7EB',
-    text: '#1A1A1A',
-    textSecondary: '#6B7280',
-    textMuted: '#9CA3AF',
-  },
-};
-
-// ─── Benefit items ───────────────────────────────────────────────────────────
+// ─── Benefit items with notification previews ───────────────────────────────
 const BENEFITS = [
   {
-    icon: 'bell' as const,
-    color: V1.coral,
-    title: 'Gentle Reminders',
-    subtitle: 'Nudges that work with your energy',
+    icon: 'trophy' as const,
+    color: V1.green,
+    title: 'Achievements',
+    subtitle: '"You just unlocked Streak Master!"',
   },
   {
     icon: 'flame' as const,
     color: V1.amber,
     title: 'Streak Alerts',
-    subtitle: 'Celebrate your consistency',
+    subtitle: '"3 days in a row! Keep it going!"',
   },
   {
-    icon: 'trophy' as const,
-    color: V1.green,
-    title: 'Achievements',
-    subtitle: 'Know when you unlock something',
+    icon: 'bell' as const,
+    color: V1.coral,
+    title: 'Gentle Reminders',
+    subtitle: '"Good morning! Ready for a quick win?"',
   },
   {
     icon: 'heart' as const,
     color: V1.blue,
     title: 'Dusty Updates',
-    subtitle: 'Your companion misses you',
+    subtitle: '"Dusty brought back a surprise!"',
   },
 ];
 
@@ -108,9 +91,10 @@ function BenefitRow({
   delay: number;
 }) {
   const t = isDark ? V1.dark : V1.light;
+  const reducedMotion = useReducedMotion();
   return (
     <Animated.View
-      entering={FadeInDown.delay(delay).duration(350)}
+      entering={reducedMotion ? undefined : FadeInDown.delay(delay).duration(350)}
       style={[
         styles.benefitItem,
         { backgroundColor: t.card, borderColor: t.border },
@@ -137,10 +121,12 @@ export default function NotificationPermissionScreen() {
   const isDark = rawScheme === 'dark';
   const t = isDark ? V1.dark : V1.light;
   const insets = useSafeAreaInsets();
+  const reducedMotion = useReducedMotion();
 
   const [isRequesting, setIsRequesting] = useState(false);
 
   const handleEnableNotifications = async () => {
+    if (isRequesting) return;
     setIsRequesting(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
@@ -149,22 +135,29 @@ export default function NotificationPermissionScreen() {
       if (token) {
         try {
           await convex.mutation(api.notifications.savePushToken, { token });
-        } catch (error) {
-          if (__DEV__) console.info('Failed to save push token:', error);
+        } catch (err) {
+          if (__DEV__) console.info('Failed to save push token:', err);
         }
       }
-      router.replace('/(tabs)');
-    } catch (error) {
-      if (__DEV__) console.info('Error requesting notifications:', error);
-      router.replace('/(tabs)');
+
+      // Permission was granted — schedule the first daily reminder and comeback nudge
+      try {
+        await scheduleShameFreeReminder(9, 0);
+        await scheduleComebackNudge(3);
+      } catch (err) {
+        if (__DEV__) console.info('Error scheduling initial notifications:', err);
+      }
+    } catch (err) {
+      if (__DEV__) console.info('Error requesting notifications:', err);
     } finally {
       setIsRequesting(false);
     }
+    router.replace('/paywall');
   };
 
   const handleSkip = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    router.replace('/(tabs)');
+    router.replace('/paywall');
   };
 
   return (
@@ -179,17 +172,17 @@ export default function NotificationPermissionScreen() {
       >
         {/* Mascot */}
         <Animated.View
-          entering={FadeIn.delay(100).duration(400)}
+          entering={reducedMotion ? undefined : FadeIn.delay(100).duration(400)}
           style={styles.mascotWrap}
         >
-          <View style={[styles.mascotCircle, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }]}>
-            <Text style={styles.mascotEmoji}>🐹</Text>
+          <View style={styles.mascotCircle}>
+            <MascotAvatar imageKey="waving" size={130} showBackground={false} />
           </View>
         </Animated.View>
 
         {/* Title */}
         <Animated.Text
-          entering={FadeIn.delay(200).duration(350)}
+          entering={reducedMotion ? undefined : FadeIn.delay(200).duration(350)}
           style={[styles.title, { color: t.text }]}
         >
           Stay on Track
@@ -197,7 +190,7 @@ export default function NotificationPermissionScreen() {
 
         {/* Subtitle */}
         <Animated.Text
-          entering={FadeIn.delay(300).duration(350)}
+          entering={reducedMotion ? undefined : FadeIn.delay(300).duration(350)}
           style={[styles.subtitle, { color: t.textSecondary }]}
         >
           Dusty wants to cheer you on!
@@ -219,7 +212,7 @@ export default function NotificationPermissionScreen() {
         <View style={{ flex: 1 }} />
 
         {/* CTA Button */}
-        <Animated.View entering={FadeInDown.delay(800).duration(350)}>
+        <Animated.View entering={reducedMotion ? undefined : FadeInDown.delay(800).duration(350)}>
           <Pressable
             onPress={handleEnableNotifications}
             disabled={isRequesting}
@@ -227,6 +220,8 @@ export default function NotificationPermissionScreen() {
               styles.coralButton,
               { opacity: pressed || isRequesting ? 0.85 : 1 },
             ]}
+            accessibilityRole="button"
+            accessibilityLabel="Enable notifications"
           >
             <Text style={styles.coralButtonText}>
               {isRequesting ? 'Enabling...' : 'Enable Notifications'}
@@ -235,11 +230,22 @@ export default function NotificationPermissionScreen() {
         </Animated.View>
 
         {/* Skip */}
-        <Pressable onPress={handleSkip} style={styles.skipButton}>
+        <Pressable
+          onPress={handleSkip}
+          disabled={isRequesting}
+          style={styles.skipButton}
+          accessibilityRole="button"
+          accessibilityLabel="Skip notifications for now"
+        >
           <Text style={[styles.skipText, { color: t.textMuted }]}>
             Maybe later
           </Text>
         </Pressable>
+
+        {/* Reassurance */}
+        <Text style={[{ fontSize: 12, color: t.textMuted, textAlign: 'center', marginTop: 4 }]}>
+          You can adjust or turn off notifications anytime in Settings
+        </Text>
       </View>
     </View>
   );
@@ -263,14 +269,10 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   mascotCircle: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+    width: 90,
+    height: 90,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  mascotEmoji: {
-    fontSize: 44,
   },
 
   // ── Text ──
@@ -338,6 +340,8 @@ const styles = StyleSheet.create({
   // ── Skip ──
   skipButton: {
     paddingVertical: 12,
+    minHeight: 44,
+    justifyContent: 'center',
   },
   skipText: {
     fontSize: 15,

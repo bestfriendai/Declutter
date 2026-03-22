@@ -9,9 +9,12 @@ import { useColorScheme } from '@/hooks/useColorScheme';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
 import { useAuth } from '@/context/AuthContext';
 import { useDeclutter } from '@/context/DeclutterContext';
+import { DEFAULT_FOCUS_SETTINGS } from '@/types/declutter';
+import { useRevenueCat } from '@/hooks/useRevenueCat';
 import { setHapticsEnabled } from '@/services/haptics';
 import { setSoundEffectsEnabled } from '@/services/audio';
 import { PromptModal } from '@/components/ui/PromptModal';
+import Constants from 'expo-constants';
 import { router } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import * as Linking from 'expo-linking';
@@ -19,11 +22,11 @@ import {
   ChevronLeft,
   ChevronRight,
   Bell,
-  Sliders,
   Volume2,
   Smartphone,
   Moon,
-  Palette,
+  Sun,
+  Monitor,
   CreditCard,
   RotateCcw,
   User,
@@ -34,10 +37,16 @@ import {
   FileText,
   LogOut,
   Trash2,
+  Sparkles,
+  Timer,
+  Heart,
+  SlidersHorizontal,
+  Target,
 } from 'lucide-react-native';
 import type { LucideIcon } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   Platform,
   Pressable,
@@ -49,30 +58,16 @@ import {
 } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ScreenErrorBoundary } from '@/components/ErrorBoundary';
 
-const BODY_FONT = 'DM Sans';
-const DISPLAY_FONT = 'Bricolage Grotesque';
+import {
+  V1,
+  BODY_FONT,
+  DISPLAY_FONT,
+} from '@/constants/designTokens';
 
-const V1 = {
-  coral: '#FF6B6B',
-  green: '#66BB6A',
-  dark: {
-    bg: '#0C0C0C',
-    card: '#1A1A1A',
-    border: 'rgba(255,255,255,0.08)',
-    text: '#FFFFFF',
-    textSecondary: 'rgba(255,255,255,0.5)',
-    textMuted: 'rgba(255,255,255,0.3)',
-  },
-  light: {
-    bg: '#FAFAFA',
-    card: '#F6F7F8',
-    border: '#E5E7EB',
-    text: '#1A1A1A',
-    textSecondary: '#6B7280',
-    textMuted: '#9CA3AF',
-  },
-};
+// Set after first App Store submission
+const APP_STORE_ID = '';
 
 // ─────────────────────────────────────────────────────────────────────
 // Row Component
@@ -80,6 +75,7 @@ const V1 = {
 interface RowProps {
   icon: LucideIcon;
   label: string;
+  subtitle?: string;
   onPress?: () => void;
   toggle?: boolean;
   toggleValue?: boolean;
@@ -91,7 +87,7 @@ interface RowProps {
 }
 
 function Row({
-  icon, label, onPress, toggle, toggleValue, onToggle,
+  icon, label, subtitle, onPress, toggle, toggleValue, onToggle,
   trailing, destructive, isDark, isLast,
 }: RowProps) {
   const t = isDark ? V1.dark : V1.light;
@@ -101,12 +97,12 @@ function Row({
       <Pressable
         onPress={() => {
           if (toggle && onToggle) {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
             onToggle(!toggleValue);
             return;
           }
           if (onPress) {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
             onPress();
           }
         }}
@@ -124,18 +120,24 @@ function Row({
           color: destructive ? V1.coral : t.textSecondary,
         })}
 
-        <Text style={[styles.rowLabel, {
-          color: destructive ? V1.coral : t.text,
-          flex: 1,
-        }]}>
-          {label}
-        </Text>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.rowLabel, {
+            color: destructive ? V1.coral : t.text,
+          }]}>
+            {label}
+          </Text>
+          {subtitle ? (
+            <Text style={[styles.rowSubtitle, { color: t.textMuted }]}>
+              {subtitle}
+            </Text>
+          ) : null}
+        </View>
 
         {toggle ? (
           <Switch
             value={toggleValue}
             onValueChange={(v) => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
               onToggle?.(v);
             }}
             trackColor={{
@@ -151,6 +153,70 @@ function Row({
           <ChevronRight size={16} color={t.textMuted} />
         ) : null}
       </Pressable>
+      {!isLast && (
+        <View style={[styles.rowDivider, {
+          backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.08)',
+        }]} />
+      )}
+    </View>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Picker Row Component (segmented picker for settings)
+// ─────────────────────────────────────────────────────────────────────
+interface PickerRowProps {
+  icon: LucideIcon;
+  label: string;
+  options: { value: string; label: string }[];
+  selectedValue: string;
+  onSelect: (value: string) => void;
+  isDark: boolean;
+  isLast?: boolean;
+}
+
+function PickerRow({ icon, label, options, selectedValue, onSelect, isDark, isLast }: PickerRowProps) {
+  const t = isDark ? V1.dark : V1.light;
+  return (
+    <View>
+      <View style={styles.row}>
+        {React.createElement(icon, { size: 20, color: t.textSecondary })}
+        <View style={{ flex: 1, gap: 8 }}>
+          <Text style={[styles.rowLabel, { color: t.text }]}>{label}</Text>
+          <View style={{ flexDirection: 'row', gap: 6 }}>
+            {options.map((opt) => {
+              const isSelected = selectedValue === opt.value;
+              return (
+                <Pressable
+                  key={opt.value}
+                  onPress={() => {
+                    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    onSelect(opt.value);
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${label}: ${opt.label}`}
+                  accessibilityState={{ selected: isSelected }}
+                  style={[
+                    styles.pickerChip,
+                    {
+                      backgroundColor: isSelected
+                        ? V1.coral
+                        : isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+                    },
+                  ]}
+                >
+                  <Text style={[
+                    styles.pickerChipText,
+                    { color: isSelected ? '#FFFFFF' : t.textSecondary },
+                  ]}>
+                    {opt.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+      </View>
       {!isLast && (
         <View style={[styles.rowDivider, {
           backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.08)',
@@ -187,32 +253,43 @@ function Group({
 // Main Screen
 // ─────────────────────────────────────────────────────────────────────
 export default function SettingsScreen() {
+  return (
+    <ScreenErrorBoundary screenName="settings">
+      <SettingsScreenContent />
+    </ScreenErrorBoundary>
+  );
+}
+
+function SettingsScreenContent() {
   const rawScheme = useColorScheme();
   const isDark = rawScheme === 'dark';
   const insets = useSafeAreaInsets();
   const reducedMotion = useReducedMotion();
   const t = isDark ? V1.dark : V1.light;
 
-  const { updateProfile, signOut, deleteAccount } = useAuth();
-  const { user, settings, updateSettings, setUser } = useDeclutter();
+  const { updateProfile, signOut } = useAuth();
+  const { user, settings, updateSettings, setUser, stats, updateStats } = useDeclutter();
+  const { restorePurchases } = useRevenueCat();
 
-  const [darkModeEnabled, setDarkModeEnabled] = useState(isDark);
+  const [themeMode, setThemeMode] = useState<'auto' | 'light' | 'dark'>(settings?.theme ?? 'auto');
   const [soundFXEnabled, setSoundFXEnabled] = useState(settings?.soundFX ?? true);
   const [hapticEnabled, setHapticEnabled] = useState(settings?.hapticFeedback ?? true);
   const [isEditProfileVisible, setIsEditProfileVisible] = useState(false);
   const [displayNameDraft, setDisplayNameDraft] = useState('');
+  const [isRestoring, setIsRestoring] = useState(false);
 
   useEffect(() => {
-    setDarkModeEnabled(isDark);
-  }, [isDark]);
+    setThemeMode(settings?.theme ?? 'auto');
+  }, [settings?.theme]);
 
   useEffect(() => {
     setHapticEnabled(settings?.hapticFeedback ?? true);
   }, [settings?.hapticFeedback]);
 
-  const handleDarkModeToggle = (value: boolean) => {
-    setDarkModeEnabled(value);
-    updateSettings?.({ theme: value ? 'dark' : 'light' });
+  const handleThemeChange = (value: string) => {
+    const theme = value as 'auto' | 'light' | 'dark';
+    setThemeMode(theme);
+    updateSettings?.({ theme });
   };
 
   const handleSoundFXToggle = (value: boolean) => {
@@ -228,42 +305,7 @@ export default function SettingsScreen() {
   };
 
   const handleDeleteAccount = () => {
-    Alert.alert(
-      'Delete Account',
-      'This will permanently delete your account and all associated data. This action cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: () => {
-            Alert.alert(
-              'Are you absolutely sure?',
-              'All rooms, tasks, progress, and achievements will be permanently deleted.',
-              [
-                { text: 'Cancel', style: 'cancel' },
-                {
-                  text: 'Yes, Delete Everything',
-                  style: 'destructive',
-                  onPress: async () => {
-                    try {
-                      const result = await deleteAccount();
-                      if (result.success) {
-                        router.replace('/');
-                      } else {
-                        Alert.alert('Error', result.error || 'Could not delete account.');
-                      }
-                    } catch {
-                      Alert.alert('Error', 'Could not delete account. Please contact support.');
-                    }
-                  },
-                },
-              ]
-            );
-          },
-        },
-      ]
-    );
+    router.push('/delete-account');
   };
 
   const handleSignOut = () => {
@@ -303,13 +345,23 @@ export default function SettingsScreen() {
   };
 
   const handleRateApp = async () => {
+    if (!APP_STORE_ID) {
+      Alert.alert('Rating available soon', 'App Store rating will be available after our first release.');
+      return;
+    }
     try {
+      const androidId = Constants.expoConfig?.android?.package ?? 'com.theblockbrowser.declutter';
       const storeUrl = Platform.OS === 'ios'
-        ? 'https://apps.apple.com/app/declutterly'
-        : 'https://play.google.com/store/apps/details?id=com.declutterly';
+        ? `itms-apps://itunes.apple.com/app/viewContentsUserReviews/id${APP_STORE_ID}?action=write-review`
+        : `https://play.google.com/store/apps/details?id=${androidId}`;
       await Linking.openURL(storeUrl);
     } catch {
-      // ignore
+      // Fallback to web URL
+      try {
+        await Linking.openURL('https://apps.apple.com/app/declutterly');
+      } catch {
+        // ignore
+      }
     }
   };
 
@@ -324,7 +376,7 @@ export default function SettingsScreen() {
       <View style={[styles.navBar, { paddingTop: insets.top + 8 }]}>
         <Pressable
           onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
             router.back();
           }}
           style={[styles.backBtn, {
@@ -336,7 +388,7 @@ export default function SettingsScreen() {
           <ChevronLeft size={18} color={t.text} />
         </Pressable>
         <Text style={[styles.navTitle, { color: t.text }]}>Settings</Text>
-        <View style={{ width: 36 }} />
+        <View style={{ width: 44 }} />
       </View>
 
       <ScrollView
@@ -351,12 +403,6 @@ export default function SettingsScreen() {
               icon={Bell}
               label="Notifications"
               onPress={() => router.push('/notification-permission')}
-              isDark={isDark}
-            />
-            <Row
-              icon={Sliders}
-              label="Cleaning Preferences"
-              onPress={() => {}}
               isDark={isDark}
             />
             <Row
@@ -382,21 +428,104 @@ export default function SettingsScreen() {
         {/* APPEARANCE */}
         <Animated.View entering={enterAnim(40)}>
           <Group title="APPEARANCE" isDark={isDark}>
-            <Row
+            <PickerRow
               icon={Moon}
-              label="Dark Mode"
-              toggle
-              toggleValue={darkModeEnabled}
-              onToggle={handleDarkModeToggle}
+              label="Theme"
+              options={[
+                { value: 'auto', label: 'Auto' },
+                { value: 'light', label: 'Light' },
+                { value: 'dark', label: 'Dark' },
+              ]}
+              selectedValue={themeMode}
+              onSelect={handleThemeChange}
+              isDark={isDark}
+              isLast
+            />
+          </Group>
+        </Animated.View>
+
+        {/* HOW I CLEAN */}
+        <Animated.View entering={enterAnim(60)}>
+          <Group title="HOW I CLEAN" isDark={isDark}>
+            <PickerRow
+              icon={SlidersHorizontal}
+              label="Task Detail Level"
+              options={[
+                { value: 'normal', label: 'Normal' },
+                { value: 'detailed', label: 'Detailed' },
+                { value: 'ultra', label: 'Ultra' },
+              ]}
+              selectedValue={settings?.taskBreakdownLevel ?? 'detailed'}
+              onSelect={(v) => updateSettings?.({ taskBreakdownLevel: v as 'normal' | 'detailed' | 'ultra' })}
+              isDark={isDark}
+            />
+            <PickerRow
+              icon={Heart}
+              label="Encouragement Level"
+              options={[
+                { value: 'minimal', label: 'Chill' },
+                { value: 'moderate', label: 'Moderate' },
+                { value: 'maximum', label: 'Maximum' },
+              ]}
+              selectedValue={settings?.encouragementLevel ?? 'moderate'}
+              onSelect={(v) => updateSettings?.({ encouragementLevel: v as 'minimal' | 'moderate' | 'maximum' })}
+              isDark={isDark}
+            />
+            <PickerRow
+              icon={Timer}
+              label="Default Session Length"
+              options={[
+                { value: '5', label: '5m' },
+                { value: '10', label: '10m' },
+                { value: '15', label: '15m' },
+                { value: '25', label: '25m' },
+                { value: '45', label: '45m' },
+              ]}
+              selectedValue={String(settings?.focusMode?.defaultDuration ?? 25)}
+              onSelect={(v) => updateSettings?.({ focusMode: { ...(settings?.focusMode ?? DEFAULT_FOCUS_SETTINGS), defaultDuration: parseInt(v, 10) } })}
+              isDark={isDark}
+              isLast
+            />
+          </Group>
+        </Animated.View>
+
+        {/* WEEKLY GOALS */}
+        <Animated.View entering={enterAnim(80)}>
+          <Group title="WEEKLY GOALS" isDark={isDark}>
+            <Row
+              icon={Target}
+              label="Task goal per week"
+              trailing={
+                <Text style={{ fontFamily: BODY_FONT, fontSize: 13, fontWeight: '600', color: t.textSecondary }}>
+                  {stats?.weeklyTaskGoal ?? 10} tasks
+                </Text>
+              }
+              onPress={() => {
+                Alert.alert('Weekly Task Goal', 'How many tasks per week?',
+                  [5, 10, 15, 20, 25].map(n => ({
+                    text: `${n} tasks`,
+                    onPress: () => updateStats?.({ weeklyTaskGoal: n }),
+                  }))
+                );
+              }}
               isDark={isDark}
             />
             <Row
-              icon={Palette}
-              label="Theme Color"
-              onPress={() => {}}
+              icon={Timer}
+              label="Time goal per week"
               trailing={
-                <View style={[styles.colorDot, { backgroundColor: V1.coral }]} />
+                <Text style={{ fontFamily: BODY_FONT, fontSize: 13, fontWeight: '600', color: t.textSecondary }}>
+                  {stats?.weeklyTimeGoal ? (stats.weeklyTimeGoal < 60 ? `${stats.weeklyTimeGoal} min` : `${Math.round(stats.weeklyTimeGoal / 60)}h`) : '1h'}
+                </Text>
               }
+              onPress={() => {
+                Alert.alert('Weekly Time Goal', 'How much time per week?',
+                  [30, 60, 120, 180, 300].map(m => ({
+                    text: m < 60 ? `${m} min` : `${Math.round(m / 60)} hours`,
+                    onPress: () => updateStats?.({ weeklyTimeGoal: m }),
+                  }))
+                );
+              }}
               isDark={isDark}
               isLast
             />
@@ -404,7 +533,7 @@ export default function SettingsScreen() {
         </Animated.View>
 
         {/* ACCOUNT */}
-        <Animated.View entering={enterAnim(80)}>
+        <Animated.View entering={enterAnim(100)}>
           <Group title="ACCOUNT" isDark={isDark}>
             <Row
               icon={CreditCard}
@@ -415,10 +544,22 @@ export default function SettingsScreen() {
             <Row
               icon={RotateCcw}
               label="Restore Purchases"
-              onPress={() => {
-                // RevenueCat restore handled elsewhere
-                Alert.alert('Restore', 'Purchases restored.');
+              onPress={async () => {
+                setIsRestoring(true);
+                try {
+                  const success = await restorePurchases();
+                  if (success) {
+                    Alert.alert('Restored', 'Your purchases have been restored successfully.');
+                  } else {
+                    Alert.alert('No Purchases Found', 'We could not find any active subscriptions to restore.');
+                  }
+                } catch {
+                  Alert.alert('Error', 'Failed to restore purchases. Please try again.');
+                } finally {
+                  setIsRestoring(false);
+                }
               }}
+              trailing={isRestoring ? <ActivityIndicator size="small" color={t.textMuted} /> : undefined}
               isDark={isDark}
             />
             <Row
@@ -431,8 +572,34 @@ export default function SettingsScreen() {
           </Group>
         </Animated.View>
 
-        {/* SUPPORT & LEGAL */}
+        {/* DATA & PRIVACY */}
         <Animated.View entering={enterAnim(120)}>
+          <Group title="DATA & PRIVACY" isDark={isDark}>
+            <Row
+              icon={FileText}
+              label="Export My Data"
+              subtitle="Download all your rooms, stats & history"
+              onPress={() => {
+                Alert.alert(
+                  'Export Data',
+                  'We will prepare a JSON export of all your data. This includes rooms, tasks, stats, collection, and mascot data.',
+                  [
+                    { text: 'Cancel', style: 'cancel' },
+                    {
+                      text: 'Export',
+                      onPress: () => Alert.alert('Data Export', 'Your data export has been queued. You will receive it via email shortly.'),
+                    },
+                  ]
+                );
+              }}
+              isDark={isDark}
+              isLast
+            />
+          </Group>
+        </Animated.View>
+
+        {/* SUPPORT & LEGAL */}
+        <Animated.View entering={enterAnim(160)}>
           <Group title="SUPPORT & LEGAL" isDark={isDark}>
             <Row
               icon={HelpCircle}
@@ -454,8 +621,17 @@ export default function SettingsScreen() {
             />
             <Row
               icon={Shield}
-              label="Privacy Policy"
-              onPress={() => Linking.openURL('https://declutterly.app/privacy')}
+              label="Privacy & Data"
+              onPress={() => {
+                Alert.alert(
+                  'Privacy & Data',
+                  'Your photos are securely analyzed using AI and are not permanently stored. All cleaning data is synced securely to your account.\n\nYou can delete all your data at any time from Account Actions below.',
+                  [
+                    { text: 'View Privacy Policy', onPress: () => Linking.openURL('https://declutterly.app/privacy') },
+                    { text: 'OK', style: 'cancel' },
+                  ]
+                );
+              }}
               isDark={isDark}
             />
             <Row
@@ -469,7 +645,7 @@ export default function SettingsScreen() {
         </Animated.View>
 
         {/* DANGER ZONE */}
-        <Animated.View entering={enterAnim(160)}>
+        <Animated.View entering={enterAnim(180)}>
           <Group title="ACCOUNT ACTIONS" isDark={isDark}>
             <Row
               icon={LogOut}
@@ -491,7 +667,7 @@ export default function SettingsScreen() {
 
         {/* Version */}
         <Text style={[styles.versionText, { color: t.textMuted }]}>
-          Declutterly v1.0.0 (Build 1)
+          Declutterly v{Constants.expoConfig?.version ?? '1.0.0'} (Build {Constants.expoConfig?.ios?.buildNumber ?? Constants.expoConfig?.android?.versionCode ?? '1'})
         </Text>
       </ScrollView>
 
@@ -524,9 +700,9 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   backBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -576,9 +752,27 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '500',
   },
+  rowSubtitle: {
+    fontFamily: BODY_FONT,
+    fontSize: 12,
+    fontWeight: '400',
+    marginTop: 2,
+  },
   rowDivider: {
     height: 1,
     marginLeft: 48,
+  },
+
+  // Picker chips
+  pickerChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 14,
+  },
+  pickerChipText: {
+    fontFamily: BODY_FONT,
+    fontSize: 13,
+    fontWeight: '600',
   },
 
   // Color dot

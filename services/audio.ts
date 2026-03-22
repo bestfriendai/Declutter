@@ -96,17 +96,23 @@ async function loadSoundWithRetry(
   return sound;
 }
 
+/** Result type for ambient sound operations */
+export type AmbientSoundResult = { success: true } | { success: false; error: string };
+
 /**
- * Play ambient sound based on type
+ * Play ambient sound based on type.
+ * Returns a result indicating success or failure so callers can react.
  */
-export async function playAmbientSound(type: FocusModeSettings['whiteNoiseType']): Promise<void> {
-  if (!soundEffectsEnabled) return;
+export async function playAmbientSound(type: FocusModeSettings['whiteNoiseType']): Promise<AmbientSoundResult> {
+  if (!soundEffectsEnabled) {
+    return { success: false, error: 'Sound effects are disabled' };
+  }
 
   // Stop any existing sound first
   await stopAmbientSound();
 
   if (type === 'none') {
-    return;
+    return { success: true };
   }
 
   const soundUrl = AMBIENT_SOUNDS[type];
@@ -114,7 +120,7 @@ export async function playAmbientSound(type: FocusModeSettings['whiteNoiseType']
     if (__DEV__) {
       console.warn(`No sound URL for type: ${type}`);
     }
-    return;
+    return { success: false, error: `Unknown sound type: ${type}` };
   }
 
   try {
@@ -144,11 +150,14 @@ export async function playAmbientSound(type: FocusModeSettings['whiteNoiseType']
         }
       }
     });
+
+    return { success: true };
   } catch (error) {
     if (__DEV__) console.error('Error playing ambient sound after retries:', error);
     // Reset state on failure
     ambientSound = null;
     isPlaying = false;
+    return { success: false, error: 'Could not load audio' };
   }
 }
 

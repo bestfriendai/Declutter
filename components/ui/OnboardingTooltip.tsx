@@ -31,7 +31,8 @@ import { useColorScheme } from '@/hooks/useColorScheme';
 import { Colors } from '@/constants/Colors';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
-const STORAGE_KEY = '@declutterly_seen_tooltips';
+import { STORAGE_KEYS } from '@/constants/storageKeys';
+const STORAGE_KEY = STORAGE_KEYS.SEEN_TOOLTIPS;
 
 // Available tooltip IDs
 export type TooltipId =

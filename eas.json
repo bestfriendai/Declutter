@@ -45,6 +45,7 @@
     },
     "production": {
       "extends": "base",
+      "channel": "production",
       "autoIncrement": true,
       "ios": {
         "resourceClass": "m-medium"
@@ -63,6 +64,11 @@
         "appleId": "theblockbrowser@gmail.com",
         "ascAppId": "6760730615",
         "appleTeamId": "T2A8YY9YDW"
+      },
+      "android": {
+        "serviceAccountKeyPath": "./google-services.json",
+        "track": "internal",
+        "releaseStatus": "draft"
       }
     }
   }

@@ -56,6 +56,7 @@ export default defineSchema({
     revenuecatUserId: v.optional(v.string()),
     expoPushToken: v.optional(v.string()),
     pushTokenUpdatedAt: v.optional(v.number()),
+    lastInactivityNudge: v.optional(v.number()),
   })
     .index("email", ["email"])
     .index("phone", ["phone"])
@@ -130,6 +131,9 @@ export default defineSchema({
     energyRequired: v.optional(v.string()),
     decisionLoad: v.optional(v.string()),
     visualImpact: v.optional(v.string()),
+    phase: v.optional(v.number()),
+    phaseName: v.optional(v.string()),
+    mentalBenefit: v.optional(v.string()),
     whyThisMatters: v.optional(v.string()),
     resistanceHandler: v.optional(v.string()),
     suppliesNeeded: v.optional(v.array(v.string())),
@@ -175,6 +179,9 @@ export default defineSchema({
     comebackBonusMultiplier: v.optional(v.number()),         // 1.5x, 2x based on break length
     lastComebackDate: v.optional(v.string()),                // When user last "came back"
     comebackCount: v.optional(v.number()),                   // Times user has returned after breaks
+    // Daily XP rate limiting
+    xpEarnedToday: v.optional(v.number()),                   // XP earned in current day
+    xpResetDate: v.optional(v.string()),                     // ISO date for daily XP reset
   }).index("by_userId", ["userId"]),
 
   // Unlocked badges
@@ -269,7 +276,9 @@ export default defineSchema({
     collectedAt: v.number(),
     roomId: v.optional(v.id("rooms")),
     taskId: v.optional(v.id("tasks")),
-  }).index("by_userId", ["userId"]),
+  })
+    .index("by_userId", ["userId"])
+    .index("by_userId_collectibleId", ["userId", "collectibleId"]),
 
   // Collection statistics per user (one per user)
   collectionStats: defineTable({
@@ -323,7 +332,9 @@ export default defineSchema({
     ),
   })
     .index("by_creatorId", ["creatorId"])
-    .index("by_inviteCode", ["inviteCode"]),
+    .index("by_inviteCode", ["inviteCode"])
+    .index("by_status", ["status"])
+    .index("by_isActive", ["isActive"]),
 
   // User friendships / connections
   connections: defineTable({
@@ -386,16 +397,21 @@ export default defineSchema({
     status: v.union(v.literal("pending"), v.literal("active"), v.literal("ended")),
     createdAt: v.number(),
     inviteCode: v.string(),
-    // Today's activity visible to partner
-    userActiveToday: v.boolean(),
-    partnerActiveToday: v.boolean(),
+    // Today's activity visible to partner — stored as ISO dates so comparison to today
+    // is always accurate without a daily reset cron.
+    userActiveToday: v.optional(v.boolean()),
+    partnerActiveToday: v.optional(v.boolean()),
+    lastUserActiveDate: v.optional(v.string()),    // ISO YYYY-MM-DD — source of truth
+    lastPartnerActiveDate: v.optional(v.string()), // ISO YYYY-MM-DD — source of truth
     // Nudge tracking
     lastNudgeSent: v.optional(v.number()),
     lastNudgeReceived: v.optional(v.number()),
-    nudgeCount: v.number(),
+    nudgeCount: v.number(),           // nudges sent by userId-side today
+    partnerNudgeCount: v.optional(v.number()), // nudges sent by partnerId-side today
     // Bonus tracking
     bothActiveStreak: v.number(),
     totalBothActiveDays: v.number(),
+    lastBothActiveDate: v.optional(v.string()), // ISO date to prevent double-counting per day
   })
     .index("by_userId", ["userId"])
     .index("by_partnerId", ["partnerId"])

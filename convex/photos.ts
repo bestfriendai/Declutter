@@ -33,6 +33,15 @@ export const create = mutation({
     const room = await ctx.db.get(args.roomId);
     if (!room || room.userId !== userId) throw new Error("Room not found");
 
+    // Validate file size (max 10MB) if a storage file was uploaded
+    if (args.storageId) {
+      const metadata = await ctx.storage.getMetadata(args.storageId);
+      if (metadata && metadata.size > 10 * 1024 * 1024) {
+        await ctx.storage.delete(args.storageId);
+        throw new Error("Photo exceeds maximum size of 10MB");
+      }
+    }
+
     const uploadedUrl = args.storageId
       ? await ctx.storage.getUrl(args.storageId)
       : null;
@@ -71,6 +80,17 @@ export const generateUploadUrl = mutation({
   handler: async (ctx) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) throw new Error("Not authenticated");
+
+    // Rate limit: max 50 photo uploads per day
+    const dayAgo = Date.now() - 24 * 60 * 60 * 1000;
+    const recentPhotos = await ctx.db
+      .query("photos")
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .filter((q) => q.gte(q.field("timestamp"), dayAgo))
+      .collect();
+    if (recentPhotos.length >= 50) {
+      throw new Error("Photo upload limit reached (max 50 per day). Try again tomorrow.");
+    }
 
     return await ctx.storage.generateUploadUrl();
   },

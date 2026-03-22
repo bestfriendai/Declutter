@@ -86,6 +86,9 @@ type ConvexConnectionDoc = {
   friendId: string;
   status: 'pending' | 'accepted' | 'blocked';
   createdAt: number;
+  friendName: string | null;
+  friendEmail: string | null;
+  friendImage: string | null;
 };
 
 function toDate(value?: number): Date | undefined {
@@ -227,11 +230,20 @@ export async function getConnections(): Promise<Connection[]> {
           ? connection.friendId
           : String(connection.friendId);
 
+      // Use the joined friend name from the Convex query.
+      // Fall back to the first part of their email, or "Partner" if neither is available.
+      const displayName =
+        connection.friendName ||
+        (connection.friendEmail
+          ? connection.friendEmail.split('@')[0]
+          : 'Partner');
+
       return {
         userId: otherUserId,
-        displayName: 'Connection',
+        displayName,
+        avatarUrl: connection.friendImage ?? undefined,
         addedAt: new Date(connection.createdAt),
-        mutualChallenges: 0,
+        mutualChallenges: 0, // TODO: compute from shared challenges
       };
     });
   } catch (error) {
@@ -240,9 +252,14 @@ export async function getConnections(): Promise<Connection[]> {
   }
 }
 
-export async function removeConnection(_targetUserId: string): Promise<boolean> {
-  // TODO: Implement removeConnection mutation in Convex backend (api.social.removeConnection)
-  // For now, this is a no-op since the backend mutation doesn't exist yet.
-  logger.info('removeConnection: not yet implemented on the backend');
-  return false;
+export async function removeConnection(connectionId: string): Promise<boolean> {
+  try {
+    await convex.mutation(api.social.removeConnection, {
+      connectionId: toConvexId<'connections'>(connectionId),
+    });
+    return true;
+  } catch (error) {
+    logHandledSocialError('Error removing connection:', error);
+    return false;
+  }
 }

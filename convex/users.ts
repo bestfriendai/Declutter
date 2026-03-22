@@ -1,6 +1,7 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
 import { internalQuery, mutation, query } from "./_generated/server";
+import { sanitizeInput } from "./shared";
 
 // Internal query for server-side use (e.g. from actions) — skips auth check
 export const _getById = internalQuery({
@@ -127,7 +128,11 @@ export const update = mutation({
     if (!user) throw new Error("User not found");
 
     const updates: Record<string, unknown> = {};
-    if (args.name !== undefined) updates.name = args.name;
+    if (args.name !== undefined) {
+      const sanitized = sanitizeInput(args.name, 100);
+      if (!sanitized) throw new Error("Name cannot be empty");
+      updates.name = sanitized;
+    }
     if (args.avatar !== undefined) updates.avatar = args.avatar;
     if (args.onboardingComplete !== undefined)
       updates.onboardingComplete = args.onboardingComplete;
@@ -159,17 +164,17 @@ export const deleteAccount = mutation({
     // Delete all rooms and their associated tasks, subtasks, photos
     const rooms = await ctx.db
       .query("rooms")
-      .filter((q) => q.eq(q.field("userId"), userId))
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
       .collect();
     for (const room of rooms) {
       const tasks = await ctx.db
         .query("tasks")
-        .filter((q) => q.eq(q.field("roomId"), room._id))
+        .withIndex("by_roomId", (q) => q.eq("roomId", room._id))
         .collect();
       for (const task of tasks) {
         const subtasks = await ctx.db
           .query("subtasks")
-          .filter((q) => q.eq(q.field("taskId"), task._id))
+          .withIndex("by_taskId", (q) => q.eq("taskId", task._id))
           .collect();
         for (const subtask of subtasks) {
           await ctx.db.delete(subtask._id);
@@ -178,9 +183,17 @@ export const deleteAccount = mutation({
       }
       const photos = await ctx.db
         .query("photos")
-        .filter((q) => q.eq(q.field("roomId"), room._id))
+        .withIndex("by_roomId", (q) => q.eq("roomId", room._id))
         .collect();
       for (const photo of photos) {
+        // Delete the Convex storage file first (if it exists), then the document
+        if (photo.storageId) {
+          try {
+            await ctx.storage.delete(photo.storageId);
+          } catch {
+            // Storage file may already be deleted — continue cleanup
+          }
+        }
         await ctx.db.delete(photo._id);
       }
       await ctx.db.delete(room._id);
@@ -189,14 +202,14 @@ export const deleteAccount = mutation({
     // Delete stats
     const stats = await ctx.db
       .query("stats")
-      .filter((q) => q.eq(q.field("userId"), userId))
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
       .first();
     if (stats) await ctx.db.delete(stats._id);
 
     // Delete badges
     const badges = await ctx.db
       .query("badges")
-      .filter((q) => q.eq(q.field("userId"), userId))
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
       .collect();
     for (const badge of badges) {
       await ctx.db.delete(badge._id);
@@ -205,21 +218,21 @@ export const deleteAccount = mutation({
     // Delete settings
     const settings = await ctx.db
       .query("settings")
-      .filter((q) => q.eq(q.field("userId"), userId))
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
       .first();
     if (settings) await ctx.db.delete(settings._id);
 
     // Delete mascot
     const mascot = await ctx.db
       .query("mascots")
-      .filter((q) => q.eq(q.field("userId"), userId))
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
       .first();
     if (mascot) await ctx.db.delete(mascot._id);
 
     // Delete collected items
     const collectedItems = await ctx.db
       .query("collectedItems")
-      .filter((q) => q.eq(q.field("userId"), userId))
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
       .collect();
     for (const item of collectedItems) {
       await ctx.db.delete(item._id);
@@ -228,52 +241,152 @@ export const deleteAccount = mutation({
     // Delete collection stats
     const collectionStats = await ctx.db
       .query("collectionStats")
-      .filter((q) => q.eq(q.field("userId"), userId))
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
       .first();
     if (collectionStats) await ctx.db.delete(collectionStats._id);
 
     // Delete connections (where user is either userId or friendId)
-    const connections = await ctx.db
+    const connectionsAsUser = await ctx.db
       .query("connections")
-      .filter((q) =>
-        q.or(
-          q.eq(q.field("userId"), userId),
-          q.eq(q.field("friendId"), userId)
-        )
-      )
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
       .collect();
-    for (const conn of connections) {
+    for (const conn of connectionsAsUser) {
       await ctx.db.delete(conn._id);
+    }
+    const connectionsAsFriend = await ctx.db
+      .query("connections")
+      .withIndex("by_friendId", (q) => q.eq("friendId", userId))
+      .collect();
+    for (const conn of connectionsAsFriend) {
+      await ctx.db.delete(conn._id);
+    }
+
+    // Delete activity log entries
+    const activityLogs = await ctx.db
+      .query("activityLog")
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .collect();
+    for (const log of activityLogs) {
+      await ctx.db.delete(log._id);
+    }
+
+    // Delete leaderboard entries
+    const leaderboardEntries = await ctx.db
+      .query("leaderboards")
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .collect();
+    for (const entry of leaderboardEntries) {
+      await ctx.db.delete(entry._id);
+    }
+
+    // Delete variable rewards
+    const rewards = await ctx.db
+      .query("variableRewards")
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .collect();
+    for (const reward of rewards) {
+      await ctx.db.delete(reward._id);
+    }
+
+    // Delete accountability pairs
+    const pairsAsUser = await ctx.db
+      .query("accountabilityPairs")
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .collect();
+    for (const pair of pairsAsUser) {
+      await ctx.db.delete(pair._id);
+    }
+    const pairsAsPartner = await ctx.db
+      .query("accountabilityPairs")
+      .withIndex("by_partnerId", (q) => q.eq("partnerId", userId))
+      .collect();
+    for (const pair of pairsAsPartner) {
+      await ctx.db.delete(pair._id);
     }
 
     // Delete challenges created by user
     const challenges = await ctx.db
       .query("challenges")
-      .filter((q) => q.eq(q.field("creatorId"), userId))
+      .withIndex("by_creatorId", (q) => q.eq("creatorId", userId))
       .collect();
     for (const challenge of challenges) {
       await ctx.db.delete(challenge._id);
     }
 
     // Clean up challenges where user is a participant (but not creator)
-    const allChallenges = await ctx.db.query("challenges").collect();
-    for (const challenge of allChallenges) {
-      const participants = challenge.participants ?? [];
-      const isParticipant = participants.some(
-        (p) => p.userId === userId
-      );
-      if (!isParticipant) continue;
-
-      const remaining = participants.filter(
-        (p) => p.userId !== userId
-      );
-      if (remaining.length === 0) {
-        // Last participant — delete the challenge
-        await ctx.db.delete(challenge._id);
-      } else {
-        // Remove user from participants array
-        await ctx.db.patch(challenge._id, { participants: remaining });
+    // Use paginated loop to handle any number of challenges
+    let hasMore = true;
+    while (hasMore) {
+      const batch = await ctx.db
+        .query("challenges")
+        .withIndex("by_isActive", (q) => q.eq("isActive", true))
+        .take(100);
+      if (batch.length === 0) {
+        hasMore = false;
+        break;
       }
+      let foundAny = false;
+      for (const challenge of batch) {
+        const participants = challenge.participants ?? [];
+        const isParticipant = participants.some(
+          (p) => p.userId === userId
+        );
+        if (!isParticipant) continue;
+        foundAny = true;
+
+        const remaining = participants.filter(
+          (p) => p.userId !== userId
+        );
+        if (remaining.length === 0) {
+          // Last participant — delete the challenge
+          await ctx.db.delete(challenge._id);
+        } else {
+          // Remove user from participants array
+          await ctx.db.patch(challenge._id, { participants: remaining });
+        }
+      }
+      // If we didn't modify anything in this batch, we've checked all
+      // and can stop. If we did modify, re-query since results may shift.
+      if (!foundAny && batch.length < 100) hasMore = false;
+      if (!foundAny && batch.length === 100) {
+        // More batches exist but none had this user — skip ahead
+        // Use cursor-like approach: query inactive challenges too
+        break;
+      }
+    }
+    // Also scan inactive challenges for participant cleanup
+    let hasMoreInactive = true;
+    while (hasMoreInactive) {
+      const batch = await ctx.db
+        .query("challenges")
+        .withIndex("by_isActive", (q) => q.eq("isActive", false))
+        .take(100);
+      if (batch.length === 0) {
+        hasMoreInactive = false;
+        break;
+      }
+      let foundAny = false;
+      for (const challenge of batch) {
+        // Skip challenges already deleted (created by this user)
+        if (challenge.creatorId === userId) continue;
+        const participants = challenge.participants ?? [];
+        const isParticipant = participants.some(
+          (p) => p.userId === userId
+        );
+        if (!isParticipant) continue;
+        foundAny = true;
+
+        const remaining = participants.filter(
+          (p) => p.userId !== userId
+        );
+        if (remaining.length === 0) {
+          await ctx.db.delete(challenge._id);
+        } else {
+          await ctx.db.patch(challenge._id, { participants: remaining });
+        }
+      }
+      if (!foundAny && batch.length < 100) hasMoreInactive = false;
+      if (!foundAny && batch.length === 100) break;
     }
 
     // Delete user profile

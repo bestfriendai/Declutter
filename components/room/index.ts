@@ -1,5 +1,6 @@
 export { default as ActionButton } from './ActionButton';
 export { DecisionPointModal } from './DecisionPointModal';
+export { DoomPileCard } from './DoomPileCard';
 export { default as FilterPill } from './FilterPill';
 export { GoodEnoughModal } from './GoodEnoughModal';
 export { default as MilestoneParticles } from './MilestoneParticles';
@@ -9,6 +10,9 @@ export type { Phase, PhaseProgressProps } from './PhaseProgress';
 export { default as PhotoLightbox } from './PhotoLightbox';
 export { default as ProgressDots } from './ProgressDots';
 export { RoomCompleteModal } from './RoomCompleteModal';
+export { RoomActions } from './RoomActions';
+export { RoomHeader } from './RoomHeader';
+export { RoomProgress } from './RoomProgress';
 export { SessionCheckIn } from './SessionCheckIn';
 export type { Mood, SessionPreferences, TimeAvailable } from './SessionCheckIn';
 export { AnimatedCheckbox, SwipeableTaskCard, default as TaskCard } from './TaskCard';

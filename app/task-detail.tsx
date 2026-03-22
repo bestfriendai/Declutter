@@ -13,7 +13,7 @@ import { Clock, Zap, TrendingUp, ChevronRight } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useLocalSearchParams } from 'expo-router';
-import React, { useMemo, useCallback } from 'react';
+import React, { useMemo, useCallback, useState } from 'react';
 import {
   Alert,
   Pressable,
@@ -24,33 +24,7 @@ import {
 } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-
-const BODY_FONT = 'DM Sans';
-const DISPLAY_FONT = 'Bricolage Grotesque';
-
-const V1 = {
-  coral: '#FF6B6B',
-  green: '#66BB6A',
-  amber: '#FFB74D',
-  gold: '#FFD54F',
-  blue: '#64B5F6',
-  dark: {
-    bg: '#0C0C0C',
-    card: '#1A1A1A',
-    border: 'rgba(255,255,255,0.08)',
-    text: '#FFFFFF',
-    textSecondary: 'rgba(255,255,255,0.5)',
-    textMuted: 'rgba(255,255,255,0.3)',
-  },
-  light: {
-    bg: '#FAFAFA',
-    card: '#F6F7F8',
-    border: '#E5E7EB',
-    text: '#1A1A1A',
-    textSecondary: '#6B7280',
-    textMuted: '#9CA3AF',
-  },
-};
+import { V1, BODY_FONT, DISPLAY_FONT } from '@/constants/designTokens';
 
 function getPriorityLabel(task: CleaningTask): string {
   if (task.priority === 'low' && (task.estimatedMinutes ?? 5) <= 3) return 'Quick Win';
@@ -107,7 +81,7 @@ export default function TaskDetailScreen() {
   const isDark = rawScheme === 'dark';
   const reducedMotion = useReducedMotion();
   const insets = useSafeAreaInsets();
-  const { rooms: rawRooms, toggleTask, deleteTask } = useDeclutter();
+  const { rooms: rawRooms, toggleTask, deleteTask, updateTask } = useDeclutter();
   const rooms = rawRooms ?? [];
   const params = useLocalSearchParams<{ taskId: string }>();
   const t = isDark ? V1.dark : V1.light;
@@ -123,8 +97,14 @@ export default function TaskDetailScreen() {
 
   const handleStartTask = useCallback(() => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    router.push('/single-task');
-  }, []);
+    router.push({
+      pathname: '/single-task',
+      params: {
+        roomId: found?.room.id ?? '',
+        taskId: found?.task.id ?? '',
+      },
+    });
+  }, [found]);
 
   const handleRemoveTask = useCallback(() => {
     if (!found) return;
@@ -197,7 +177,7 @@ export default function TaskDetailScreen() {
           <StatCircle
             isDark={isDark}
             icon={<Clock size={18} color={V1.coral} />}
-            value={`${task.estimatedMinutes} min`}
+            value={`about ${task.estimatedMinutes} min`}
             label="Est. Time"
             color={V1.coral}
           />
@@ -232,18 +212,75 @@ export default function TaskDetailScreen() {
           </View>
         </Animated.View>
 
-        {/* Adjust Task */}
+        {/* Subtask steps (inline) */}
         <Animated.View entering={reducedMotion ? undefined : FadeInDown.duration(300).delay(160)}>
+          {task.subtasks && task.subtasks.length > 0 ? (
+            <View style={[styles.subtaskSection, { backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)', borderColor: t.border }]}>
+              <Text style={[styles.subtaskSectionTitle, { color: t.text }]}>
+                Steps ({task.subtasks.filter(s => s.completed).length}/{task.subtasks.length})
+              </Text>
+              {task.subtasks.map((st, idx) => (
+                <View key={st.id} style={styles.subtaskItemRow}>
+                  <View style={[styles.subtaskNumCircle, {
+                    backgroundColor: st.completed ? V1.green : 'transparent',
+                    borderColor: st.completed ? V1.green : (isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.15)'),
+                  }]}>
+                    {st.completed ? (
+                      <Text style={{ fontSize: 10, color: '#FFFFFF', fontWeight: '700' }}>{'\u2713'}</Text>
+                    ) : (
+                      <Text style={{ fontSize: 10, color: t.textMuted, fontWeight: '700' }}>{idx + 1}</Text>
+                    )}
+                  </View>
+                  <Text style={[styles.subtaskItemTitle, {
+                    color: st.completed ? t.textMuted : t.text,
+                    textDecorationLine: st.completed ? 'line-through' : 'none',
+                    opacity: st.completed ? 0.6 : 1,
+                  }]}>
+                    {st.title}
+                  </Text>
+                  {(st.estimatedMinutes || st.estimatedSeconds) && (
+                    <Text style={[styles.subtaskItemTime, { color: t.textMuted }]}>
+                      {st.estimatedMinutes ? `${st.estimatedMinutes}m` : st.estimatedSeconds ? `${st.estimatedSeconds}s` : ''}
+                    </Text>
+                  )}
+                </View>
+              ))}
+            </View>
+          ) : (
+            <View style={[styles.subtaskSection, { backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)', borderColor: t.border }]}>
+              <Text style={[styles.subtaskEmptyText, { color: t.textMuted }]}>
+                Use Ultra detail level in Settings for step-by-step breakdown
+              </Text>
+            </View>
+          )}
+        </Animated.View>
+
+        {/* Adjust Task */}
+        <Animated.View entering={reducedMotion ? undefined : FadeInDown.duration(300).delay(200)}>
           <Text style={[styles.adjustTitle, { color: t.textMuted }]}>Adjust Task</Text>
           <View style={[styles.adjustCard, { backgroundColor: t.card, borderColor: t.border }]}>
-            <Pressable style={styles.adjustRow} onPress={() => {}}>
-              <Text style={[styles.adjustText, { color: t.text }]}>Break down further</Text>
-              <ChevronRight size={16} color={t.textMuted} />
-            </Pressable>
-            <View style={[styles.adjustDivider, {
-              backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)',
-            }]} />
-            <Pressable style={styles.adjustRow} onPress={() => {}}>
+            <Pressable
+              style={styles.adjustRow}
+              onPress={() => {
+                void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                const options = [2, 5, 10, 15, 20, 30];
+                Alert.alert(
+                  'Change Time Estimate',
+                  `Current: ${task.estimatedMinutes} min`,
+                  [
+                    ...options.map(min => ({
+                      text: `${min} min`,
+                      onPress: () => {
+                        updateTask(room.id, task.id, { estimatedMinutes: min });
+                      },
+                    })),
+                    { text: 'Cancel', style: 'cancel' as const },
+                  ],
+                );
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Change time estimate"
+            >
               <Text style={[styles.adjustText, { color: t.text }]}>Change time estimate</Text>
               <Text style={[styles.adjustMeta, { color: t.textMuted }]}>{task.estimatedMinutes} min</Text>
               <ChevronRight size={16} color={t.textMuted} />
@@ -251,13 +288,34 @@ export default function TaskDetailScreen() {
           </View>
         </Animated.View>
 
-        {/* Start CTA */}
-        <Animated.View entering={reducedMotion ? undefined : FadeInDown.duration(300).delay(200)}>
+        {/* Action CTAs */}
+        <Animated.View entering={reducedMotion ? undefined : FadeInDown.duration(300).delay(240)} style={styles.ctaRow}>
+          {/* Mark Done button */}
+          {!task.completed && (
+            <Pressable
+              onPress={() => {
+                void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                toggleTask(room.id, task.id);
+                router.back();
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Mark task as done"
+              style={({ pressed }) => [{ opacity: pressed ? 0.88 : 1, flex: 1 }]}
+            >
+              <View style={[styles.markDoneButton, {
+                backgroundColor: isDark ? 'rgba(52,199,89,0.15)' : 'rgba(34,197,94,0.1)',
+                borderColor: V1.green,
+              }]}>
+                <Text style={[styles.markDoneText, { color: V1.green }]}>Mark Done</Text>
+              </View>
+            </Pressable>
+          )}
+          {/* Start This Task button */}
           <Pressable
             onPress={handleStartTask}
             accessibilityRole="button"
             accessibilityLabel="Start This Task"
-            style={({ pressed }) => [{ opacity: pressed ? 0.88 : 1 }]}
+            style={({ pressed }) => [{ opacity: pressed ? 0.88 : 1, flex: 1 }]}
           >
             <LinearGradient
               colors={[V1.coral, '#FF5252']}
@@ -271,7 +329,7 @@ export default function TaskDetailScreen() {
         </Animated.View>
 
         {/* Remove task link */}
-        <Animated.View entering={reducedMotion ? undefined : FadeInDown.duration(300).delay(240)}>
+        <Animated.View entering={reducedMotion ? undefined : FadeInDown.duration(300).delay(280)}>
           <Pressable onPress={handleRemoveTask} style={styles.removeWrap}>
             <Text style={[styles.removeText, { color: V1.coral }]}>Remove Task</Text>
           </Pressable>
@@ -414,7 +472,53 @@ const styles = StyleSheet.create({
     marginLeft: 16,
   },
 
-  // CTA
+  // Subtask section
+  subtaskSection: {
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 14,
+    gap: 10,
+  },
+  subtaskSectionTitle: {
+    fontFamily: DISPLAY_FONT,
+    fontSize: 14,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  subtaskItemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  subtaskNumCircle: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  subtaskItemTitle: {
+    fontFamily: BODY_FONT,
+    fontSize: 14,
+    flex: 1,
+  },
+  subtaskItemTime: {
+    fontFamily: BODY_FONT,
+    fontSize: 11,
+  },
+  subtaskEmptyText: {
+    fontFamily: BODY_FONT,
+    fontSize: 13,
+    textAlign: 'center',
+    paddingVertical: 8,
+  },
+
+  // CTA row
+  ctaRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
   ctaButton: {
     height: 52,
     borderRadius: 26,
@@ -426,6 +530,18 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     color: '#FFFFFF',
+  },
+  markDoneButton: {
+    height: 52,
+    borderRadius: 26,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  markDoneText: {
+    fontFamily: BODY_FONT,
+    fontSize: 16,
+    fontWeight: '700',
   },
 
   // Remove

@@ -1,6 +1,6 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { internalMutation, query } from "./_generated/server";
 
 // League definitions with visuals
 const LEAGUES = {
@@ -110,24 +110,27 @@ export const getWeeklyLeaderboard = query({
 });
 
 /**
- * Add XP to user's weekly leaderboard entry
- * Creates an entry if one doesn't exist for this week
+ * Add XP to user's weekly leaderboard entry.
+ * INTERNAL: Not callable from clients to prevent XP manipulation.
+ * Called from stats.incrementTask which already handles XP tracking.
  */
-export const updateWeeklyXP = mutation({
+export const updateWeeklyXP = internalMutation({
   args: {
+    userId: v.id("users"),
     xpAmount: v.number(),
     tasksCompleted: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
+    // Cap XP amount at reasonable maximum (matches addXp cap in stats.ts)
+    const xpAmount = Math.max(0, Math.min(args.xpAmount, 500));
+    const tasksCompleted = Math.max(0, Math.min(args.tasksCompleted ?? 0, 50));
 
     const weekStart = getCurrentWeekStart();
 
     // Find existing entry for this week
     const userEntries = await ctx.db
       .query("leaderboards")
-      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .withIndex("by_userId", (q) => q.eq("userId", args.userId))
       .collect();
 
     const existingEntry = userEntries.find(
@@ -136,41 +139,53 @@ export const updateWeeklyXP = mutation({
 
     if (existingEntry) {
       await ctx.db.patch(existingEntry._id, {
-        xpEarned: existingEntry.xpEarned + args.xpAmount,
+        xpEarned: existingEntry.xpEarned + xpAmount,
         tasksCompleted:
-          existingEntry.tasksCompleted + (args.tasksCompleted ?? 0),
+          existingEntry.tasksCompleted + tasksCompleted,
       });
       return existingEntry._id;
     } else {
-      // Determine league from most recent entry
+      // Determine league from most recent entry, applying promotion/relegation
       const previousEntries = userEntries
         .filter((e) => e.weekStart < weekStart)
         .sort((a, b) => b.weekStart.localeCompare(a.weekStart));
 
-      const previousLeague: LeagueKey =
+      let league: LeagueKey =
         previousEntries.length > 0 ? previousEntries[0].league : "bronze";
 
+      // Task 10: Apply promotion/relegation from previous week
+      if (previousEntries.length > 0) {
+        const prevEntry = previousEntries[0];
+        if (prevEntry.promoted) {
+          const nextLeague = getNextLeague(prevEntry.league);
+          if (nextLeague) league = nextLeague;
+        } else if (prevEntry.relegated) {
+          const prevLeague = getPreviousLeague(prevEntry.league);
+          if (prevLeague) league = prevLeague;
+        }
+      }
+
       // Get user info for display
-      const user = await ctx.db.get(userId);
+      const user = await ctx.db.get(args.userId);
       const userName = user?.name ?? "Cleaner";
 
       // Get mascot emoji
       const mascot = await ctx.db
         .query("mascots")
-        .withIndex("by_userId", (q) => q.eq("userId", userId))
+        .withIndex("by_userId", (q) => q.eq("userId", args.userId))
         .first();
       const userEmoji = mascot
         ? getMascotEmoji(mascot.personality)
         : "\u{1F9F9}"; // default broom emoji
 
       return await ctx.db.insert("leaderboards", {
-        userId,
+        userId: args.userId,
         userName,
         userEmoji,
         weekStart,
-        xpEarned: args.xpAmount,
-        tasksCompleted: args.tasksCompleted ?? 0,
-        league: previousLeague,
+        xpEarned: xpAmount,
+        tasksCompleted: tasksCompleted,
+        league,
       });
     }
   },
@@ -178,15 +193,14 @@ export const updateWeeklyXP = mutation({
 
 /**
  * Process weekly results — promote top 10%, relegate bottom 10%
- * Should be called at week end (e.g., via cron or manual trigger)
+ * SECURITY: This is an internal mutation — not callable from clients.
+ * Should be triggered by a cron job or admin action.
  */
-export const processWeeklyResults = mutation({
+export const processWeeklyResults = internalMutation({
   args: {
     weekStart: v.string(), // ISO date of the week to process
   },
   handler: async (ctx, args) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
 
     // Process each league
     for (const league of LEAGUE_ORDER) {
@@ -249,13 +263,25 @@ export const getUserLeague = query({
     );
 
     if (!currentEntry) {
-      // Check last known league from previous weeks
+      // Check last known league from previous weeks, applying promotion/relegation
       const previousEntries = userEntries
         .filter((e) => e.weekStart < weekStart)
         .sort((a, b) => b.weekStart.localeCompare(a.weekStart));
 
-      const league: LeagueKey =
+      let league: LeagueKey =
         previousEntries.length > 0 ? previousEntries[0].league : "bronze";
+
+      // Apply promotion/relegation from previous week
+      if (previousEntries.length > 0) {
+        const prevEntry = previousEntries[0];
+        if (prevEntry.promoted) {
+          const next = getNextLeague(prevEntry.league);
+          if (next) league = next;
+        } else if (prevEntry.relegated) {
+          const prev = getPreviousLeague(prevEntry.league);
+          if (prev) league = prev;
+        }
+      }
 
       return {
         league,
@@ -336,6 +362,62 @@ export const getLeagueInfo = query({
         ...LEAGUES[key],
       })),
     };
+  },
+});
+
+/**
+ * Cron-friendly wrapper: compute the previous week's start date and
+ * delegate to processWeeklyResults. Scheduled by crons.ts every Monday 00:00 UTC.
+ */
+export const processWeeklyResultsCron = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    // "Previous week" = the Monday 7 days ago
+    const now = new Date();
+    const dayOfWeek = now.getUTCDay(); // 0=Sun, 1=Mon, ...
+    const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    const thisMonday = new Date(now);
+    thisMonday.setUTCDate(thisMonday.getUTCDate() + mondayOffset);
+    thisMonday.setUTCHours(0, 0, 0, 0);
+
+    // Go back 7 days to get last week's Monday
+    const lastMonday = new Date(thisMonday);
+    lastMonday.setUTCDate(lastMonday.getUTCDate() - 7);
+    const weekStart = lastMonday.toISOString().split("T")[0];
+
+    // Process each league (inline rather than calling self to avoid scheduler overhead)
+    for (const league of LEAGUE_ORDER) {
+      const entries = await ctx.db
+        .query("leaderboards")
+        .withIndex("by_league_weekStart", (q) =>
+          q.eq("league", league).eq("weekStart", weekStart)
+        )
+        .collect();
+
+      if (entries.length === 0) continue;
+
+      const sorted = entries.sort((a, b) => b.xpEarned - a.xpEarned);
+      const promoteCount = Math.max(1, Math.floor(sorted.length * 0.1));
+      const relegateCount = Math.max(1, Math.floor(sorted.length * 0.1));
+
+      for (let i = 0; i < sorted.length; i++) {
+        const entry = sorted[i];
+        const rank = i + 1;
+        const isPromoted =
+          i < promoteCount && getNextLeague(league) !== null;
+        const isRelegated =
+          i >= sorted.length - relegateCount &&
+          getPreviousLeague(league) !== null;
+
+        await ctx.db.patch(entry._id, {
+          rank,
+          promoted: isPromoted,
+          relegated: isRelegated,
+        });
+      }
+    }
+
+    return { success: true, weekProcessed: weekStart };
   },
 });
 

@@ -14,14 +14,17 @@ import {
   getMyChallenges,
   getConnections,
 } from '@/services/social';
+import { useWeeklyLeaderboard, useUserLeague } from '@/hooks/useConvex';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
-import { Users } from 'lucide-react-native';
+import { BODY_FONT, DISPLAY_FONT, RADIUS, V1 } from '@/constants/designTokens';
+import { Users, ArrowUp, ArrowDown, Plus, ChevronRight } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -30,6 +33,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import { ScreenErrorBoundary } from '@/components/ErrorBoundary';
 import Animated, {
   FadeInDown,
 } from 'react-native-reanimated';
@@ -38,7 +42,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 // ─────────────────────────────────────────────────────────────────────────────
 // Avatar color palette for connections
 // ─────────────────────────────────────────────────────────────────────────────
-const AVATAR_COLORS = ['#FFFFFF', '#CCCCCC', '#999999', '#707070', '#B0B0B0', '#D0D0D0'];
+const AVATAR_COLORS = ['#FF6B6B', '#66BB6A', '#64B5F6', '#FFB74D', '#6366F1', '#FFD54F'];
 
 function getAvatarColor(index: number): string {
   return AVATAR_COLORS[index % AVATAR_COLORS.length];
@@ -366,7 +370,7 @@ function GrowCircle({ isDark }: { isDark: boolean }) {
 
       <Pressable
         onPress={async () => {
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
           try {
             await Share.share({
               message: 'Hey! Join me on Declutterly - it makes cleaning actually fun with AI + gamification. We both get +200 XP when you join. Download: https://declutterly.app/invite',
@@ -392,6 +396,196 @@ function GrowCircle({ isDark }: { isDark: boolean }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Weekly League Section
+// ─────────────────────────────────────────────────────────────────────────────
+const LEAGUE_EMOJIS: Record<string, string> = {
+  bronze: '\u{1F949}',
+  silver: '\u{1F948}',
+  gold: '\u{1F947}',
+  diamond: '\u{1F48E}',
+  champion: '\u{1F451}',
+};
+
+const LEAGUE_COLORS: Record<string, string> = {
+  bronze: '#CD7F32',
+  silver: '#C0C0C0',
+  gold: '#FFD700',
+  diamond: '#B9F2FF',
+  champion: '#FF6B6B',
+};
+
+function WeeklyLeagueSection({ isDark }: { isDark: boolean }) {
+  const leaderboard = useWeeklyLeaderboard();
+  const userLeague = useUserLeague();
+
+  const league = leaderboard?.league ?? userLeague?.league ?? 'bronze';
+  const leagueEmoji = LEAGUE_EMOJIS[league] ?? '\u{1F949}';
+  const leagueColor = LEAGUE_COLORS[league] ?? '#CD7F32';
+  const entries = leaderboard?.entries ?? [];
+  const userRank = leaderboard?.userRank;
+  const totalParticipants = leaderboard?.totalParticipants ?? 0;
+
+  // Show top 5
+  const topEntries = entries.slice(0, 5);
+  const promoteCount = Math.min(5, Math.max(1, Math.floor(totalParticipants * 0.1)));
+  const relegateStart = totalParticipants - Math.max(1, Math.floor(totalParticipants * 0.1));
+
+  return (
+    <View style={{
+      borderRadius: RADIUS.lg,
+      padding: 16,
+      borderWidth: 1,
+      gap: 12,
+      backgroundColor: isDark ? '#141414' : '#FFFFFF',
+      borderColor: isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)',
+    }}>
+      {/* League header */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <Text style={{ fontSize: 24 }}>{leagueEmoji}</Text>
+          <View>
+            <Text style={{
+              fontFamily: DISPLAY_FONT,
+              fontSize: 16,
+              fontWeight: '700',
+              color: leagueColor,
+            }}>
+              {league.charAt(0).toUpperCase() + league.slice(1)} League
+            </Text>
+            <Text style={{
+              fontFamily: BODY_FONT,
+              fontSize: 11,
+              color: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)',
+            }}>
+              {totalParticipants} participants
+            </Text>
+          </View>
+        </View>
+        {userRank && (
+          <View style={{
+            backgroundColor: V1.coral + '15',
+            paddingHorizontal: 10,
+            paddingVertical: 4,
+            borderRadius: 10,
+          }}>
+            <Text style={{ fontFamily: BODY_FONT, fontSize: 12, fontWeight: '700', color: V1.coral }}>
+              #{userRank}
+            </Text>
+          </View>
+        )}
+      </View>
+
+      {/* Top 5 entries */}
+      {topEntries.length > 0 ? (
+        <View style={{ gap: 6 }}>
+          {topEntries.map((entry) => {
+            const rank = entry.rank;
+            const isPromo = rank <= promoteCount;
+            const isRelegate = rank > relegateStart && totalParticipants > 5;
+            const isMe = leaderboard?.userEntry && entry.userId === leaderboard.userEntry.userId;
+
+            return (
+              <View
+                key={entry._id}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  paddingVertical: 6,
+                  paddingHorizontal: 8,
+                  borderRadius: 10,
+                  backgroundColor: isMe
+                    ? (isDark ? 'rgba(255,107,107,0.1)' : 'rgba(255,107,107,0.06)')
+                    : isPromo
+                      ? (isDark ? 'rgba(102,187,106,0.06)' : 'rgba(102,187,106,0.04)')
+                      : 'transparent',
+                }}
+              >
+                {/* Rank */}
+                <View style={{ width: 28, alignItems: 'center' }}>
+                  {isPromo && <ArrowUp size={8} color={V1.green} />}
+                  {isRelegate && <ArrowDown size={8} color={V1.amber} />}
+                  <Text style={{
+                    fontFamily: DISPLAY_FONT,
+                    fontSize: 13,
+                    fontWeight: rank <= 3 ? '800' : '600',
+                    color: rank <= 3 ? leagueColor : (isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.4)'),
+                  }}>
+                    {rank}
+                  </Text>
+                </View>
+
+                {/* Emoji + Name */}
+                <Text style={{ fontSize: 14, marginRight: 6 }}>{entry.userEmoji}</Text>
+                <Text
+                  style={{
+                    flex: 1,
+                    fontFamily: BODY_FONT,
+                    fontSize: 13,
+                    fontWeight: isMe ? '700' : '400',
+                    color: isMe ? V1.coral : (isDark ? '#FFFFFF' : '#1A1A1A'),
+                  }}
+                  numberOfLines={1}
+                >
+                  {entry.userName}{isMe ? ' (You)' : ''}
+                </Text>
+
+                {/* XP */}
+                <Text style={{
+                  fontFamily: BODY_FONT,
+                  fontSize: 12,
+                  fontWeight: '600',
+                  color: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.4)',
+                }}>
+                  {entry.xpEarned} XP
+                </Text>
+              </View>
+            );
+          })}
+        </View>
+      ) : (
+        <Text style={{
+          fontFamily: BODY_FONT,
+          fontSize: 13,
+          color: isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)',
+          textAlign: 'center',
+          paddingVertical: 8,
+        }}>
+          Complete tasks to join this week's league
+        </Text>
+      )}
+
+      {/* View full leaderboard */}
+      <Pressable
+        onPress={() => {
+          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          router.push('/leaderboard');
+        }}
+        style={({ pressed }) => [{
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 4,
+          paddingVertical: 8,
+          opacity: pressed ? 0.7 : 1,
+        }]}
+        accessibilityRole="button"
+        accessibilityLabel="View full leaderboard"
+      >
+        <Text style={{
+          fontFamily: BODY_FONT,
+          fontSize: 13,
+          fontWeight: '600',
+          color: leagueColor,
+        }}>
+          View Full Leaderboard
+        </Text>
+        <ChevronRight size={14} color={leagueColor} />
+      </Pressable>
+    </View>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Main Screen
 // ─────────────────────────────────────────────────────────────────────────────
 // ─────────────────────────────────────────────────────────────────────────────
@@ -411,7 +605,7 @@ function formatRelativeTime(date: Date): string {
   return `${Math.floor(diffDays / 7)}w ago`;
 }
 
-export default function SocialScreen() {
+function SocialScreenContent() {
   const insets = useSafeAreaInsets();
   const rawScheme = useColorScheme();
   const colorScheme = rawScheme === 'dark' ? 'dark' : 'light';
@@ -421,11 +615,13 @@ export default function SocialScreen() {
 
   const [challenges, setChallenges] = useState<Challenge[]>([]);
   const [connections, setConnections] = useState<Connection[]>([]);
-  const [_isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState(false);
 
   const loadData = useCallback(async () => {
     try {
+      setLoadError(false);
       const [challengeData, connectionData] = await Promise.all([
         getMyChallenges(),
         getConnections(),
@@ -433,7 +629,7 @@ export default function SocialScreen() {
       setChallenges(challengeData);
       setConnections(connectionData);
     } catch {
-      // Failed to load
+      setLoadError(true);
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
@@ -457,12 +653,12 @@ export default function SocialScreen() {
   const activeChallenge = challenges.find(c => c.status === 'in_progress') ?? null;
 
   const handleManageCircle = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     router.push('/accountability');
   }, []);
 
   const handleOpenAuth = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     router.push('/auth/login');
   }, []);
 
@@ -480,7 +676,7 @@ export default function SocialScreen() {
           <ExpressiveStateView
             isDark={isDark}
             kicker="COMMUNITY"
-            emoji="👥"
+            emoji="\uD83D\uDC65"
             title="Bring other people into the reset."
             description="Create challenges, invite friends, and make progress feel shared instead of lonely."
             primaryLabel="Sign In"
@@ -488,6 +684,53 @@ export default function SocialScreen() {
             accentColors={isDark ? ['#D8D0FF', '#8B82FF', '#5B6DFF'] as const : ['#D5CEFF', '#9387FF', '#6572FF'] as const}
             style={styles.expressiveEmptyState}
           />
+        </View>
+      </LinearGradient>
+    );
+  }
+
+  // Loading state
+  if (isLoading && !isRefreshing) {
+    return (
+      <LinearGradient
+        colors={isDark ? ['#0A0A0A', '#131313', '#141414'] : ['#FAFAFA', '#F7F7F7', '#F5F5F5']}
+        style={styles.container}
+      >
+        <View style={[styles.emptyState, { paddingTop: insets.top + 80 }]}>
+          <ActivityIndicator size="large" color={isDark ? '#FFFFFF' : '#1A1A1A'} />
+        </View>
+      </LinearGradient>
+    );
+  }
+
+  // Error state
+  if (loadError && challenges.length === 0) {
+    return (
+      <LinearGradient
+        colors={isDark ? ['#0A0A0A', '#131313', '#141414'] : ['#FAFAFA', '#F7F7F7', '#F5F5F5']}
+        style={styles.container}
+      >
+        <View style={[styles.emptyState, { paddingTop: insets.top + 80 }]}>
+          <Text style={[styles.emptyTitle, { color: isDark ? '#FFFFFF' : '#1A1A1A' }]}>
+            Something went wrong
+          </Text>
+          <Text style={[styles.emptyText, { color: isDark ? 'rgba(255,255,255,0.5)' : '#6B7280' }]}>
+            Could not load community data. Check your connection and try again.
+          </Text>
+          <Pressable
+            onPress={() => {
+              setIsLoading(true);
+              loadData();
+            }}
+            style={({ pressed }) => [
+              styles.emptyButton,
+              { backgroundColor: isDark ? '#FFFFFF' : '#1A1A1A', opacity: pressed ? 0.8 : 1 },
+            ]}
+          >
+            <Text style={[styles.emptyButtonText, { color: isDark ? '#1A1A1A' : '#FFFFFF' }]}>
+              Try Again
+            </Text>
+          </Pressable>
         </View>
       </LinearGradient>
     );
@@ -536,10 +779,49 @@ export default function SocialScreen() {
             isDark={isDark}
             challenge={activeChallenge}
             onPress={activeChallenge ? () => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              router.push(`/challenge/${activeChallenge.id}`);
+              void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              router.push({ pathname: '/challenge/[id]', params: { id: activeChallenge.id } });
             } : undefined}
           />
+        </Animated.View>
+
+        {/* Weekly League Section */}
+        <Animated.View entering={enterAnim(90)} style={styles.section}>
+          <WeeklyLeagueSection isDark={isDark} />
+        </Animated.View>
+
+        {/* Create Challenge CTA */}
+        <Animated.View entering={enterAnim(105)} style={styles.section}>
+          <Pressable
+            onPress={() => {
+              void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              router.push('/challenge/create');
+            }}
+            style={({ pressed }) => [{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 10,
+              paddingVertical: 12,
+              paddingHorizontal: 16,
+              borderRadius: 16,
+              borderWidth: 1,
+              borderStyle: 'dashed' as const,
+              borderColor: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.1)',
+              opacity: pressed ? 0.7 : 1,
+            }]}
+            accessibilityRole="button"
+            accessibilityLabel="Create a new challenge"
+          >
+            <Plus size={18} color={isDark ? '#FFFFFF' : '#1A1A1A'} />
+            <View style={{ flex: 1 }}>
+              <Text style={[{ fontFamily: BODY_FONT, fontSize: 14, fontWeight: '600', color: isDark ? '#FFFFFF' : '#1A1A1A' }]}>
+                Create a Challenge
+              </Text>
+              <Text style={[{ fontFamily: BODY_FONT, fontSize: 12, color: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)' }]}>
+                Invite friends and clean together
+              </Text>
+            </View>
+          </Pressable>
         </Animated.View>
 
         {/* Your Circle */}
@@ -561,6 +843,14 @@ export default function SocialScreen() {
   );
 }
 
+export default function SocialScreen() {
+  return (
+    <ScreenErrorBoundary screenName="social">
+      <SocialScreenContent />
+    </ScreenErrorBoundary>
+  );
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Styles
 // ─────────────────────────────────────────────────────────────────────────────
@@ -578,14 +868,15 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   headerTitle: {
+    fontFamily: DISPLAY_FONT,
     fontSize: 34,
     fontWeight: '700',
     letterSpacing: -0.4,
   },
   headerIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -626,11 +917,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   challengeBadgeText: {
+    fontFamily: BODY_FONT,
     fontSize: 11,
     fontWeight: '600',
     letterSpacing: 0.5,
   },
   challengeTitle: {
+    fontFamily: DISPLAY_FONT,
     fontSize: 20,
     fontWeight: '600',
   },
@@ -647,6 +940,7 @@ const styles = StyleSheet.create({
     borderRadius: 3,
   },
   progressText: {
+    fontFamily: BODY_FONT,
     fontSize: 12,
     fontWeight: '400',
   },
@@ -661,6 +955,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   circleSectionTitle: {
+    fontFamily: BODY_FONT,
     fontSize: 11,
     fontWeight: '600',
     letterSpacing: 1.5,
@@ -803,11 +1098,13 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   inviteTitle: {
+    fontFamily: BODY_FONT,
     fontSize: 15,
     fontWeight: '500',
     letterSpacing: -0.3,
   },
   inviteDesc: {
+    fontFamily: BODY_FONT,
     fontSize: 12,
     fontWeight: '400',
   },
@@ -819,6 +1116,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   inviteBtnText: {
+    fontFamily: BODY_FONT,
     fontSize: 13,
     fontWeight: '600',
     color: '#FFFFFF',
@@ -832,12 +1130,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 32,
   },
   emptyTitle: {
+    fontFamily: DISPLAY_FONT,
     fontSize: 20,
     fontWeight: '600',
     marginBottom: 8,
     textAlign: 'center',
   },
   emptyText: {
+    fontFamily: BODY_FONT,
     fontSize: 14,
     textAlign: 'center',
     lineHeight: 20,

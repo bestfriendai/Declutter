@@ -1,17 +1,24 @@
 /**
  * Declutterly -- Sign In Screen (V1)
  * Matches Pencil design: Al4tq
+ *
+ * Improvements:
+ * - AnimatedInput with focus border animation
+ * - Error auto-dismiss on input change + 5s timeout
+ * - Error shake animation on validation failures
+ * - Removed "More sign-in options coming soon" placeholder text
+ * - Accessibility improvements (alert role on error banner, eye toggle labels)
  */
 
 import { useAuth } from '@/context/AuthContext';
 import { useColorScheme } from '@/hooks/useColorScheme';
-import { Mail, Lock, Eye, EyeOff, AlertCircle } from 'lucide-react-native';
+import { useReducedMotion } from '@/hooks/useReducedMotion';
+import { Eye, EyeOff, Mail, Lock } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import React, { useCallback, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -23,35 +30,13 @@ import {
 } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-
-// ─── V1 Color Palette ────────────────────────────────────────────────────────
-const V1 = {
-  coral: '#FF6B6B',
-  dark: {
-    bg: '#0C0C0C',
-    card: '#1A1A1A',
-    border: 'rgba(255,255,255,0.08)',
-    text: '#FFFFFF',
-    textSecondary: 'rgba(255,255,255,0.5)',
-    textMuted: 'rgba(255,255,255,0.3)',
-    inputBg: '#141414',
-    inputBorder: 'rgba(255,255,255,0.12)',
-  },
-  light: {
-    bg: '#FAFAFA',
-    card: '#F6F7F8',
-    border: '#E5E7EB',
-    text: '#1A1A1A',
-    textSecondary: '#6B7280',
-    textMuted: '#9CA3AF',
-    inputBg: '#FFFFFF',
-    inputBorder: '#E5E7EB',
-  },
-};
+import { V1, BODY_FONT, DISPLAY_FONT, ANIMATION } from '@/constants/designTokens';
+import { AnimatedInput, CoralButton, ErrorBanner } from '@/components/ui';
 
 export default function LoginScreen() {
   const rawScheme = useColorScheme();
   const isDark = rawScheme === 'dark';
+  const reducedMotion = useReducedMotion();
   const t = isDark ? V1.dark : V1.light;
   const insets = useSafeAreaInsets();
 
@@ -62,13 +47,38 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [shakeTrigger, setShakeTrigger] = useState(0);
 
   const passwordRef = useRef<TextInput>(null);
+
+  const iconColor = isDark ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.3)';
+
+  // Auto-dismiss error on input change
+  const handleEmailChange = useCallback((text: string) => {
+    setEmail(text);
+    if (error) setError('');
+  }, [error]);
+
+  const handlePasswordChange = useCallback((text: string) => {
+    setPassword(text);
+    if (error) setError('');
+  }, [error]);
+
+  const triggerErrorShake = useCallback(() => {
+    setShakeTrigger((prev) => prev + 1);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+  }, []);
 
   const handleLogin = useCallback(async () => {
     if (!email.trim() || !password.trim()) {
       setError('Please enter your email and password.');
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      triggerErrorShake();
+      return;
+    }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email.trim())) {
+      setError('Please enter a valid email address.');
+      triggerErrorShake();
       return;
     }
     setError('');
@@ -81,25 +91,22 @@ export default function LoginScreen() {
         router.replace('/');
       } else {
         setError(result.error ?? 'Login failed. Please try again.');
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        triggerErrorShake();
       }
     } catch (e: unknown) {
       setError(
-        e instanceof Error ? e.message : 'Login failed. Please try again.'
+        e instanceof Error ? e.message : 'Login failed. Please try again.',
       );
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      triggerErrorShake();
     } finally {
       setLoading(false);
     }
-  }, [email, password, signIn]);
+  }, [email, password, signIn, triggerErrorShake]);
 
   const togglePassword = useCallback(() => {
     Haptics.selectionAsync();
     setShowPassword((v) => !v);
   }, []);
-
-  const placeholderColor = isDark ? 'rgba(255,255,255,0.3)' : '#9CA3AF';
-  const iconColor = isDark ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.3)';
 
   return (
     <View style={[styles.container, { backgroundColor: t.bg }]}>
@@ -122,7 +129,7 @@ export default function LoginScreen() {
         >
           {/* Header */}
           <Animated.View
-            entering={FadeInDown.delay(0).duration(350)}
+            entering={reducedMotion ? undefined : FadeInDown.delay(0).duration(ANIMATION.duration.normal)}
             style={styles.headerSection}
           >
             <Text style={[styles.heading, { color: t.text }]}>
@@ -134,81 +141,67 @@ export default function LoginScreen() {
           </Animated.View>
 
           {/* Email input */}
-          <Animated.View entering={FadeInDown.delay(80).duration(350)}>
-            <View
-              style={[
-                styles.inputField,
-                {
-                  backgroundColor: t.inputBg,
-                  borderColor: t.inputBorder,
-                },
-              ]}
-            >
-              <Mail size={18} color={iconColor} />
-              <TextInput
-                style={[styles.inputText, { color: t.text }]}
-                placeholder="Email address"
-                placeholderTextColor={placeholderColor}
-                value={email}
-                onChangeText={setEmail}
-                keyboardType="email-address"
-                autoCapitalize="none"
-                autoCorrect={false}
-                autoComplete="email"
-                textContentType="emailAddress"
-                returnKeyType="next"
-                onSubmitEditing={() => passwordRef.current?.focus()}
-                accessibilityLabel="Email address"
-              />
-            </View>
+          <Animated.View entering={reducedMotion ? undefined : FadeInDown.delay(ANIMATION.stagger.normal).duration(ANIMATION.duration.normal)}>
+            <AnimatedInput
+              isDark={isDark}
+              icon={<Mail size={18} color={iconColor} />}
+              placeholder="Email address"
+              value={email}
+              onChangeText={handleEmailChange}
+              editable={!loading}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoCorrect={false}
+              autoComplete="email"
+              textContentType="emailAddress"
+              returnKeyType="next"
+              onSubmitEditing={() => passwordRef.current?.focus()}
+              accessibilityLabel="Email address"
+              hasError={!!error}
+            />
           </Animated.View>
 
           {/* Password input */}
-          <Animated.View entering={FadeInDown.delay(120).duration(350)}>
-            <View
-              style={[
-                styles.inputField,
-                {
-                  backgroundColor: t.inputBg,
-                  borderColor: t.inputBorder,
-                },
-              ]}
-            >
-              <Lock size={18} color={iconColor} />
-              <TextInput
-                ref={passwordRef}
-                style={[styles.inputText, { color: t.text }]}
-                placeholder="Password"
-                placeholderTextColor={placeholderColor}
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry={!showPassword}
-                autoComplete="password"
-                textContentType="password"
-                returnKeyType="done"
-                onSubmitEditing={handleLogin}
-                accessibilityLabel="Password"
-              />
-              <Pressable
-                onPress={togglePassword}
-                hitSlop={12}
-                style={styles.eyeButton}
-              >
-                {showPassword ? (
-                  <EyeOff size={18} color={iconColor} />
-                ) : (
-                  <Eye size={18} color={iconColor} />
-                )}
-              </Pressable>
-            </View>
+          <Animated.View entering={reducedMotion ? undefined : FadeInDown.delay(ANIMATION.stagger.normal * 2).duration(ANIMATION.duration.normal)}>
+            <AnimatedInput
+              isDark={isDark}
+              icon={<Lock size={18} color={iconColor} />}
+              inputRef={passwordRef}
+              placeholder="Password"
+              value={password}
+              onChangeText={handlePasswordChange}
+              editable={!loading}
+              secureTextEntry={!showPassword}
+              autoComplete="password"
+              textContentType="password"
+              returnKeyType="done"
+              onSubmitEditing={handleLogin}
+              accessibilityLabel="Password"
+              hasError={!!error}
+              rightElement={
+                <Pressable
+                  onPress={togglePassword}
+                  hitSlop={12}
+                  style={styles.eyeButton}
+                  accessibilityRole="button"
+                  accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showPassword ? (
+                    <EyeOff size={18} color={iconColor} />
+                  ) : (
+                    <Eye size={18} color={iconColor} />
+                  )}
+                </Pressable>
+              }
+            />
           </Animated.View>
 
           {/* Forgot password */}
-          <Animated.View entering={FadeInDown.delay(140).duration(350)}>
+          <Animated.View entering={reducedMotion ? undefined : FadeInDown.delay(ANIMATION.stagger.normal * 3).duration(ANIMATION.duration.normal)}>
             <Pressable
               onPress={() => {
                 Haptics.selectionAsync();
-                router.push('/auth/forgot-password' as any);
+                router.push('/auth/forgot-password');
               }}
               style={styles.forgotRow}
             >
@@ -218,105 +211,31 @@ export default function LoginScreen() {
             </Pressable>
           </Animated.View>
 
-          {/* Error */}
+          {/* Error with auto-dismiss + shake */}
           {error ? (
-            <Animated.View
-              entering={FadeInDown.duration(350)}
-              style={styles.errorBanner}
-            >
-              <AlertCircle size={16} color="#FF453A" />
-              <Text style={styles.errorText}>{error}</Text>
-            </Animated.View>
+            <ErrorBanner
+              message={error}
+              autoDismissMs={5000}
+              onDismiss={() => setError('')}
+              shakeTrigger={shakeTrigger}
+            />
           ) : null}
 
           {/* Sign In button */}
-          <Animated.View entering={FadeInDown.delay(180).duration(350)}>
-            <Pressable
+          <Animated.View entering={reducedMotion ? undefined : FadeInDown.delay(ANIMATION.stagger.normal * 4).duration(ANIMATION.duration.normal)}>
+            <CoralButton
+              title="Sign In"
               onPress={handleLogin}
-              disabled={loading}
-              style={({ pressed }) => [
-                styles.coralButton,
-                { opacity: loading ? 0.7 : pressed ? 0.85 : 1 },
-              ]}
-            >
-              {loading ? (
-                <ActivityIndicator color="#FFFFFF" />
-              ) : (
-                <Text style={styles.coralButtonText}>Sign In</Text>
-              )}
-            </Pressable>
-          </Animated.View>
-
-          {/* Divider */}
-          <Animated.View
-            entering={FadeInDown.delay(220).duration(350)}
-            style={styles.dividerRow}
-          >
-            <View
-              style={[
-                styles.dividerLine,
-                {
-                  backgroundColor: isDark
-                    ? 'rgba(255,255,255,0.08)'
-                    : '#E5E7EB',
-                },
-              ]}
+              loading={loading}
+              flat
+              style={styles.signInButton}
             />
-            <Text style={[styles.dividerText, { color: t.textMuted }]}>
-              or
-            </Text>
-            <View
-              style={[
-                styles.dividerLine,
-                {
-                  backgroundColor: isDark
-                    ? 'rgba(255,255,255,0.08)'
-                    : '#E5E7EB',
-                },
-              ]}
-            />
-          </Animated.View>
-
-          {/* Social buttons */}
-          <Animated.View
-            entering={FadeInDown.delay(260).duration(350)}
-            style={styles.socialSection}
-          >
-            <Pressable
-              style={[
-                styles.socialButton,
-                {
-                  backgroundColor: t.inputBg,
-                  borderColor: t.inputBorder,
-                },
-              ]}
-            >
-              <Text style={[styles.appleIcon, { color: t.text }]}>{'\uF8FF'}</Text>
-              <Text style={[styles.socialButtonText, { color: t.text }]}>
-                Continue with Apple
-              </Text>
-            </Pressable>
-
-            <Pressable
-              style={[
-                styles.socialButton,
-                {
-                  backgroundColor: t.inputBg,
-                  borderColor: t.inputBorder,
-                },
-              ]}
-            >
-              <Text style={[styles.googleIcon, { color: V1.coral }]}>G</Text>
-              <Text style={[styles.socialButtonText, { color: t.text }]}>
-                Continue with Google
-              </Text>
-            </Pressable>
           </Animated.View>
 
           {/* Sign Up link */}
           <View style={{ flex: 1 }} />
           <Animated.View
-            entering={FadeInDown.delay(300).duration(350)}
+            entering={reducedMotion ? undefined : FadeInDown.delay(ANIMATION.stagger.normal * 5).duration(ANIMATION.duration.normal)}
             style={styles.linkRow}
           >
             <Text style={[styles.linkText, { color: t.textMuted }]}>
@@ -325,7 +244,7 @@ export default function LoginScreen() {
             <Pressable
               onPress={() => {
                 Haptics.selectionAsync();
-                router.push('/auth/signup');
+                router.replace('/auth/signup');
               }}
               hitSlop={8}
             >
@@ -348,7 +267,7 @@ const styles = StyleSheet.create({
     flexGrow: 1,
   },
 
-  // ── Header ──
+  // -- Header --
   headerSection: {
     gap: 8,
     marginBottom: 32,
@@ -357,34 +276,22 @@ const styles = StyleSheet.create({
     fontSize: 32,
     fontWeight: '700',
     letterSpacing: -0.6,
+    fontFamily: DISPLAY_FONT,
   },
   subtitle: {
     fontSize: 15,
     lineHeight: 22,
+    fontFamily: BODY_FONT,
   },
 
-  // ── Inputs ──
-  inputField: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    height: 52,
-    borderRadius: 14,
-    borderWidth: 1,
-    paddingHorizontal: 16,
-    gap: 12,
-    marginBottom: 12,
-  },
-  inputText: {
-    flex: 1,
-    fontSize: 15,
-  },
+  // -- Inputs --
   eyeButton: {
     padding: 4,
     minWidth: 30,
     alignItems: 'center',
   },
 
-  // ── Forgot ──
+  // -- Forgot --
   forgotRow: {
     alignItems: 'flex-end',
     paddingVertical: 4,
@@ -393,81 +300,15 @@ const styles = StyleSheet.create({
   forgotText: {
     fontSize: 14,
     fontWeight: '500',
+    fontFamily: BODY_FONT,
   },
 
-  // ── Error ──
-  errorBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: 'rgba(255,59,48,0.12)',
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 16,
-  },
-  errorText: {
-    fontSize: 13,
-    color: '#FF453A',
-    flex: 1,
-  },
-
-  // ── Coral button ──
-  coralButton: {
-    backgroundColor: '#FF6B6B',
-    borderRadius: 28,
-    height: 56,
-    alignItems: 'center',
-    justifyContent: 'center',
+  // -- Button --
+  signInButton: {
     marginBottom: 24,
   },
-  coralButtonText: {
-    color: '#FFFFFF',
-    fontSize: 17,
-    fontWeight: '700',
-  },
 
-  // ── Divider ──
-  dividerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    marginBottom: 24,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-  },
-  dividerText: {
-    fontSize: 14,
-  },
-
-  // ── Social ──
-  socialSection: {
-    gap: 12,
-    marginBottom: 24,
-  },
-  socialButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    height: 52,
-    borderRadius: 26,
-    borderWidth: 1,
-    gap: 10,
-  },
-  appleIcon: {
-    fontSize: 18,
-  },
-  googleIcon: {
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  socialButtonText: {
-    fontSize: 15,
-    fontWeight: '600',
-  },
-
-  // ── Link row ──
+  // -- Link row --
   linkRow: {
     flexDirection: 'row',
     justifyContent: 'center',
@@ -476,9 +317,11 @@ const styles = StyleSheet.create({
   },
   linkText: {
     fontSize: 14,
+    fontFamily: BODY_FONT,
   },
   linkTextBold: {
     fontSize: 14,
     fontWeight: '600',
+    fontFamily: BODY_FONT,
   },
 });

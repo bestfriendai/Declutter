@@ -2,14 +2,15 @@
   "expo": {
     "name": "Declutter",
     "slug": "declutter",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "scheme": "declutter",
+    "icon": "./assets/images/icon.png",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "owner": "trappat",
     "runtimeVersion": {
-      "policy": "appVersion"
+      "policy": "fingerprint"
     },
     "updates": {
       "url": "https://u.expo.dev/d8c8d730-f9ef-45e2-88ea-7d9958da236e",
@@ -28,16 +29,17 @@
         "NSCameraUsageDescription": "Declutterly needs camera access to capture photos of your spaces for AI analysis",
         "NSPhotoLibraryUsageDescription": "Declutterly needs photo library access to save and load room photos",
         "NSUserNotificationsUsageDescription": "Declutterly sends reminders to help you stay on track with your decluttering goals",
-        "NSMicrophoneUsageDescription": "Declutterly may use the microphone for voice notes during cleaning sessions",
         "ITSAppUsesNonExemptEncryption": false
       },
-      "usesAppleSignIn": true
+      "usesAppleSignIn": true,
+      "buildNumber": "2"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#6366F1"
+        "backgroundColor": "#FF6B6B"
       },
+      "versionCode": 2,
       "edgeToEdgeEnabled": true,
       "package": "com.theblockbrowser.declutter",
       "permissions": [
@@ -48,13 +50,11 @@
         "READ_MEDIA_VIDEO",
         "POST_NOTIFICATIONS",
         "android.permission.CAMERA",
-        "android.permission.RECORD_AUDIO",
         "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.WRITE_EXTERNAL_STORAGE",
         "android.permission.READ_MEDIA_VISUAL_USER_SELECTED",
         "android.permission.READ_MEDIA_IMAGES",
-        "android.permission.READ_MEDIA_VIDEO",
-        "android.permission.READ_MEDIA_AUDIO"
+        "android.permission.READ_MEDIA_VIDEO"
       ],
       "intentFilters": [
         {
@@ -97,12 +97,12 @@
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#6366F1"
+          "backgroundColor": "#FF6B6B"
         }
       ],
       "expo-font",
       "expo-web-browser",
-      "expo-video",
+      "@sentry/react-native/expo",
       [
         "expo-camera",
         {
@@ -116,13 +116,14 @@
         "expo-notifications",
         {
           "icon": "./assets/images/icon.png",
-          "color": "#6366F1",
+          "color": "#FF6B6B",
           "sounds": []
         }
       ]
     ],
     "experiments": {
-      "typedRoutes": true
+      "typedRoutes": true,
+      "reactCompiler": true
     },
     "extra": {
       "router": {},

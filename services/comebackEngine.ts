@@ -11,8 +11,6 @@
  * - Comeback bonus: Extra XP for returning after a gap
  */
 
-import { CleaningTask } from '@/types/declutter';
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
 // ─────────────────────────────────────────────────────────────────────────────
@@ -241,33 +239,12 @@ const ONE_TINY_THING_TASKS: OneTinyThingTask[] = [
  * Get a random "One Tiny Thing" task
  * These are 60-second-or-less tasks designed as low-friction re-entry
  */
-export function getOneTinyThingTask(): OneTinyThingTask {
+export function getOneTinyThingTask(seed?: number): OneTinyThingTask {
+  if (seed !== undefined) {
+    // Deterministic selection based on seed (e.g. day-based) so it's stable per day
+    return ONE_TINY_THING_TASKS[seed % ONE_TINY_THING_TASKS.length];
+  }
   return ONE_TINY_THING_TASKS[Math.floor(Math.random() * ONE_TINY_THING_TASKS.length)];
-}
-
-/**
- * Get multiple tiny tasks, optionally filtered by category
- */
-export function getOneTinyThingOptions(
-  count: number = 3,
-  preferCategory?: 'quick-win' | 'mindless' | 'visible-impact'
-): OneTinyThingTask[] {
-  let pool = [...ONE_TINY_THING_TASKS];
-  
-  if (preferCategory) {
-    // Prioritize preferred category but include others
-    const preferred = pool.filter(t => t.category === preferCategory);
-    const others = pool.filter(t => t.category !== preferCategory);
-    pool = [...preferred, ...others];
-  }
-
-  // Shuffle using Fisher-Yates
-  for (let i = pool.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [pool[i], pool[j]] = [pool[j], pool[i]];
-  }
-
-  return pool.slice(0, count);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -284,28 +261,6 @@ export function shouldShowComebackFlow(stats: ComebackStatus | null): boolean {
   // 1. User has been away 2+ days
   // 2. We haven't already shown it today (tracked by isReturning flag)
   return stats.isReturning && stats.daysSinceActivity >= 2;
-}
-
-/**
- * Get the primary stats display (cumulative-first)
- * Philosophy: "47 cleaning sessions total" > "Day 3 streak"
- */
-export function getPrimaryStatsDisplay(totalSessions: number): string {
-  if (totalSessions === 0) return "Ready to start!";
-  if (totalSessions === 1) return "1 cleaning session total!";
-  return `${totalSessions} cleaning sessions total!`;
-}
-
-/**
- * Get secondary stats display (streak, smaller emphasis)
- */
-export function getSecondaryStatsDisplay(
-  currentStreak: number,
-  isStreakActive: boolean
-): string | null {
-  if (!isStreakActive || currentStreak === 0) return null;
-  if (currentStreak === 1) return "1-day tidy streak";
-  return `${currentStreak}-day tidy streak`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -389,58 +344,3 @@ export function getComebackNotificationMessage(): { title: string; body: string 
   return messages[Math.floor(Math.random() * messages.length)];
 }
 
-/**
- * Get daily reminder message (never guilt-inducing)
- */
-export function getDailyReminderMessage(): { title: string; body: string } {
-  const messages = [
-    {
-      title: "Time for a tiny win! ✨",
-      body: "60 seconds of tidying = a clearer mind.",
-    },
-    {
-      title: "Good morning! ☀️",
-      body: "Your space is ready when you are.",
-    },
-    {
-      title: "Quick tidy time? 🌟",
-      body: "Even one task makes a difference.",
-    },
-    {
-      title: "Dusty says hi! 🧹",
-      body: "Ready for a quick declutter session?",
-    },
-  ];
-
-  return messages[Math.floor(Math.random() * messages.length)];
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Convert Real Tasks to "One Tiny Thing" Options
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Filter real tasks to find quick re-entry options
- * Returns tasks under 2 minutes (ideally under 60 seconds)
- */
-export function findTinyTasksFromRooms(
-  tasks: CleaningTask[]
-): CleaningTask[] {
-  return tasks
-    .filter(task => !task.completed)
-    .filter(task => task.estimatedMinutes <= 2)
-    .filter(task => task.difficulty === 'quick' || task.energyRequired === 'minimal' || task.energyRequired === 'low')
-    .sort((a, b) => {
-      // Prioritize: low decision load, high visual impact, short time
-      const aScore = 
-        (a.decisionLoad === 'none' || a.decisionLoad === 'low' ? 0 : 1) +
-        (a.visualImpact === 'high' ? 0 : 1) +
-        a.estimatedMinutes;
-      const bScore =
-        (b.decisionLoad === 'none' || b.decisionLoad === 'low' ? 0 : 1) +
-        (b.visualImpact === 'high' ? 0 : 1) +
-        b.estimatedMinutes;
-      return aScore - bScore;
-    })
-    .slice(0, 3);
-}

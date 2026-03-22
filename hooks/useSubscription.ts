@@ -7,6 +7,7 @@
  */
 
 import { useRevenueCat } from '@/hooks/useRevenueCat';
+import { DEV_SKIP_AUTH } from '@/constants/app';
 
 export const FREE_ROOM_LIMIT = 3;
 
@@ -21,6 +22,11 @@ export interface SubscriptionGate {
 
 export function useSubscription(): SubscriptionGate {
   const { subscription, isLoading } = useRevenueCat();
+
+  // Dev bypass: treat as Pro when testing
+  if (DEV_SKIP_AUTH) {
+    return { isPro: true, roomLimit: Infinity, isLoading: false };
+  }
 
   return {
     isPro: subscription.isPro,

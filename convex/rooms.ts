@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { getAuthUserId } from "@convex-dev/auth/server";
+import { sanitizeInput } from "./shared";
 
 export const list = query({
   args: {},
@@ -9,7 +10,7 @@ export const list = query({
     if (!userId) return [];
     return await ctx.db
       .query("rooms")
-      .filter((q) => q.eq(q.field("userId"), userId))
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
       .collect();
   },
 });
@@ -45,9 +46,21 @@ export const create = mutation({
     const userId = await getAuthUserId(ctx);
     if (!userId) throw new Error("Not authenticated");
 
+    // Rate limit: max 20 rooms per user
+    const existingRooms = await ctx.db
+      .query("rooms")
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .collect();
+    if (existingRooms.length >= 20) {
+      throw new Error("Room limit reached (max 20). Delete a room to create a new one.");
+    }
+
+    const sanitizedName = sanitizeInput(args.name, 100);
+    if (!sanitizedName) throw new Error("Room name cannot be empty");
+
     return await ctx.db.insert("rooms", {
       userId,
-      name: args.name,
+      name: sanitizedName,
       type: args.type,
       emoji: args.emoji ?? "🏠",
       messLevel: 0,
@@ -88,7 +101,11 @@ export const update = mutation({
     if (!room || room.userId !== userId) throw new Error("Room not found");
 
     const updates: Record<string, unknown> = {};
-    if (args.name !== undefined) updates.name = args.name;
+    if (args.name !== undefined) {
+      const sanitizedName = sanitizeInput(args.name, 100);
+      if (!sanitizedName) throw new Error("Room name cannot be empty");
+      updates.name = sanitizedName;
+    }
     if (args.type !== undefined) updates.type = args.type;
     if (args.emoji !== undefined) updates.emoji = args.emoji;
     if (args.messLevel !== undefined) updates.messLevel = args.messLevel;
@@ -114,12 +131,12 @@ export const remove = mutation({
     // Delete all tasks and their subtasks
     const tasks = await ctx.db
       .query("tasks")
-      .filter((q) => q.eq(q.field("roomId"), args.id))
+      .withIndex("by_roomId", (q) => q.eq("roomId", args.id))
       .collect();
     for (const task of tasks) {
       const subtasks = await ctx.db
         .query("subtasks")
-        .filter((q) => q.eq(q.field("taskId"), task._id))
+        .withIndex("by_taskId", (q) => q.eq("taskId", task._id))
         .collect();
       for (const subtask of subtasks) {
         await ctx.db.delete(subtask._id);
@@ -127,12 +144,19 @@ export const remove = mutation({
       await ctx.db.delete(task._id);
     }
 
-    // Delete all photos
+    // Delete all photos and their storage files
     const photos = await ctx.db
       .query("photos")
-      .filter((q) => q.eq(q.field("roomId"), args.id))
+      .withIndex("by_roomId", (q) => q.eq("roomId", args.id))
       .collect();
     for (const photo of photos) {
+      if (photo.storageId) {
+        try {
+          await ctx.storage.delete(photo.storageId);
+        } catch {
+          // Storage file may already be deleted — continue cleanup
+        }
+      }
       await ctx.db.delete(photo._id);
     }
 

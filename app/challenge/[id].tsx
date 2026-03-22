@@ -10,7 +10,7 @@ import {
   Text,
   StyleSheet,
   ScrollView,
-  TouchableOpacity,
+  Pressable,
   Alert,
   RefreshControl,
   Share,
@@ -22,14 +22,14 @@ import * as Haptics from 'expo-haptics';
 import Animated, { FadeInDown, SlideInRight } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import * as Clipboard from 'expo-clipboard';
 import { useAuth } from '@/context/AuthContext';
-import { useTheme } from '@/theme/ThemeProvider';
-import { Typography } from '@/theme/typography';
-import { Spacing, BorderRadius } from '@/theme/spacing';
-import { GlassCard } from '@/components/ui/GlassCard';
-import { GlassButton } from '@/components/ui/GlassButton';
+import { V1, BODY_FONT, DISPLAY_FONT, RADIUS, SPACING, cardStyle, getTheme } from '@/constants/designTokens';
+import { useColorScheme } from '@/hooks/useColorScheme';
+import { useReducedMotion } from '@/hooks/useReducedMotion';
 import { AmbientBackdrop } from '@/components/ui/AmbientBackdrop';
 import { ExpressiveStateView } from '@/components/ui/ExpressiveStateView';
+import { ScreenErrorBoundary } from '@/components/ErrorBoundary';
 import {
   Challenge,
   ChallengeType,
@@ -46,10 +46,15 @@ const CHALLENGE_TYPES: Record<ChallengeType, { icon: React.FC<{size?: number; co
   collectibles: { icon: Gem, label: 'Collect Items', unit: 'items' },
 };
 
-export default function ChallengeDetailScreen() {
+const LOAD_TIMEOUT_MS = 15000; // 15 seconds
+
+function ChallengeDetailContent() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { colors, isDark } = useTheme();
+  const rawScheme = useColorScheme();
+  const isDark = rawScheme === 'dark';
+  const reducedMotion = useReducedMotion();
+  const colors = getTheme(isDark);
   const { isAuthenticated, user } = useAuth();
   const { id } = useLocalSearchParams<{ id: string }>();
 
@@ -59,7 +64,7 @@ export default function ChallengeDetailScreen() {
   const [isJoining, setIsJoining] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Load challenge data
+  // Load challenge data with timeout
   const loadChallenge = useCallback(async () => {
     if (!id) {
       setError('Invalid challenge ID');
@@ -68,7 +73,10 @@ export default function ChallengeDetailScreen() {
     }
 
     try {
-      const data = await getChallengeById(id);
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('timeout')), LOAD_TIMEOUT_MS)
+      );
+      const data = await Promise.race([getChallengeById(id), timeoutPromise]);
       if (data) {
         setChallenge(data);
         setError(null);
@@ -79,7 +87,8 @@ export default function ChallengeDetailScreen() {
       if (__DEV__) {
         console.info('Error loading challenge:', err);
       }
-      setError('Failed to load challenge');
+      const isTimeout = err instanceof Error && err.message === 'timeout';
+      setError(isTimeout ? 'Loading timed out. Please try again.' : 'Failed to load challenge');
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
@@ -99,7 +108,7 @@ export default function ChallengeDetailScreen() {
     if (!challenge?.inviteCode) return;
 
     setIsJoining(true);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     try {
       const joined = await joinChallenge(challenge.inviteCode);
@@ -226,26 +235,26 @@ export default function ChallengeDetailScreen() {
 
       {/* Header */}
       <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
-        <TouchableOpacity
+        <Pressable
           style={styles.backButton}
           onPress={() => {
-            Haptics.selectionAsync();
+            void Haptics.selectionAsync();
             router.back();
           }}
           accessibilityRole="button"
           accessibilityLabel="Go back"
         >
           <ChevronLeft size={24} color={colors.text} />
-        </TouchableOpacity>
+        </Pressable>
         <Text style={[styles.headerTitle, { color: colors.text }]}>Challenge</Text>
-        <TouchableOpacity
+        <Pressable
           style={styles.shareButton}
           onPress={handleShare}
           accessibilityRole="button"
           accessibilityLabel="Share challenge"
         >
           <Share2 size={22} color={colors.text} />
-        </TouchableOpacity>
+        </Pressable>
       </View>
 
       <ScrollView
@@ -256,17 +265,17 @@ export default function ChallengeDetailScreen() {
         }
       >
         {/* Challenge Header Card */}
-        <Animated.View entering={FadeInDown.delay(100).duration(350)}>
-          <GlassCard style={styles.challengeCard}>
+        <Animated.View entering={reducedMotion ? undefined : FadeInDown.delay(100).duration(350)}>
+          <View style={[cardStyle(isDark), styles.challengeCard]}>
             <View style={styles.challengeHeader}>
-              <View style={[styles.typeIcon, { backgroundColor: colors.primary + '20' }]}>
-                {typeInfo?.icon ? React.createElement(typeInfo.icon, { size: 28, color: colors.primary }) : <HelpCircle size={28} color={colors.primary} />}
+              <View style={[styles.typeIcon, { backgroundColor: V1.coral + '20' }]}>
+                {typeInfo?.icon ? React.createElement(typeInfo.icon, { size: 28, color: V1.coral }) : <HelpCircle size={28} color={V1.coral} />}
               </View>
               <View style={styles.challengeInfo}>
                 <Text style={[styles.challengeTitle, { color: colors.text }]}>
                   {challenge.title}
                 </Text>
-                <Text style={[styles.challengeType, { color: colors.primary }]}>
+                <Text style={[styles.challengeType, { color: V1.coral }]}>
                   {typeInfo?.label}
                 </Text>
               </View>
@@ -286,8 +295,8 @@ export default function ChallengeDetailScreen() {
                 </Text>
               </View>
               <View style={styles.metaItem}>
-                <Clock size={16} color={daysLeft <= 3 ? colors.warning : colors.textSecondary} />
-                <Text style={[styles.metaText, { color: daysLeft <= 3 ? colors.warning : colors.textSecondary }]}>
+                <Clock size={16} color={daysLeft <= 3 ? V1.amber : colors.textSecondary} />
+                <Text style={[styles.metaText, { color: daysLeft <= 3 ? V1.amber : colors.textSecondary }]}>
                   {daysLeft === 0 ? 'Last day!' : daysLeft === 1 ? '1 day left!' : `${daysLeft} days left`}
                 </Text>
               </View>
@@ -304,7 +313,7 @@ export default function ChallengeDetailScreen() {
               <View style={styles.progressSection}>
                 <View style={styles.progressHeader}>
                   <Text style={[styles.progressLabel, { color: colors.text }]}>Your Progress</Text>
-                  <Text style={[styles.progressValue, { color: colors.primary }]}>
+                  <Text style={[styles.progressValue, { color: V1.coral }]}>
                     {myProgress?.progress || 0} / {challenge.target}
                   </Text>
                 </View>
@@ -312,22 +321,22 @@ export default function ChallengeDetailScreen() {
                   <View
                     style={[
                       styles.progressFill,
-                      { width: `${progressPercent}%`, backgroundColor: colors.primary },
+                      { width: `${progressPercent}%`, backgroundColor: V1.coral },
                     ]}
                   />
                 </View>
                 {myProgress?.completed && (
                   <View style={styles.completedBadge}>
-                    <CircleCheck size={16} color={colors.success} />
-                    <Text style={[styles.completedText, { color: colors.success }]}>
+                    <CircleCheck size={16} color={V1.green} />
+                    <Text style={[styles.completedText, { color: V1.green }]}>
                       Challenge Complete! You did it!
                     </Text>
                   </View>
                 )}
                 {!myProgress?.completed && progressPercent >= 50 && (
                   <View style={styles.completedBadge}>
-                    <TrendingUp size={16} color={colors.warning} />
-                    <Text style={[styles.completedText, { color: colors.warning }]}>
+                    <TrendingUp size={16} color={V1.amber} />
+                    <Text style={[styles.completedText, { color: V1.amber }]}>
                       Over halfway! Keep pushing!
                     </Text>
                   </View>
@@ -337,51 +346,77 @@ export default function ChallengeDetailScreen() {
 
             {/* Join button if not participant */}
             {!isParticipant && (
-              <GlassButton
-                title={isJoining ? 'Joining...' : 'Join Challenge'}
+              <Pressable
                 onPress={handleJoinChallenge}
-                variant="primary"
-                size="large"
                 disabled={isJoining}
-                icon={<Plus size={20} color={colors.textOnPrimary} />}
-                style={styles.joinButton}
-              />
+                style={[{
+                  backgroundColor: V1.coral,
+                  borderRadius: RADIUS.lg,
+                  paddingVertical: 16,
+                  alignItems: 'center',
+                  flexDirection: 'row',
+                  justifyContent: 'center',
+                  gap: 8,
+                  opacity: isJoining ? 0.6 : 1,
+                }, styles.joinButton]}
+              >
+                <Plus size={20} color="#FFFFFF" />
+                <Text style={{ color: '#FFFFFF', fontSize: 17, fontWeight: '600' }}>
+                  {isJoining ? 'Joining...' : 'Join Challenge'}
+                </Text>
+              </Pressable>
             )}
-          </GlassCard>
+          </View>
         </Animated.View>
 
         {/* Invite Code */}
-        <Animated.View entering={FadeInDown.delay(200).duration(350)}>
-          <GlassCard style={styles.inviteCard}>
+        <Animated.View entering={reducedMotion ? undefined : FadeInDown.delay(200).duration(350)}>
+          <View style={[cardStyle(isDark), styles.inviteCard]}>
             <Text style={[styles.inviteLabel, { color: colors.textSecondary }]}>
               Invite Code
             </Text>
-            <Text style={[styles.inviteCode, { color: colors.primary }]}>
+            <Text style={[styles.inviteCode, { color: V1.coral }]}>
               {challenge.inviteCode}
             </Text>
-            <TouchableOpacity
-              onPress={handleShare}
-              style={[styles.copyButton, { borderColor: colors.border }]}
-              accessibilityRole="button"
-              accessibilityLabel="Share invite code"
-            >
-              <Share2 size={18} color={colors.primary} />
-              <Text style={[styles.copyText, { color: colors.primary }]}>Share</Text>
-            </TouchableOpacity>
-          </GlassCard>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <Pressable
+                onPress={async () => {
+                  if (challenge?.inviteCode) {
+                    await Clipboard.setStringAsync(challenge.inviteCode);
+                    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                    Alert.alert('Copied!', 'Invite code copied to clipboard.');
+                  }
+                }}
+                style={[styles.copyButton, { borderColor: colors.border }]}
+                accessibilityRole="button"
+                accessibilityLabel="Copy invite code to clipboard"
+              >
+                <Text style={[styles.copyText, { color: V1.coral }]}>Copy</Text>
+              </Pressable>
+              <Pressable
+                onPress={handleShare}
+                style={[styles.copyButton, { borderColor: colors.border }]}
+                accessibilityRole="button"
+                accessibilityLabel="Share invite code"
+              >
+                <Share2 size={18} color={V1.coral} />
+                <Text style={[styles.copyText, { color: V1.coral }]}>Share</Text>
+              </Pressable>
+            </View>
+          </View>
         </Animated.View>
 
         {/* Leaderboard */}
-        <Animated.View entering={FadeInDown.delay(300).duration(350)}>
+        <Animated.View entering={reducedMotion ? undefined : FadeInDown.delay(300).duration(350)}>
           <Text style={[styles.sectionTitle, { color: isDark ? 'rgba(255,255,255,0.21)' : 'rgba(0,0,0,0.25)' }]}>LEADERBOARD</Text>
           {challenge.participants
             .sort((a, b) => b.progress - a.progress)
             .map((participant, index) => (
               <Animated.View
                 key={participant.userId}
-                entering={SlideInRight.delay(index * 50).duration(350)}
+                entering={reducedMotion ? undefined : SlideInRight.delay(index * 50).duration(350)}
               >
-                <GlassCard style={styles.participantCard}>
+                <View style={[cardStyle(isDark), styles.participantCard]}>
                   <View style={styles.rankBadge}>
                     <Text style={[styles.rankText, {
                       color: index === 0 ? '#FFD700' : index === 1 ? '#C0C0C0' : index === 2 ? '#CD7F32' : colors.textSecondary
@@ -389,8 +424,8 @@ export default function ChallengeDetailScreen() {
                       #{index + 1}
                     </Text>
                   </View>
-                  <View style={[styles.avatar, { backgroundColor: colors.primary }]}>
-                    <Text style={[styles.avatarText, { color: colors.textOnPrimary }]}>
+                  <View style={[styles.avatar, { backgroundColor: V1.coral }]}>
+                    <Text style={[styles.avatarText, { color: '#FFFFFF' }]}>
                       {participant.displayName.charAt(0).toUpperCase()}
                     </Text>
                   </View>
@@ -407,7 +442,7 @@ export default function ChallengeDetailScreen() {
                           styles.miniProgressFill,
                           {
                             width: `${Math.min((participant.progress / challenge.target) * 100, 100)}%`,
-                            backgroundColor: participant.completed ? colors.success : colors.primary,
+                            backgroundColor: participant.completed ? V1.green : V1.coral,
                           },
                         ]}
                       />
@@ -417,16 +452,16 @@ export default function ChallengeDetailScreen() {
                     {participant.progress}/{challenge.target}
                   </Text>
                   {participant.completed && (
-                    <CircleCheck size={20} color={colors.success} />
+                    <CircleCheck size={20} color={V1.green} />
                   )}
-                </GlassCard>
+                </View>
               </Animated.View>
             ))}
         </Animated.View>
 
         {/* Challenge Info */}
-        <Animated.View entering={FadeInDown.delay(400).duration(350)}>
-          <GlassCard style={styles.infoCard}>
+        <Animated.View entering={reducedMotion ? undefined : FadeInDown.delay(400).duration(350)}>
+          <View style={[cardStyle(isDark), styles.infoCard]}>
             <Text style={[styles.infoLabel, { color: colors.textSecondary }]}>Created by</Text>
             <Text style={[styles.infoValue, { color: colors.text }]}>{challenge.creatorName}</Text>
             <Text style={[styles.infoLabel, { color: colors.textSecondary, marginTop: 12 }]}>
@@ -435,10 +470,18 @@ export default function ChallengeDetailScreen() {
             <Text style={[styles.infoValue, { color: colors.text }]}>
               {challenge.startDate.toLocaleDateString()} - {challenge.endDate.toLocaleDateString()}
             </Text>
-          </GlassCard>
+          </View>
         </Animated.View>
       </ScrollView>
     </LinearGradient>
+  );
+}
+
+export default function ChallengeDetailScreen() {
+  return (
+    <ScreenErrorBoundary screenName="challenge/[id]">
+      <ChallengeDetailContent />
+    </ScreenErrorBoundary>
   );
 }
 
@@ -462,7 +505,8 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     flex: 1,
-    ...Typography.title3,
+    fontFamily: DISPLAY_FONT,
+    fontSize: 20, fontWeight: '600', lineHeight: 25,
     textAlign: 'center',
   },
   shareButton: {
@@ -510,15 +554,18 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   challengeTitle: {
-    ...Typography.title2,
-    marginBottom: Spacing.xxs,
+    fontFamily: DISPLAY_FONT,
+    fontSize: 22, fontWeight: '700', letterSpacing: -0.4, lineHeight: 28,
+    marginBottom: 4,
   },
   challengeType: {
-    ...Typography.subheadlineMedium,
+    fontFamily: BODY_FONT,
+    fontSize: 15, fontWeight: '500', lineHeight: 20,
   },
   description: {
-    ...Typography.body,
-    marginBottom: Spacing.md,
+    fontFamily: BODY_FONT,
+    fontSize: 17, fontWeight: '400', lineHeight: 22,
+    marginBottom: 16,
   },
   metaRow: {
     flexDirection: 'row',
@@ -532,7 +579,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   metaText: {
-    ...Typography.subheadline,
+    fontSize: 15, fontWeight: '400', lineHeight: 20,
   },
   progressSection: {
     marginTop: 8,
@@ -544,10 +591,10 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   progressLabel: {
-    ...Typography.subheadlineMedium,
+    fontSize: 15, fontWeight: '500', lineHeight: 20,
   },
   progressValue: {
-    ...Typography.subheadlineMedium,
+    fontSize: 15, fontWeight: '500', lineHeight: 20,
   },
   progressBar: {
     height: 10,
@@ -565,7 +612,7 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   completedText: {
-    ...Typography.subheadlineMedium,
+    fontSize: 15, fontWeight: '500', lineHeight: 20,
   },
   joinButton: {
     marginTop: 16,
@@ -575,34 +622,36 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   inviteLabel: {
-    ...Typography.caption1,
-    marginBottom: Spacing.xxs,
+    fontSize: 12, fontWeight: '400', lineHeight: 16,
+    marginBottom: 4,
   },
   inviteCode: {
-    ...Typography.title1,
+    fontFamily: DISPLAY_FONT,
+    fontSize: 28, fontWeight: '700', lineHeight: 34,
     letterSpacing: 4,
-    marginBottom: Spacing.sm,
+    marginBottom: 12,
   },
   copyButton: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingVertical: Spacing.xs,
-    paddingHorizontal: Spacing.md,
-    borderRadius: BorderRadius.chip,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: RADIUS.md,
     borderWidth: 1,
     minHeight: 44,
   },
   copyText: {
-    ...Typography.subheadlineMedium,
+    fontSize: 15, fontWeight: '500', lineHeight: 20,
   },
   sectionTitle: {
+    fontFamily: BODY_FONT,
     fontSize: 11,
     fontWeight: '600',
     letterSpacing: 1.5,
     textTransform: 'uppercase',
-    marginBottom: Spacing.sm,
-    marginTop: Spacing.xs,
+    marginBottom: 12,
+    marginTop: 8,
   },
   participantCard: {
     flexDirection: 'row',
@@ -616,7 +665,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   rankText: {
-    ...Typography.subheadlineMedium,
+    fontSize: 15, fontWeight: '500', lineHeight: 20,
   },
   avatar: {
     width: 40,
@@ -626,14 +675,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   avatarText: {
-    ...Typography.headline,
+    fontSize: 17, fontWeight: '600', lineHeight: 22,
   },
   participantInfo: {
     flex: 1,
   },
   participantName: {
-    ...Typography.subheadlineMedium,
-    marginBottom: Spacing.xxs,
+    fontSize: 15, fontWeight: '500', lineHeight: 20,
+    marginBottom: 4,
   },
   miniProgressBar: {
     height: 4,
@@ -645,7 +694,7 @@ const styles = StyleSheet.create({
     borderRadius: 2,
   },
   participantProgress: {
-    ...Typography.caption1Medium,
+    fontSize: 12, fontWeight: '500', lineHeight: 16,
   },
   infoCard: {
     padding: 16,

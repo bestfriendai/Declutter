@@ -1,6 +1,7 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { internalMutation, mutation, query } from "./_generated/server";
+import { internal } from "./_generated/api";
 
 const BADGE_DEFS = [
   { id: "first-task", name: "First Step", description: "Complete your first task", emoji: "🌱", requirement: 1, type: "tasks" as const },
@@ -34,13 +35,18 @@ export const listByUser = query({
 
     return await ctx.db
       .query("badges")
-      .filter((q) => q.eq(q.field("userId"), userId))
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
       .collect();
   },
 });
 
-export const unlock = mutation({
+/**
+ * INTERNAL: Unlock a badge for a user. Not callable from clients — badges
+ * should only be unlocked via checkAndUnlock / _checkAndUnlockInternal.
+ */
+export const unlock = internalMutation({
   args: {
+    userId: v.id("users"),
     badgeId: v.string(),
     name: v.string(),
     description: v.string(),
@@ -57,23 +63,16 @@ export const unlock = mutation({
     ),
   },
   handler: async (ctx, args) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
-
     // Check if already unlocked
     const existing = await ctx.db
       .query("badges")
-      .filter((q) =>
-        q.and(
-          q.eq(q.field("userId"), userId),
-          q.eq(q.field("badgeId"), args.badgeId)
-        )
-      )
+      .withIndex("by_userId", (q) => q.eq("userId", args.userId))
+      .filter((q) => q.eq(q.field("badgeId"), args.badgeId))
       .first();
     if (existing) return existing._id;
 
     return await ctx.db.insert("badges", {
-      userId,
+      userId: args.userId,
       badgeId: args.badgeId,
       name: args.name,
       description: args.description,
@@ -94,7 +93,7 @@ export const checkAndUnlock = mutation({
     // Get current stats
     const stats = await ctx.db
       .query("stats")
-      .filter((q) => q.eq(q.field("userId"), userId))
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
       .first();
 
     const tasks = stats?.totalTasksCompleted ?? 0;
@@ -117,7 +116,7 @@ export const checkAndUnlock = mutation({
     // Get already unlocked badges
     const unlockedBadges = await ctx.db
       .query("badges")
-      .filter((q) => q.eq(q.field("userId"), userId))
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
       .collect();
     const unlockedIds = new Set(unlockedBadges.map((b) => b.badgeId));
 
@@ -169,6 +168,130 @@ export const checkAndUnlock = mutation({
           type: badge.type,
         });
         newlyUnlocked.push(badge.id);
+
+        // Dedup: if a parallel request also inserted this badge, clean up duplicates
+        const existingBadges = await ctx.db
+          .query("badges")
+          .withIndex("by_userId", (q) => q.eq("userId", userId))
+          .filter((q) => q.eq(q.field("badgeId"), badge.id))
+          .collect();
+        if (existingBadges.length > 1) {
+          for (let i = 1; i < existingBadges.length; i++) {
+            await ctx.db.delete(existingBadges[i]._id);
+          }
+        }
+      }
+    }
+
+    return newlyUnlocked;
+  },
+});
+
+/**
+ * Internal version of checkAndUnlock — callable from other mutations (no auth required).
+ * Used by stats.incrementTask to trigger badge checks after task completion.
+ */
+export const _checkAndUnlockInternal = internalMutation({
+  args: {
+    userId: v.id("users"),
+    previousLastActivityDate: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const userId = args.userId;
+
+    // Get current stats
+    const stats = await ctx.db
+      .query("stats")
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .first();
+
+    const tasks = stats?.totalTasksCompleted ?? 0;
+    const rooms = stats?.totalRoomsCleaned ?? 0;
+    const streak = stats?.currentStreak ?? 0;
+    const minutes = stats?.totalMinutesCleaned ?? 0;
+    const comebackCount = stats?.comebackCount ?? 0;
+    const totalSessions = stats?.totalCleaningSessions ?? tasks;
+    // Use the PREVIOUS lastActivityDate (before this session's update) for
+    // longComeback badge calculation. If not provided, fall back to stats.
+    let daysSinceActivity = 0;
+    const activityDateForBadge = args.previousLastActivityDate ?? stats?.lastActivityDate;
+    if (activityDateForBadge) {
+      const lastDate = new Date(activityDateForBadge);
+      const now = new Date();
+      lastDate.setHours(0, 0, 0, 0);
+      now.setHours(0, 0, 0, 0);
+      daysSinceActivity = Math.floor((now.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24));
+    }
+
+    // Get already unlocked badges
+    const unlockedBadges = await ctx.db
+      .query("badges")
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .collect();
+    const unlockedIds = new Set(unlockedBadges.map((b) => b.badgeId));
+
+    const newlyUnlocked: string[] = [];
+
+    for (const badge of BADGE_DEFS) {
+      if (unlockedIds.has(badge.id)) continue;
+
+      let value = 0;
+      switch (badge.type) {
+        case "tasks":
+          value = tasks;
+          break;
+        case "rooms":
+          value = rooms;
+          break;
+        case "streak":
+          value = streak;
+          break;
+        case "time":
+          value = minutes;
+          break;
+        case "comeback":
+          value = comebackCount;
+          break;
+        case "longComeback":
+          value = daysSinceActivity >= 7 && comebackCount > 0 ? 7 : 0;
+          break;
+        case "sessions":
+          value = totalSessions;
+          break;
+      }
+
+      if (value >= badge.requirement) {
+        await ctx.db.insert("badges", {
+          userId,
+          badgeId: badge.id,
+          name: badge.name,
+          description: badge.description,
+          emoji: badge.emoji,
+          unlockedAt: Date.now(),
+          requirement: badge.requirement,
+          type: badge.type,
+        });
+        newlyUnlocked.push(badge.id);
+
+        // Dedup: if a parallel request also inserted this badge, clean up duplicates
+        const existingBadges = await ctx.db
+          .query("badges")
+          .withIndex("by_userId", (q) => q.eq("userId", userId))
+          .filter((q) => q.eq(q.field("badgeId"), badge.id))
+          .collect();
+        if (existingBadges.length > 1) {
+          for (let i = 1; i < existingBadges.length; i++) {
+            await ctx.db.delete(existingBadges[i]._id);
+          }
+        }
+
+        // Send push notification for the newly unlocked badge
+        await ctx.scheduler.runAfter(0, internal.notifications._sendPushNotification, {
+          userId,
+          title: `Badge Unlocked! ${badge.emoji}`,
+          body: `You earned the "${badge.name}" badge! ${badge.emoji}`,
+          data: { type: "badge", badgeId: badge.id },
+        });
       }
     }
 

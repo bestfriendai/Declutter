@@ -30,7 +30,7 @@ export const get = query({
 
     const settings = await ctx.db
       .query("settings")
-      .filter((q) => q.eq(q.field("userId"), userId))
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
       .first();
 
     if (!settings) {
@@ -89,7 +89,7 @@ export const upsert = mutation({
 
     const existing = await ctx.db
       .query("settings")
-      .filter((q) => q.eq(q.field("userId"), userId))
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
       .first();
 
     const data = {

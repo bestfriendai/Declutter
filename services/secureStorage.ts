@@ -115,7 +115,7 @@ export async function saveApiKeySecure(apiKey: string): Promise<void> {
     }
   } catch (error) {
     // Don't log the key itself
-    console.error('Failed to save API key securely');
+    if (__DEV__) console.error('Failed to save API key securely');
     throw new Error('Failed to save API key');
   }
 }
@@ -133,7 +133,7 @@ export async function loadApiKeySecure(): Promise<string | null> {
       return await AsyncStorage.getItem(SECURE_KEYS.API_KEY);
     }
   } catch (error) {
-    console.error('Failed to load API key');
+    if (__DEV__) console.error('Failed to load API key');
     return null;
   }
 }
@@ -151,7 +151,7 @@ export async function deleteApiKeySecure(): Promise<void> {
       await AsyncStorage.removeItem(SECURE_KEYS.API_KEY);
     }
   } catch (error) {
-    console.error('Failed to delete API key');
+    if (__DEV__) console.error('Failed to delete API key');
   }
 }
 
@@ -167,7 +167,7 @@ export async function saveAuthToken(token: string): Promise<void> {
       await AsyncStorage.setItem(SECURE_KEYS.AUTH_TOKEN, token);
     }
   } catch (error) {
-    console.error('Failed to save auth token');
+    if (__DEV__) console.error('Failed to save auth token');
     throw new Error('Failed to save auth token');
   }
 }
@@ -199,7 +199,7 @@ export async function deleteAuthToken(): Promise<void> {
       await AsyncStorage.removeItem(SECURE_KEYS.AUTH_TOKEN);
     }
   } catch {
-    console.error('Failed to delete auth token');
+    if (__DEV__) console.error('Failed to delete auth token');
   }
 }
 

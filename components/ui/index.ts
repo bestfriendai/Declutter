@@ -28,6 +28,8 @@ export { CelebrationProvider, useCelebration } from './CelebrationEngine';
 export { Banner, InlineBanner } from './Banner';
 export { Confetti } from './Confetti';
 export { EmptyStateCard } from './EmptyStateCard';
+export { QueryErrorState } from './QueryErrorState';
+export type { QueryErrorVariant } from './QueryErrorState';
 export { Skeleton, SkeletonCard, SkeletonText } from './Skeleton';
 export { Toast } from './Toast';
 
@@ -67,6 +69,7 @@ export type { XPPopupProps } from './XPPopup';
 
 // Contextual Components
 export { CompactGreeting, ContextualGreeting } from './ContextualGreeting';
+export { OfflineBanner } from './OfflineBanner';
 export { OfflineIndicator } from './OfflineIndicator';
 export {
     OnboardingTooltipProvider,
@@ -74,6 +77,21 @@ export {
     useTooltipTrigger
 } from './OnboardingTooltip';
 export type { TooltipId } from './OnboardingTooltip';
+
+// Mascot Components
+export { MascotAvatar } from './MascotAvatar';
+export type { default as MascotAvatarComponent } from './MascotAvatar';
+
+// Shared Action Components
+export { CoralButton } from './CoralButton';
+export { AnimatedInput } from './AnimatedInput';
+export { ErrorBanner } from './ErrorBanner';
+export { LoadingDots } from './LoadingDots';
+
+// Section / Placeholder Components
+export { SectionLabel } from './SectionLabel';
+export { SkeletonShimmer } from './SkeletonShimmer';
+export { CountUpStat } from './CountUpStat';
 
 // Wizard Components
 export { ApiKeySetupWizard } from './ApiKeySetupWizard';

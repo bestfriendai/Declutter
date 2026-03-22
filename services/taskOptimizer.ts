@@ -8,8 +8,10 @@ import {
   TaskPerformanceHistory,
 } from '@/types/declutter';
 
-const PROFILE_STORAGE_KEY = '@declutterly_user_cleaning_profile';
-const TASK_HISTORY_KEY = '@declutterly_task_history';
+import { STORAGE_KEYS } from '@/constants/storageKeys';
+
+const PROFILE_STORAGE_KEY = STORAGE_KEYS.USER_CLEANING_PROFILE;
+const TASK_HISTORY_KEY = STORAGE_KEYS.TASK_HISTORY;
 
 interface TaskCompletionEvent {
   taskId: string;
@@ -155,7 +157,7 @@ async function updateProfileFromHistory(history: TaskCompletionEvent[]): Promise
   for (const event of history) {
     if (event.wasSkipped || !event.energyRequired) continue;
     
-    const energyValue = { minimal: 1, low: 2, moderate: 3, high: 4 }[event.energyRequired] || 2;
+    const energyValue = { exhausted: 1, minimal: 1, low: 2, moderate: 3, high: 4, hyperfocused: 5 }[event.energyRequired] || 2;
     const stats = dayStats.get(event.dayOfWeek) || { totalEnergy: 0, count: 0 };
     stats.totalEnergy += energyValue;
     stats.count++;
@@ -203,8 +205,8 @@ export function optimizeTaskOrder(
   profile: UserCleaningProfile,
   currentEnergy: EnergyLevel = 'moderate'
 ): CleaningTask[] {
-  const energyValue = { minimal: 1, low: 2, moderate: 3, high: 4 };
-  const userEnergy = energyValue[currentEnergy];
+  const energyValue: Record<string, number> = { exhausted: 1, minimal: 1, low: 2, moderate: 3, high: 4, hyperfocused: 5 };
+  const userEnergy = energyValue[currentEnergy] ?? 2;
   
   const scored = tasks.map(task => {
     let score = 0;
@@ -262,112 +264,6 @@ export function optimizeTaskOrder(
   scored.sort((a, b) => b.score - a.score);
   
   return scored.map(s => s.task);
-}
-
-export function getPersonalizedEncouragement(
-  profile: UserCleaningProfile,
-  context: { tasksCompleted: number; streak: number; timeOfDay: string }
-): string {
-  const style = profile.motivationProfile.preferredEncouragementStyle;
-  const { tasksCompleted, streak, timeOfDay } = context;
-  
-  const messages = {
-    cheerful: {
-      morning: [
-        "Good morning! Let's start fresh! ✨",
-        "Rise and shine! Your space is waiting! 🌅",
-        "Morning energy is the best! Let's go! 💪",
-      ],
-      afternoon: [
-        "Afternoon productivity mode: ON! 🚀",
-        "Keep that momentum going! You're amazing! ⭐",
-        "Halfway through the day - you've got this! 💫",
-      ],
-      evening: [
-        "Evening declutter time - so relaxing! 🌙",
-        "Wind down by tidying up - you're doing great! 🎉",
-        "Perfect time for a quick win! ✨",
-      ],
-    },
-    calm: {
-      morning: [
-        "Start your day with a clear space, clear mind.",
-        "Take it one step at a time this morning.",
-        "A peaceful start to your day.",
-      ],
-      afternoon: [
-        "Steady progress throughout the day.",
-        "You're making meaningful progress.",
-        "Each task completed brings more calm.",
-      ],
-      evening: [
-        "End your day with a sense of accomplishment.",
-        "A tidy space for a restful night.",
-        "You've done well today.",
-      ],
-    },
-    'matter-of-fact': {
-      morning: [
-        `${tasksCompleted} tasks completed. Good start.`,
-        "Morning session ready.",
-        "Ready when you are.",
-      ],
-      afternoon: [
-        `Progress: ${tasksCompleted} tasks done.`,
-        "Continuing from where you left off.",
-        "Afternoon session available.",
-      ],
-      evening: [
-        `Day summary: ${tasksCompleted} tasks completed.`,
-        "Evening tasks ready.",
-        `Current streak: ${streak} days.`,
-      ],
-    },
-  };
-  
-  const timeMessages = messages[style][timeOfDay as keyof typeof messages.cheerful] || messages[style].afternoon;
-  return timeMessages[Math.floor(Math.random() * timeMessages.length)];
-}
-
-export function suggestSessionDuration(
-  profile: UserCleaningProfile,
-  currentEnergy: EnergyLevel,
-  availableTasks: CleaningTask[]
-): { minutes: number; taskCount: number; reason: string } {
-  const baseMinutes = profile.preferences.preferredSessionLength;
-  
-  const energyMultiplier = {
-    minimal: 0.5,
-    low: 0.75,
-    moderate: 1.0,
-    high: 1.25,
-  };
-  
-  const adjustedMinutes = Math.round(baseMinutes * energyMultiplier[currentEnergy]);
-  
-  let cumulativeTime = 0;
-  let taskCount = 0;
-  for (const task of availableTasks) {
-    if (cumulativeTime + task.estimatedMinutes <= adjustedMinutes) {
-      cumulativeTime += task.estimatedMinutes;
-      taskCount++;
-    } else {
-      break;
-    }
-  }
-  
-  const reasons = {
-    minimal: "Starting small - that's perfect for low energy days",
-    low: "A gentle session to match your current energy",
-    moderate: "A balanced session based on your usual pace",
-    high: "You've got energy today - let's make the most of it!",
-  };
-  
-  return {
-    minutes: adjustedMinutes,
-    taskCount,
-    reason: reasons[currentEnergy],
-  };
 }
 
 export async function clearTaskHistory(): Promise<void> {

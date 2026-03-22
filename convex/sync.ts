@@ -106,6 +106,91 @@ async function clearUserState(ctx: MutationCtx, userId: Id<"users">) {
   }
 }
 
+// Validate and sanitize sync data to prevent malicious/corrupt payloads
+function validateSyncData(args: Record<string, unknown>) {
+  // Validate stats
+  if (args.stats && typeof args.stats === "object") {
+    const s = args.stats as Record<string, unknown>;
+    if (typeof s.xp === "number") s.xp = Math.max(0, Math.min(s.xp, 1000000));
+    if (typeof s.level === "number")
+      s.level = Math.max(1, Math.min(s.level, 1000));
+    if (typeof s.totalTasksCompleted === "number")
+      s.totalTasksCompleted = Math.max(
+        0,
+        Math.min(s.totalTasksCompleted, 100000)
+      );
+    if (typeof s.totalRoomsCleaned === "number")
+      s.totalRoomsCleaned = Math.max(0, Math.min(s.totalRoomsCleaned, 10000));
+    if (typeof s.currentStreak === "number")
+      s.currentStreak = Math.max(0, Math.min(s.currentStreak, 3650));
+    if (typeof s.longestStreak === "number")
+      s.longestStreak = Math.max(0, Math.min(s.longestStreak, 3650));
+    if (typeof s.totalMinutesCleaned === "number")
+      s.totalMinutesCleaned = Math.max(
+        0,
+        Math.min(s.totalMinutesCleaned, 10000000)
+      );
+  }
+
+  // Validate rooms array
+  if (Array.isArray(args.rooms)) {
+    if (args.rooms.length > 50) {
+      args.rooms = args.rooms.slice(0, 50);
+    }
+    for (const room of args.rooms as Record<string, unknown>[]) {
+      if (typeof room.name === "string") {
+        room.name = (room.name as string).slice(0, 200).replace(/<[^>]*>/g, "");
+      }
+      if (typeof room.currentProgress === "number") {
+        room.currentProgress = Math.max(
+          0,
+          Math.min(room.currentProgress as number, 100)
+        );
+      }
+      // Validate tasks within rooms
+      if (Array.isArray(room.tasks) && room.tasks.length > 200) {
+        room.tasks = room.tasks.slice(0, 200);
+      }
+      for (const task of (room.tasks ?? []) as Record<string, unknown>[]) {
+        if (typeof task.title === "string") {
+          task.title = (task.title as string)
+            .slice(0, 500)
+            .replace(/<[^>]*>/g, "");
+        }
+        if (typeof task.description === "string") {
+          task.description = (task.description as string)
+            .slice(0, 2000)
+            .replace(/<[^>]*>/g, "");
+        }
+        if (typeof task.estimatedMinutes === "number") {
+          task.estimatedMinutes = Math.max(
+            0,
+            Math.min(task.estimatedMinutes as number, 1440)
+          );
+        }
+      }
+    }
+  }
+
+  // Validate collection array
+  if (Array.isArray(args.collection) && args.collection.length > 10000) {
+    args.collection = args.collection.slice(0, 10000);
+  }
+
+  // Sanitize profile name
+  if (
+    args.profile &&
+    typeof args.profile === "object" &&
+    typeof (args.profile as Record<string, unknown>).name === "string"
+  ) {
+    (args.profile as Record<string, unknown>).name = (
+      (args.profile as Record<string, unknown>).name as string
+    )
+      .slice(0, 100)
+      .replace(/<[^>]*>/g, "");
+  }
+}
+
 export const replaceUserState = mutation({
   args: {
     profile: v.optional(v.any()),
@@ -127,6 +212,9 @@ export const replaceUserState = mutation({
     if (!existingUser) {
       throw new Error("User not found");
     }
+
+    // Validate and sanitize incoming data
+    validateSyncData(args as unknown as Record<string, unknown>);
 
     const profile = args.profile ?? {};
     await ctx.db.patch(userId, {
@@ -309,6 +397,9 @@ export const replaceUserState = mutation({
           ...(task.destination?.requiresSetup
             ? { destinationRequiresSetup: task.destination.requiresSetup }
             : {}),
+          ...(task.phase !== undefined ? { phase: task.phase } : {}),
+          ...(task.phaseName ? { phaseName: task.phaseName } : {}),
+          ...(task.mentalBenefit ? { mentalBenefit: task.mentalBenefit } : {}),
           ...(task.category ? { category: task.category } : {}),
           ...(task.energyRequired ? { energyRequired: task.energyRequired } : {}),
           ...(task.decisionLoad ? { decisionLoad: task.decisionLoad } : {}),
@@ -364,74 +455,115 @@ export const getUserState = query({
       return null;
     }
 
-    const rooms = await ctx.db
-      .query("rooms")
-      .withIndex("by_userId", (q) => q.eq("userId", userId))
-      .collect();
-
-    const hydratedRooms = [];
-    for (const room of rooms) {
-      const photos = await ctx.db
+    // Batch-fetch all user data in parallel to avoid N+1 query patterns.
+    // Previously: for each room -> fetch photos + tasks; for each task -> fetch subtasks.
+    // This caused O(rooms * tasks) database queries. Now we use 3 parallel queries
+    // via by_userId indexes, then fetch subtasks in a single parallel batch.
+    const [rooms, allPhotos, allTasks] = await Promise.all([
+      ctx.db
+        .query("rooms")
+        .withIndex("by_userId", (q) => q.eq("userId", userId))
+        .collect(),
+      ctx.db
         .query("photos")
-        .withIndex("by_roomId", (q) => q.eq("roomId", room._id))
-        .collect();
-      const tasks = await ctx.db
+        .withIndex("by_userId", (q) => q.eq("userId", userId))
+        .collect(),
+      ctx.db
         .query("tasks")
-        .withIndex("by_roomId", (q) => q.eq("roomId", room._id))
-        .collect();
+        .withIndex("by_userId", (q) => q.eq("userId", userId))
+        .collect(),
+    ]);
 
-      const hydratedTasks = [];
-      for (const task of tasks.sort((left, right) => left.order - right.order)) {
-        const subtasks = await ctx.db
+    // Batch-fetch all subtasks in parallel (one query per task, but all concurrent)
+    const subtaskResults = await Promise.all(
+      allTasks.map((task) =>
+        ctx.db
           .query("subtasks")
           .withIndex("by_taskId", (q) => q.eq("taskId", task._id))
-          .collect();
+          .collect()
+      )
+    );
 
-        hydratedTasks.push({
-          id: task._id,
-          title: task.title,
-          description: task.description,
-          emoji: task.emoji,
-          priority: task.priority,
-          difficulty: task.difficulty,
-          estimatedMinutes: task.estimatedMinutes,
-          completed: task.completed,
-          completedAt: task.completedAt,
-          tips: task.tips,
-          zone: task.zone,
-          targetObjects: task.targetObjects,
-          destination: task.destinationLocation
-            ? {
-                location: task.destinationLocation,
-                instructions: task.destinationInstructions,
-                requiresSetup: task.destinationRequiresSetup,
-              }
-            : undefined,
-          category: task.category,
-          energyRequired: task.energyRequired,
-          decisionLoad: task.decisionLoad,
-          visualImpact: task.visualImpact,
-          whyThisMatters: task.whyThisMatters,
-          resistanceHandler: task.resistanceHandler,
-          suppliesNeeded: task.suppliesNeeded,
-          dependencies: task.dependencies,
-          enables: task.enables,
-          parallelWith: task.parallelWith,
-          order: task.order,
-          subtasks: subtasks
-            .sort((left, right) => left.order - right.order)
-            .map((subtask) => ({
-              id: subtask._id,
-              title: subtask.title,
-              completed: subtask.completed,
-              estimatedSeconds: subtask.estimatedSeconds,
-              estimatedMinutes: subtask.estimatedMinutes,
-              isCheckpoint: subtask.isCheckpoint,
-            })),
+    // Group photos by roomId
+    const photosByRoom = new Map<string, typeof allPhotos>();
+    for (const photo of allPhotos) {
+      const key = photo.roomId.toString();
+      const existing = photosByRoom.get(key) || [];
+      existing.push(photo);
+      photosByRoom.set(key, existing);
+    }
+
+    // Group tasks by roomId
+    const tasksByRoom = new Map<string, typeof allTasks>();
+    for (const task of allTasks) {
+      const key = task.roomId.toString();
+      const existing = tasksByRoom.get(key) || [];
+      existing.push(task);
+      tasksByRoom.set(key, existing);
+    }
+
+    // Map subtasks by taskId
+    const subtasksByTask = new Map<string, (typeof subtaskResults)[number]>();
+    for (let i = 0; i < allTasks.length; i++) {
+      subtasksByTask.set(allTasks[i]._id.toString(), subtaskResults[i]);
+    }
+
+    const hydratedRooms = rooms.map((room) => {
+      const photos = photosByRoom.get(room._id.toString()) || [];
+      const tasks = tasksByRoom.get(room._id.toString()) || [];
+
+      const hydratedTasks = tasks
+        .sort((left, right) => left.order - right.order)
+        .map((task) => {
+          const subtasks = subtasksByTask.get(task._id.toString()) || [];
+          return {
+            id: task._id,
+            title: task.title,
+            description: task.description,
+            emoji: task.emoji,
+            priority: task.priority,
+            difficulty: task.difficulty,
+            estimatedMinutes: task.estimatedMinutes,
+            completed: task.completed,
+            completedAt: task.completedAt,
+            tips: task.tips,
+            zone: task.zone,
+            targetObjects: task.targetObjects,
+            destination: task.destinationLocation
+              ? {
+                  location: task.destinationLocation,
+                  instructions: task.destinationInstructions,
+                  requiresSetup: task.destinationRequiresSetup,
+                }
+              : undefined,
+            phase: task.phase,
+            phaseName: task.phaseName,
+            mentalBenefit: task.mentalBenefit,
+            category: task.category,
+            energyRequired: task.energyRequired,
+            decisionLoad: task.decisionLoad,
+            visualImpact: task.visualImpact,
+            whyThisMatters: task.whyThisMatters,
+            resistanceHandler: task.resistanceHandler,
+            suppliesNeeded: task.suppliesNeeded,
+            dependencies: task.dependencies,
+            enables: task.enables,
+            parallelWith: task.parallelWith,
+            order: task.order,
+            subtasks: subtasks
+              .sort((left, right) => left.order - right.order)
+              .map((subtask) => ({
+                id: subtask._id,
+                title: subtask.title,
+                completed: subtask.completed,
+                estimatedSeconds: subtask.estimatedSeconds,
+                estimatedMinutes: subtask.estimatedMinutes,
+                isCheckpoint: subtask.isCheckpoint,
+              })),
+          };
         });
-      }
 
-      hydratedRooms.push({
+      return {
         id: room._id,
         name: room.name,
         type: room.type,
@@ -451,8 +583,8 @@ export const getUserState = query({
             type: photo.type,
           })),
         tasks: hydratedTasks,
-      });
-    }
+      };
+    });
 
     const stats = await ctx.db
       .query("stats")

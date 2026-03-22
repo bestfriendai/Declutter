@@ -1,6 +1,7 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { internal } from "./_generated/api";
+import { internalMutation, mutation, query } from "./_generated/server";
 
 const DEFAULT_STATS = {
   totalTasksCompleted: 0,
@@ -59,19 +60,38 @@ export const upsert = mutation({
       .withIndex("by_userId", (q) => q.eq("userId", userId))
       .first();
 
+    // Server-side capping to prevent abuse via direct API calls
+    const clamp = (val: number, max: number) => Math.max(0, Math.min(val, max));
+
     const data: Record<string, unknown> = {
-      totalTasksCompleted:
+      totalTasksCompleted: clamp(
         args.totalTasksCompleted ?? existing?.totalTasksCompleted ?? 0,
-      totalRoomsCleaned:
+        100000
+      ),
+      totalRoomsCleaned: clamp(
         args.totalRoomsCleaned ?? existing?.totalRoomsCleaned ?? 0,
-      currentStreak: args.currentStreak ?? existing?.currentStreak ?? 0,
-      longestStreak: args.longestStreak ?? existing?.longestStreak ?? 0,
-      totalMinutesCleaned:
+        100000
+      ),
+      currentStreak: clamp(
+        args.currentStreak ?? existing?.currentStreak ?? 0,
+        3650
+      ),
+      longestStreak: clamp(
+        args.longestStreak ?? existing?.longestStreak ?? 0,
+        3650
+      ),
+      totalMinutesCleaned: clamp(
         args.totalMinutesCleaned ?? existing?.totalMinutesCleaned ?? 0,
-      xp: args.xp ?? existing?.xp ?? 0,
+        10000000
+      ),
+      xp: clamp(args.xp ?? existing?.xp ?? 0, 1000000),
       level: 0,
     };
-    data.level = args.level ?? calculateLevel(data.xp as number);
+    data.level = clamp(args.level ?? calculateLevel(data.xp as number), 1000);
+    // Clamp streak freezes if provided
+    if (args.streakFreezesAvailable !== undefined) {
+      args = { ...args, streakFreezesAvailable: clamp(args.streakFreezesAvailable, 10) };
+    }
 
     // Include optional fields if provided
     if (args.lastActivityDate !== undefined) data.lastActivityDate = args.lastActivityDate;
@@ -111,19 +131,41 @@ export const addXp = mutation({
     const userId = await getAuthUserId(ctx);
     if (!userId) throw new Error("Not authenticated");
 
+    // Validate XP amount: must be positive and capped to prevent abuse
+    if (args.amount <= 0) throw new Error("XP amount must be positive");
+    if (args.amount > 500) throw new Error("XP amount exceeds maximum allowed per operation");
+
     const existing = await ctx.db
       .query("stats")
       .withIndex("by_userId", (q) => q.eq("userId", userId))
       .first();
 
+    // Daily XP cap to prevent abuse (bot spamming addXp)
+    const MAX_DAILY_XP = 5000;
+    const today = new Date().toISOString().split("T")[0];
+    const xpToday =
+      existing && existing.xpResetDate === today
+        ? (existing.xpEarnedToday ?? 0)
+        : 0;
+
+    if (xpToday >= MAX_DAILY_XP) {
+      // Silently cap — don't throw, just return existing id
+      return existing?._id;
+    }
+
+    // Cap this operation to not exceed daily limit
+    const allowedXp = Math.min(args.amount, MAX_DAILY_XP - xpToday);
+
     const currentXp = existing?.xp ?? 0;
-    const newXp = currentXp + args.amount;
+    const newXp = currentXp + allowedXp;
     const newLevel = calculateLevel(newXp);
 
     if (existing) {
       await ctx.db.patch(existing._id, {
         xp: newXp,
         level: newLevel,
+        xpEarnedToday: xpToday + allowedXp,
+        xpResetDate: today,
       });
       return existing._id;
     } else {
@@ -132,6 +174,8 @@ export const addXp = mutation({
         ...DEFAULT_STATS,
         xp: newXp,
         level: newLevel,
+        xpEarnedToday: allowedXp,
+        xpResetDate: today,
       });
     }
   },
@@ -156,11 +200,48 @@ export const incrementTask = mutation({
     const currentXp = existing?.xp ?? 0;
 
     const newTasks = currentTasks + 1;
-    const newStreak = currentStreak + 1;
+
+    // Only increment streak once per day (not per task)
+    const today = new Date().toISOString().split("T")[0];
+    const lastActivity = existing?.lastActivityDate;
+    let newStreak = currentStreak;
+    if (lastActivity !== today) {
+      // New day: check if consecutive or first activity
+      if (!lastActivity) {
+        newStreak = 1; // First ever activity
+      } else {
+        const lastDate = new Date(lastActivity);
+        const todayDate = new Date(today);
+        const diffDays = Math.floor((todayDate.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24));
+        newStreak = diffDays === 1 ? currentStreak + 1 : 1;
+      }
+    }
     const newLongestStreak = Math.max(longestStreak, newStreak);
-    const xpGain = 10;
+
+    // ── Daily XP cap check ──
+    const MAX_DAILY_XP = 5000;
+    const xpToday =
+      existing && existing.xpResetDate === today
+        ? (existing.xpEarnedToday ?? 0)
+        : 0;
+
+    // ── Comeback XP multiplier ──
+    // Apply comeback bonus if the user recently returned after a break
+    const comebackMultiplier = existing?.comebackBonusMultiplier ?? 1;
+    const baseXpGain = 10;
+    const rawXpGain = comebackMultiplier > 1
+      ? Math.round(baseXpGain * comebackMultiplier)
+      : baseXpGain;
+    // Cap XP gain to not exceed daily limit
+    const xpGain = xpToday >= MAX_DAILY_XP ? 0 : Math.min(rawXpGain, MAX_DAILY_XP - xpToday);
     const newXp = currentXp + xpGain;
     const newLevel = calculateLevel(newXp);
+
+    // Reset comeback multiplier after use (only lasts for the day it was earned)
+    const shouldResetMultiplier =
+      comebackMultiplier > 1 &&
+      existing?.lastComebackDate &&
+      existing.lastComebackDate !== today;
 
     if (existing) {
       await ctx.db.patch(existing._id, {
@@ -169,6 +250,13 @@ export const incrementTask = mutation({
         longestStreak: newLongestStreak,
         xp: newXp,
         level: newLevel,
+        lastActivityDate: today,
+        xpEarnedToday: xpToday + xpGain,
+        xpResetDate: today,
+        ...(args.minutesCleaned
+          ? { totalMinutesCleaned: (existing.totalMinutesCleaned ?? 0) + args.minutesCleaned }
+          : {}),
+        ...(shouldResetMultiplier ? { comebackBonusMultiplier: 1 } : {}),
       });
     } else {
       await ctx.db.insert("stats", {
@@ -179,11 +267,14 @@ export const incrementTask = mutation({
         longestStreak: newLongestStreak,
         xp: newXp,
         level: newLevel,
+        lastActivityDate: today,
+        xpEarnedToday: xpGain,
+        xpResetDate: today,
+        ...(args.minutesCleaned ? { totalMinutesCleaned: args.minutesCleaned } : {}),
       });
     }
 
     // ── Engagement Engine: Record daily activity ──
-    const today = new Date().toISOString().split("T")[0];
     const existingLog = await ctx.db
       .query("activityLog")
       .withIndex("by_userId_date", (q) =>
@@ -234,13 +325,33 @@ export const incrementTask = mutation({
         tasksCompleted: leaderboardEntry.tasksCompleted + 1,
       });
     } else {
-      // Determine league from previous week
+      // Determine league from previous week, applying promotion/relegation
       const previousEntries = leaderboardEntries
         .filter((e) => e.weekStart < weekStart)
         .sort((a, b) => b.weekStart.localeCompare(a.weekStart));
-      const league = previousEntries.length > 0
+      let league = previousEntries.length > 0
         ? previousEntries[0].league
         : ("bronze" as const);
+
+      // Apply promotion/relegation from previous week's results
+      if (previousEntries.length > 0) {
+        const prevEntry = previousEntries[0];
+        if (prevEntry.promoted) {
+          // Promote to next league
+          const LEAGUE_ORDER = ["bronze", "silver", "gold", "diamond", "champion"] as const;
+          const idx = LEAGUE_ORDER.indexOf(prevEntry.league as typeof LEAGUE_ORDER[number]);
+          if (idx >= 0 && idx < LEAGUE_ORDER.length - 1) {
+            league = LEAGUE_ORDER[idx + 1];
+          }
+        } else if (prevEntry.relegated) {
+          // Relegate to previous league
+          const LEAGUE_ORDER = ["bronze", "silver", "gold", "diamond", "champion"] as const;
+          const idx = LEAGUE_ORDER.indexOf(prevEntry.league as typeof LEAGUE_ORDER[number]);
+          if (idx > 0) {
+            league = LEAGUE_ORDER[idx - 1];
+          }
+        }
+      }
 
       const user = await ctx.db.get(userId);
       const userName = user?.name ?? "Cleaner";
@@ -261,6 +372,30 @@ export const incrementTask = mutation({
         league,
       });
     }
+
+    // ── Streak milestone push notification ──
+    // Only send when crossing a milestone boundary (old < milestone, new >= milestone)
+    const STREAK_MILESTONES = [3, 7, 14, 30];
+    for (const milestone of STREAK_MILESTONES) {
+      if (newStreak >= milestone && currentStreak < milestone) {
+        await ctx.scheduler.runAfter(0, internal.notifications._sendPushNotification, {
+          userId,
+          title: `\u{1F525} ${milestone} day streak!`,
+          body: `You're on fire! ${milestone} days of tidying in a row!`,
+          data: { type: "streak", streak: milestone },
+        });
+        break; // Only send for the highest newly-crossed milestone
+      }
+    }
+
+    // ── Badge check: unlock any newly earned badges ──
+    // Schedule immediately (0ms delay) so it runs right after this mutation commits.
+    // Pass the PREVIOUS lastActivityDate so longComeback badge can calculate
+    // days since activity correctly (since we already updated lastActivityDate to today).
+    await ctx.scheduler.runAfter(0, internal.badges._checkAndUnlockInternal, {
+      userId,
+      previousLastActivityDate: lastActivity,
+    });
 
     // ── Engagement Engine: Check for variable reward ──
     let variableReward = null;
@@ -337,14 +472,14 @@ export const decrementTask = mutation({
     if (!existing) return;
 
     const newTasks = Math.max(0, (existing.totalTasksCompleted ?? 0) - 1);
-    const newStreak = Math.max(0, (existing.currentStreak ?? 0) - 1);
+    // Do NOT decrement streak — streaks are daily, not per-task.
+    // Un-completing a task should not break a daily streak.
     const xpLoss = 10;
     const newXp = Math.max(0, (existing.xp ?? 0) - xpLoss);
     const newLevel = calculateLevel(newXp);
 
     await ctx.db.patch(existing._id, {
       totalTasksCompleted: newTasks,
-      currentStreak: newStreak,
       xp: newXp,
       level: newLevel,
     });
@@ -364,7 +499,17 @@ export const incrementRoom = mutation({
 
     const currentRooms = existing?.totalRoomsCleaned ?? 0;
     const currentXp = existing?.xp ?? 0;
-    const xpGain = 50;
+    const baseXpGain = 50;
+
+    // Daily XP cap check
+    const MAX_DAILY_XP = 5000;
+    const today = new Date().toISOString().split("T")[0];
+    const xpToday =
+      existing && existing.xpResetDate === today
+        ? (existing.xpEarnedToday ?? 0)
+        : 0;
+    const xpGain = xpToday >= MAX_DAILY_XP ? 0 : Math.min(baseXpGain, MAX_DAILY_XP - xpToday);
+
     const newXp = currentXp + xpGain;
     const newLevel = calculateLevel(newXp);
 
@@ -373,6 +518,8 @@ export const incrementRoom = mutation({
         totalRoomsCleaned: currentRooms + 1,
         xp: newXp,
         level: newLevel,
+        xpEarnedToday: xpToday + xpGain,
+        xpResetDate: today,
       });
       return existing._id;
     } else {
@@ -382,6 +529,8 @@ export const incrementRoom = mutation({
         totalRoomsCleaned: 1,
         xp: newXp,
         level: newLevel,
+        xpEarnedToday: xpGain,
+        xpResetDate: today,
       });
     }
   },
@@ -724,17 +873,15 @@ export const getStreakInfo = query({
 });
 
 /**
- * Grant streak freezes — called weekly or on specific achievements
+ * Grant streak freezes — called weekly or on specific achievements.
+ * INTERNAL: Not callable from clients to prevent free freeze farming.
  */
-export const grantStreakFreezes = mutation({
-  args: { count: v.number() },
+export const grantStreakFreezes = internalMutation({
+  args: { userId: v.id("users"), count: v.number() },
   handler: async (ctx, args) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
-
     const existing = await ctx.db
       .query("stats")
-      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .withIndex("by_userId", (q) => q.eq("userId", args.userId))
       .first();
 
     const maxFreezes = 5; // Cap at 5 freezes
@@ -747,7 +894,7 @@ export const grantStreakFreezes = mutation({
       });
     } else {
       await ctx.db.insert("stats", {
-        userId,
+        userId: args.userId,
         ...DEFAULT_STATS,
         streakFreezesAvailable: newTotal,
       });

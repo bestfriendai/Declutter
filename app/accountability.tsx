@@ -7,31 +7,83 @@
 
 import { AmbientBackdrop } from '@/components/ui/AmbientBackdrop';
 import { ExpressiveStateView } from '@/components/ui/ExpressiveStateView';
-import { useColorScheme } from '@/hooks/useColorScheme';
-import { useReducedMotion } from '@/hooks/useReducedMotion';
-import { Users } from 'lucide-react-native';
 import { useAuth } from '@/context/AuthContext';
 import { useDeclutter } from '@/context/DeclutterContext';
+import { useColorScheme } from '@/hooks/useColorScheme';
+import { useReducedMotion } from '@/hooks/useReducedMotion';
 import { Connection, getConnections } from '@/services/social';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
+import { BODY_FONT, DISPLAY_FONT } from '@/constants/designTokens';
+import { Users } from 'lucide-react-native';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  Alert,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
+    Alert,
+    Pressable,
+    ScrollView,
+    StyleSheet,
+    Text,
+    View,
 } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ScreenErrorBoundary } from '@/components/ErrorBoundary';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Partner Card
 // ─────────────────────────────────────────────────────────────────────────────
-function PartnerCard({ isDark, partner }: { isDark: boolean; partner: Connection | null }) {
+function PartnerCard({
+  isDark,
+  partner,
+  loadError = false,
+  onRetry,
+}: {
+  isDark: boolean;
+  partner: Connection | null;
+  loadError?: boolean;
+  onRetry?: () => void;
+}) {
+  if (loadError) {
+    return (
+      <View style={[styles.partnerCard, {
+        backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : '#FFFFFF',
+        borderColor: isDark ? 'rgba(255,255,255,0.09)' : 'rgba(0,0,0,0.06)',
+      }]}>
+        <View style={styles.partnerTop}>
+          <View style={styles.partnerInfo}>
+            <Text style={[styles.partnerName, {
+              color: isDark ? 'rgba(255,255,255,0.38)' : 'rgba(0,0,0,0.4)',
+            }]}>
+              Couldn't load partner
+            </Text>
+            <Text style={[styles.partnerStatus, {
+              color: isDark ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.3)',
+            }]}>
+              Check your connection and try again.
+            </Text>
+          </View>
+        </View>
+        {onRetry && (
+          <Pressable
+            onPress={() => { void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); onRetry(); }}
+            accessibilityRole="button"
+            accessibilityLabel="Retry loading partner"
+            style={[styles.retryBtn, {
+              backgroundColor: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.06)',
+            }]}
+          >
+            <Text style={[styles.retryBtnText, {
+              color: isDark ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.6)',
+            }]}>
+              Try again
+            </Text>
+          </Pressable>
+        )}
+      </View>
+    );
+  }
+
   if (!partner) {
     return (
       <View style={[styles.partnerCard, {
@@ -124,7 +176,11 @@ function CheckInCard({ isDark, checkItems, onToggle }: {
         <Text style={[styles.checkInDue, {
           color: isDark ? '#E0E0E0' : '#707070',
         }]}>
-          Due in 2 days
+          {(() => {
+            const now = new Date();
+            const daysUntilSunday = (7 - now.getDay()) % 7 || 7;
+            return daysUntilSunday === 1 ? 'Due tomorrow' : `Due in ${daysUntilSunday} days`;
+          })()}
         </Text>
       </View>
 
@@ -134,7 +190,7 @@ function CheckInCard({ isDark, checkItems, onToggle }: {
           key={idx}
           style={styles.checkRow}
           onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
             onToggle(idx);
           }}
           accessibilityRole="checkbox"
@@ -240,6 +296,14 @@ function CheckInHistory({ isDark, currentStreak }: { isDark: boolean; currentStr
 // Main Screen
 // ─────────────────────────────────────────────────────────────────────────────
 export default function AccountabilityScreen() {
+  return (
+    <ScreenErrorBoundary screenName="accountability">
+      <AccountabilityScreenContent />
+    </ScreenErrorBoundary>
+  );
+}
+
+function AccountabilityScreenContent() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const rawScheme = useColorScheme();
@@ -251,12 +315,14 @@ export default function AccountabilityScreen() {
 
   // Load connections
   const [partner, setPartner] = useState<Connection | null>(null);
+  const [loadError, setLoadError] = useState(false);
   const loadPartner = useCallback(async () => {
+    setLoadError(false);
     try {
       const conns = await getConnections();
       setPartner(conns.length > 0 ? conns[0] : null);
     } catch {
-      // No connections
+      setLoadError(true);
     }
   }, []);
 
@@ -317,7 +383,7 @@ export default function AccountabilityScreen() {
   const partnerName = partner?.displayName ?? 'your partner';
 
   const handleSendCheckIn = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     if (!partner) {
       Alert.alert(
         'No partner yet',
@@ -341,12 +407,12 @@ export default function AccountabilityScreen() {
   };
 
   const handleOpenSocial = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     router.push('/social');
   };
 
   const handleOpenAuth = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     router.push('/auth/login');
   };
 
@@ -414,7 +480,7 @@ export default function AccountabilityScreen() {
 
         {/* Partner Card */}
         <Animated.View entering={enterAnim(60)} style={styles.section}>
-          <PartnerCard isDark={isDark} partner={partner} />
+          <PartnerCard isDark={isDark} partner={partner} loadError={loadError} onRetry={loadPartner} />
         </Animated.View>
 
         {/* Weekly Check-In */}
@@ -478,14 +544,15 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   headerTitle: {
+    fontFamily: DISPLAY_FONT,
     fontSize: 34,
     fontWeight: '700',
     letterSpacing: -0.4,
   },
   headerIconBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -524,11 +591,24 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   partnerName: {
+    fontFamily: DISPLAY_FONT,
     fontSize: 16,
     fontWeight: '500',
   },
   partnerStatus: {
+    fontFamily: BODY_FONT,
     fontSize: 12,
+    fontWeight: '500',
+  },
+  retryBtn: {
+    marginTop: 12,
+    borderRadius: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    alignSelf: 'flex-start',
+  },
+  retryBtnText: {
+    fontSize: 13,
     fontWeight: '500',
   },
 
@@ -550,6 +630,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   checkInTitle: {
+    fontFamily: BODY_FONT,
     fontSize: 11,
     fontWeight: '600',
     letterSpacing: 1.5,
@@ -570,6 +651,7 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   checkText: {
+    fontFamily: BODY_FONT,
     fontSize: 14,
     fontWeight: '400',
     flex: 1,
@@ -583,6 +665,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   sendBtnText: {
+    fontFamily: BODY_FONT,
     fontSize: 15,
     fontWeight: '600',
   },
@@ -657,12 +740,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 32,
   },
   emptyTitle: {
+    fontFamily: DISPLAY_FONT,
     fontSize: 20,
     fontWeight: '600',
     marginBottom: 8,
     textAlign: 'center',
   },
   emptyText: {
+    fontFamily: BODY_FONT,
     fontSize: 14,
     textAlign: 'center',
     lineHeight: 20,

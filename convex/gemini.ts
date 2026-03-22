@@ -1,7 +1,7 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
-import { action, internalMutation, query } from "./_generated/server";
 import { internal } from "./_generated/api";
+import { action, internalMutation, query } from "./_generated/server";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Rate limiting constants
@@ -9,8 +9,10 @@ import { internal } from "./_generated/api";
 const RATE_LIMIT_WINDOW_MS = 24 * 60 * 60 * 1000; // 24 hours
 const FREE_ANALYSIS_LIMIT = 10;
 const PREMIUM_ANALYSIS_LIMIT = 50;
+const ANONYMOUS_ANALYSIS_LIMIT = 2; // Strict limit for unauthenticated onboarding scans
+const ANONYMOUS_WINDOW_MS = 60 * 60 * 1000; // 1 hour window for anonymous
 
-const GEMINI_MODEL = "gemini-2.5-flash";
+const GEMINI_MODEL = process.env.GEMINI_MODEL ?? "gemini-3-flash-preview";
 const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 const GEMINI_API_URL = `${GEMINI_API_BASE}/${GEMINI_MODEL}:generateContent`;
 
@@ -169,6 +171,48 @@ Each task MUST include:
 - mentalBenefit: How completing this specifically helps mental clarity (REQUIRED)
 - suppliesNeeded: List of supplies needed
 
+## ZERO-TOLERANCE TASK TITLE RULES — READ BEFORE GENERATING A SINGLE TASK
+
+Every task title MUST contain ALL of the following elements or it is INVALID:
+1. AN ACTION VERB describing a physical motion: grab, carry, stack, wipe, fold, toss, drag, put, collect, pick up
+2. A SPECIFIC COUNT: "3 shirts", "the mug", "2 pairs of shoes" — use "a few" only if truly uncertain
+3. A COLOR OR MATERIAL descriptor when visible: "gray hoodie", "ceramic bowl", "plastic bottle", "crumpled paper"
+4. AN EXACT LOCATION using room landmarks: "floor near the closet door", "right side of desk", "nightstand by the lamp", "corner near the door"
+5. A DESTINATION: "laundry basket", "kitchen sink", "trash bag", "shelf above desk", "back of closet"
+6. AN EST TIME in the title itself formatted as "· EST X min" or "· EST X sec"
+
+BEFORE generating any task title, ask yourself:
+"Could a stranger who has never seen this room find the exact item and complete this task using ONLY this title?"
+If NO — rewrite until YES.
+
+REQUIRED TITLE FORMAT:
+"[VERB] [COUNT + COLOR/MATERIAL + ITEM] [from/off/on] [EXACT LOCATION] → [DESTINATION] · EST [TIME]"
+
+TIME ESTIMATE FORMULA (calculate mathematically, not narratively):
+- Clothing item pickup: 10 sec/item
+- Dish/cup carry: 20 sec/item  
+- Paper stacking: 8 sec/item
+- Trash pickup/bagging: 8 sec/item
+- Furniture item (pillow, blanket): 15 sec/item
+- Surface wipe: 45 sec/surface
+- Walk to destination: +20 sec
+- Decision-required items: +45 sec buffer
+Add up seconds, convert: under 60 sec = "EST X sec", 60+ sec = "EST X min"
+
+VALID EXAMPLES (generate titles like these):
+✅ "Grab 3 gray hoodies off floor near the closet door → laundry basket · EST 1 min"
+✅ "Stack the 5 coffee mugs from the nightstand → carry to kitchen sink · EST 2 min"
+✅ "Collect crumpled papers from the right side of the desk → recycling bin · EST 1 min"
+✅ "Pick up 2 pairs of sneakers from the center of the floor → put by the front door · EST 45 sec"
+✅ "Toss the 4 plastic wrappers on the left side of the desk → trash bag · EST 30 sec"
+
+ABSOLUTELY INVALID (never generate these):
+❌ "Pick up the clothes" — no count, no color, no location, no destination, no time
+❌ "Clean the desk" — no specific items, no location, no destination
+❌ "Deal with the pile" — no description, no location, no method
+❌ "Tidy up the floor area" — vague action, vague target, vague location
+❌ "Organize the bookshelf" — no specific items named, no destination
+
 ## OUTPUT FORMAT
 
 Respond with valid JSON:
@@ -282,6 +326,18 @@ Respond with valid JSON:
 
   "quickWins": ["task title 1", "task title 2"],
   "estimatedTotalTime": total minutes,
+  
+  "taskClusters": [
+    {
+      "clusterType": "proximity|carry_chain|same_category",
+      "taskIds": ["task-id-1", "task-id-2"],
+      "clusterLabel": "Do these together — all within arm's reach",
+      "rationale": "All 3 items are within arm's reach near the closet door",
+      "combinedEstimatedMinutes": 3,
+      "savingsMinutes": 2,
+      "emoji": "🔗"
+    }
+  ],
   
   "dustyReaction": "Ooh, I can already picture this space looking amazing! Let's do this together! 🐰✨"
 }`;
@@ -424,6 +480,45 @@ export const _updateRateLimitCounter = internalMutation({
   },
 });
 
+/**
+ * Atomic rate limit check + increment. Reads current counter, checks limit,
+ * increments if under limit, throws if over. This prevents the TOCTOU race
+ * condition where the check and increment were separate non-atomic operations.
+ */
+export const _checkAndIncrementRateLimit = internalMutation({
+  args: {
+    userId: v.id("users"),
+    limit: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const user = await ctx.db.get(args.userId);
+    if (!user) throw new Error("User not found");
+
+    const now = Date.now();
+    const windowStart = user.aiAnalysisWindowStart ?? 0;
+    const count = user.aiAnalysisCount ?? 0;
+    const windowExpired = now - windowStart >= RATE_LIMIT_WINDOW_MS;
+    const currentCount = windowExpired ? 0 : count;
+
+    if (currentCount >= args.limit) {
+      const resetAt = new Date(windowStart + RATE_LIMIT_WINDOW_MS);
+      const hours = resetAt.getUTCHours();
+      const mins = String(resetAt.getUTCMinutes()).padStart(2, '0');
+      throw new Error(
+        `You've reached your daily scan limit (${args.limit} scans). Try again after ${hours}:${mins} UTC.`
+      );
+    }
+
+    // Atomically increment
+    await ctx.db.patch(args.userId, {
+      aiAnalysisCount: currentCount + 1,
+      aiAnalysisWindowStart: windowExpired ? now : windowStart,
+    });
+
+    return { currentCount: currentCount + 1 };
+  },
+});
+
 // Analyze a room image using Gemini
 export const analyzeRoom = action({
   args: {
@@ -438,36 +533,35 @@ export const analyzeRoom = action({
     )),
     roomType: v.optional(v.string()),
     mascotPersonality: v.optional(v.string()),
+    timeAvailable: v.optional(v.number()),   // minutes user has
+    focusArea: v.optional(v.string()),        // specific area user wants tackled first
   },
   handler: async (ctx, args) => {
     // ── Authentication ──────────────────────────────────────────────────────
     const userId = await getAuthUserId(ctx);
-    if (!userId) {
-      throw new Error("Unauthenticated");
+
+    // ── Image size limit (Task 4) ───────────────────────────────────────────
+    // 10MB in base64 chars (~7.5MB actual image). Reject oversized payloads.
+    const MAX_BASE64_LENGTH = 10 * 1024 * 1024;
+    if (args.base64Image.length > MAX_BASE64_LENGTH) {
+      throw new Error(
+        "Image is too large. Please use a smaller image (max ~7.5 MB)."
+      );
     }
 
-    // ── Rate limiting ───────────────────────────────────────────────────────
-    const user = await ctx.runQuery(internal.users._getById, { id: userId });
-    if (user) {
-      const isPremium = user.subscriptionStatus === "active" || user.subscriptionStatus === "trial";
-      const limit = isPremium ? PREMIUM_ANALYSIS_LIMIT : FREE_ANALYSIS_LIMIT;
-      const now = Date.now();
-      const windowStart = user.aiAnalysisWindowStart ?? 0;
-      const count = user.aiAnalysisCount ?? 0;
-      const windowExpired = now - windowStart >= RATE_LIMIT_WINDOW_MS;
-      const currentCount = windowExpired ? 0 : count;
+    // ── Rate limiting (atomic check + increment) ────────────────────────────
+    if (userId) {
+      const user = await ctx.runQuery(internal.users._getById, { id: userId });
+      if (user) {
+        const isPremium = user.subscriptionStatus === "active" || user.subscriptionStatus === "trial";
+        const limit = isPremium ? PREMIUM_ANALYSIS_LIMIT : FREE_ANALYSIS_LIMIT;
 
-      if (currentCount >= limit) {
-        const resetAt = windowStart + RATE_LIMIT_WINDOW_MS;
-        throw new Error(`RATE_LIMITED:${resetAt}:${limit}`);
+        // Atomic: read counter, check limit, increment — all in one mutation
+        await ctx.runMutation(internal.gemini._checkAndIncrementRateLimit, {
+          userId,
+          limit,
+        });
       }
-
-      // Update counter
-      await ctx.runMutation(internal.gemini._updateRateLimitCounter, {
-        userId,
-        newCount: currentCount + 1,
-        windowStart: windowExpired ? now : windowStart,
-      });
     }
 
     // ── API key ─────────────────────────────────────────────────────────────
@@ -480,7 +574,7 @@ export const analyzeRoom = action({
     const energyConfig = ENERGY_TASK_LIMITS[energyLevel];
     
     const sanitizedContext = args.additionalContext
-      ? args.additionalContext.slice(0, 500).replace(/[<>{}]/g, "")
+      ? args.additionalContext.slice(0, 2000).replace(/[<>{}]/g, "")
       : undefined;
 
     const energyInstructions = `
@@ -501,19 +595,31 @@ The user's current energy is "${energyLevel}". Based on this:
       ? `\nDusty's personality is "${args.mascotPersonality}" - adjust dustyReaction tone accordingly.`
       : "";
 
+    const timeHint = args.timeAvailable
+      ? `\nUser has ${args.timeAvailable} minutes available — ONLY generate tasks that can fit within this time. Total estimatedMinutes across all tasks MUST be <= ${args.timeAvailable}.`
+      : "";
+
+    const focusAreaHint = args.focusArea
+      ? `\nUser wants to focus on this area first: "${args.focusArea}" — put tasks for this area in Phase 1 regardless of visual impact score.`
+      : "";
+
     const userPrompt = `Analyze this room and create a phased decluttering plan.
 ${energyInstructions}
 ${sanitizedContext ? `Additional context: ${sanitizedContext}` : ""}
 ${roomTypeHint}
 ${mascotHint}
+${timeHint}
+${focusAreaHint}
 
 Remember:
 1. Group ALL tasks into phases (1, 2, or 3)
-2. Phase 1 tasks must have visualImpact: "high" 
+2. Phase 1 tasks must have visualImpact: "high"
 3. Include doomPiles array if any doom piles are visible
 4. Include supplyChecklist with ALL needed supplies
 5. Include mentalBenefit for each task
-6. Generate a dustyReaction for the analysis`;
+6. Generate a dustyReaction for the analysis
+7. Include taskClusters grouping nearby/related tasks
+8. EVERY task title MUST follow the zero-tolerance format with count + descriptor + location + destination + EST time`;
 
     // Remove data URL prefix if present
     const base64Data = args.base64Image.includes("base64,")
@@ -536,9 +642,10 @@ Remember:
         },
       ],
       generationConfig: {
-        temperature: 0.7,
+        temperature: 0.4,
         topP: 0.95,
-        maxOutputTokens: 16384,
+        maxOutputTokens: 8192,
+        response_mime_type: "application/json",
       },
     };
 
@@ -582,8 +689,19 @@ export const analyzeProgress = action({
       throw new Error("Unauthenticated");
     }
 
+    // ── Rate limiting (shares same counter as analyzeRoom) ──────────────
+    const user = await ctx.runQuery(internal.users._getById, { id: userId });
+    if (user) {
+      const isPremium = user.subscriptionStatus === "active" || user.subscriptionStatus === "trial";
+      const limit = isPremium ? PREMIUM_ANALYSIS_LIMIT : FREE_ANALYSIS_LIMIT;
+      await ctx.runMutation(internal.gemini._checkAndIncrementRateLimit, {
+        userId,
+        limit,
+      });
+    }
+
     const apiKey = process.env.GEMINI_API_KEY;
-    
+
     const defaultResponse = {
       progressPercentage: 50,
       percentImproved: 50,
@@ -637,8 +755,9 @@ export const analyzeProgress = action({
         },
       ],
       generationConfig: {
-        temperature: 0.7,
+        temperature: 0.5,
         maxOutputTokens: 4096,
+        response_mime_type: "application/json",
       },
     };
 
@@ -704,6 +823,17 @@ export const getMotivation = action({
       throw new Error("Unauthenticated");
     }
 
+    // ── Rate limiting (shares same counter as analyzeRoom) ──────────────
+    const user = await ctx.runQuery(internal.users._getById, { id: userId });
+    if (user) {
+      const isPremium = user.subscriptionStatus === "active" || user.subscriptionStatus === "trial";
+      const limit = isPremium ? PREMIUM_ANALYSIS_LIMIT : FREE_ANALYSIS_LIMIT;
+      await ctx.runMutation(internal.gemini._checkAndIncrementRateLimit, {
+        userId,
+        limit,
+      });
+    }
+
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
       const personality = args.mascotPersonality ?? "dusty";
@@ -746,7 +876,7 @@ ${args.currentStreak && args.currentStreak >= 7
               ],
             },
           ],
-          generationConfig: { temperature: 0.9, maxOutputTokens: 300 },
+          generationConfig: { temperature: 0.9, maxOutputTokens: 2048 },
         }),
       });
 
@@ -822,6 +952,29 @@ function repairJson(jsonStr: string): string {
   return repaired;
 }
 
+const VALID_VISUAL_IMPACTS = ['high', 'medium', 'low'] as const;
+const VALID_ENERGY_LEVELS = ['minimal', 'low', 'moderate', 'high'] as const;
+const VALID_DECISION_LOADS = ['none', 'low', 'medium', 'high'] as const;
+const VALID_PRIORITIES = ['high', 'medium', 'low'] as const;
+const VALID_DIFFICULTIES = ['quick', 'medium', 'challenging'] as const;
+
+function validateTask(task: any): any {
+  return {
+    ...task,
+    phase: typeof task.phase === 'number' ? Math.max(1, Math.min(task.phase, 3)) : 1,
+    estimatedMinutes: typeof task.estimatedMinutes === 'number' ? Math.max(1, Math.min(task.estimatedMinutes, 480)) : 5,
+    priority: (VALID_PRIORITIES as readonly string[]).includes(task.priority) ? task.priority : 'medium',
+    difficulty: (VALID_DIFFICULTIES as readonly string[]).includes(task.difficulty) ? task.difficulty : 'medium',
+    visualImpact: (VALID_VISUAL_IMPACTS as readonly string[]).includes(task.visualImpact) ? task.visualImpact : (task.phase === 1 ? 'high' : task.phase === 2 ? 'medium' : 'low'),
+    energyRequired: (VALID_ENERGY_LEVELS as readonly string[]).includes(task.energyRequired) ? task.energyRequired : 'moderate',
+    decisionLoad: (VALID_DECISION_LOADS as readonly string[]).includes(task.decisionLoad) ? task.decisionLoad : 'medium',
+    subtasks: (task.subtasks ?? []).map((st: any) => ({
+      ...st,
+      estimatedSeconds: typeof st.estimatedSeconds === 'number' ? Math.max(5, Math.min(st.estimatedSeconds, 3600)) : 60,
+    })),
+  };
+}
+
 function parseAnalysisResponse(responseText: string) {
   try {
     const jsonStr = extractJson(responseText);
@@ -832,11 +985,12 @@ function parseAnalysisResponse(responseText: string) {
       parsed = JSON.parse(repairJson(jsonStr));
     }
 
-    // Process tasks with phase information
-    const tasks = (parsed.tasks ?? []).map((task: any, i: number) => ({
-      id: task.id ?? `task-${i + 1}`,
-      title: task.title ?? "Task",
-      description: task.description ?? "",
+    // Process tasks with phase information and validate AI output
+    const tasks = (parsed.tasks ?? []).map((task: any, i: number) => {
+      const raw = {
+        id: task.id ?? `task-${i + 1}`,
+        title: task.title ?? "Task",
+        description: task.description ?? "",
         emoji: task.emoji ?? "📋",
         priority: task.priority ?? "medium",
         difficulty: task.difficulty ?? "medium",
@@ -855,8 +1009,10 @@ function parseAnalysisResponse(responseText: string) {
         mentalBenefit: task.mentalBenefit ?? "Clearing this will reduce visual clutter and help your mind feel calmer.",
         suppliesNeeded: task.suppliesNeeded ?? [],
         tips: task.tips ?? [],
-        subtasks: (task.subtasks ?? []).map((st: any) => ({
+        subtasks: (task.subtasks ?? []).map((st: any, subtaskIndex: number) => ({
+          id: st.id ?? `subtask-${i}-${subtaskIndex}`,
           title: st.title,
+          completed: false,
           estimatedSeconds: st.estimatedSeconds,
           estimatedMinutes: st.estimatedMinutes ?? (st.estimatedSeconds ? Math.round((st.estimatedSeconds / 60) * 10) / 10 : undefined),
           isCheckpoint: st.isCheckpoint,
@@ -865,7 +1021,10 @@ function parseAnalysisResponse(responseText: string) {
         enables: task.enables,
         parallelWith: task.parallelWith,
         order: i,
-      }));
+      };
+      // Validate and clamp AI-generated fields to safe ranges
+      return validateTask(raw);
+    });
 
     // Generate phases from tasks if not provided
     const phases = parsed.phases ?? generatePhasesFromTasks(tasks);
@@ -898,9 +1057,12 @@ function parseAnalysisResponse(responseText: string) {
       energyProfiles: parsed.energyProfiles ?? null,
       quickWins: parsed.quickWins ?? tasks.filter((t: any) => t.phase === 1).map((t: any) => t.title),
       decisionPoints: parsed.decisionPoints ?? [],
-      estimatedTotalTime:
+      estimatedTotalTime: Math.max(1, Math.min(
         parsed.estimatedTotalTime ??
         tasks.reduce((s: number, t: any) => s + (t.estimatedMinutes ?? 5), 0),
+        1440 // Cap at 24 hours
+      )),
+      taskClusters: parsed.taskClusters ?? [],
       dustyReaction: parsed.dustyReaction ?? "Let's make this space shine! 🐰✨",
     };
   } catch {

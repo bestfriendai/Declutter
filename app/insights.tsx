@@ -3,30 +3,33 @@
  * Detailed cleaning statistics, trends, and progress visualization
  */
 
-import { GlassCard } from '@/components/ui/GlassCard';
-import { InsightsScreenSkeleton } from '@/components/ui/Skeleton';
+import { useSubscription } from '@/hooks/useSubscription';
+import { useGetMotivation } from '@/hooks/useConvex';
 import { AmbientBackdrop } from '@/components/ui/AmbientBackdrop';
 import { ExpressiveStateView } from '@/components/ui/ExpressiveStateView';
+import { InsightsScreenSkeleton } from '@/components/ui/Skeleton';
+import { BODY_FONT, DISPLAY_FONT, RADIUS, V1, cardStyle, getTheme } from '@/constants/designTokens';
 import { useDeclutter } from '@/context/DeclutterContext';
-import { useTheme } from '@/theme/ThemeProvider';
-import { Typography } from '@/theme/typography';
-import { Spacing, BorderRadius } from '@/theme/spacing';
-import { RARITY_COLORS } from '@/types/declutter';
-import { ChevronLeft, CheckCheck, Flame, Clock, Star, TrendingUp, TrendingDown, Lightbulb, Home } from 'lucide-react-native';
-import type { LucideIcon } from 'lucide-react-native';
+import { useColorScheme } from '@/hooks/useColorScheme';
+import { useReducedMotion } from '@/hooks/useReducedMotion';
+import { RARITY_COLORS, COLLECTIBLES } from '@/types/declutter';
 import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
+import { useRouter, router } from 'expo-router';
+import type { LucideIcon } from 'lucide-react-native';
+import { CheckCheck, ChevronLeft, Clock, Flame, Home, Lightbulb, Star, TrendingDown, TrendingUp } from 'lucide-react-native';
+import Svg, { Circle as SvgCircle } from 'react-native-svg';
+import { ScreenErrorBoundary } from '@/components/ErrorBoundary';
 import React, { useCallback, useMemo, useState } from 'react';
 import {
-    Dimensions,
+    Pressable,
     RefreshControl,
     ScrollView,
     StyleSheet,
     Text,
-    TouchableOpacity,
     View,
+    useWindowDimensions,
 } from 'react-native';
 import Animated, {
     FadeInDown,
@@ -34,7 +37,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+// SCREEN_WIDTH now obtained via useWindowDimensions() inside components
 
 // Time period for filtering
 type TimePeriod = 'week' | 'month' | 'year' | 'all';
@@ -46,19 +49,22 @@ function ChartBar({
   label,
   color,
   delay,
+  isDark,
 }: {
   value: number;
   maxValue: number;
   label: string;
   color: string;
   delay: number;
+  isDark: boolean;
 }) {
-  const { colors } = useTheme();
+  const colors = getTheme(isDark);
+  const reducedMotion = useReducedMotion();
   const height = maxValue > 0 ? (value / maxValue) * 100 : 0;
 
   return (
     <Animated.View
-      entering={FadeInDown.delay(delay).duration(350)}
+      entering={reducedMotion ? undefined : FadeInDown.delay(delay).duration(350)}
       style={styles.chartBarContainer}
     >
       <View style={styles.chartBarWrapper}>
@@ -90,6 +96,7 @@ function StatTile({
   change,
   color,
   delay,
+  isDark,
 }: {
   icon: LucideIcon;
   label: string;
@@ -97,12 +104,14 @@ function StatTile({
   change?: { value: number; positive: boolean };
   color: string;
   delay: number;
+  isDark: boolean;
 }) {
-  const { colors, isDark } = useTheme();
+  const colors = getTheme(isDark);
+  const reducedMotion = useReducedMotion();
 
   return (
     <Animated.View
-      entering={FadeInRight.delay(delay).duration(350)}
+      entering={reducedMotion ? undefined : FadeInRight.delay(delay).duration(350)}
       style={styles.statTile}
     >
       <BlurView
@@ -117,11 +126,11 @@ function StatTile({
         <Text style={[styles.statLabel, { color: colors.textSecondary }]}>{label}</Text>
         {change && (
           <View style={styles.changeContainer}>
-            {change.positive ? <TrendingUp size={12} color={colors.success} /> : <TrendingDown size={12} color={colors.error} />}
+            {change.positive ? <TrendingUp size={12} color={V1.green} /> : <TrendingDown size={12} color={V1.coral} />}
             <Text
               style={[
                 styles.changeText,
-                { color: change.positive ? colors.success : colors.error },
+                { color: change.positive ? V1.green : V1.coral },
               ]}
             >
               {change.positive ? '+' : ''}{change.value}%
@@ -133,52 +142,52 @@ function StatTile({
   );
 }
 
-// Progress ring component
+// Progress ring component — uses SVG for accurate rendering at any progress %
 function ProgressRing({
   progress,
   size,
   strokeWidth,
   color,
   label,
+  isDark,
 }: {
   progress: number;
   size: number;
   strokeWidth: number;
   color: string;
   label: string;
+  isDark: boolean;
 }) {
-  const { colors } = useTheme();
+  const colors = getTheme(isDark);
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const clampedProgress = Math.max(0, Math.min(100, progress));
+  const strokeDashoffset = circumference * (1 - clampedProgress / 100);
 
   return (
     <View style={styles.progressRingContainer}>
       <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
-        <View
-          style={[
-            styles.progressRingBg,
-            {
-              width: size,
-              height: size,
-              borderRadius: size / 2,
-              borderWidth: strokeWidth,
-              borderColor: colors.border,
-            },
-          ]}
-        />
-        <View
-          style={[
-            styles.progressRingFg,
-            {
-              width: size,
-              height: size,
-              borderRadius: size / 2,
-              borderWidth: strokeWidth,
-              borderColor: color,
-              borderTopColor: 'transparent',
-              borderRightColor: progress > 50 ? color : 'transparent',
-              transform: [{ rotate: `${(progress / 100) * 360 - 90}deg` }],
-            },
-          ]}
-        />
+        <Svg width={size} height={size} style={{ transform: [{ rotate: '-90deg' }], position: 'absolute' }}>
+          <SvgCircle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            stroke={colors.border}
+            strokeWidth={strokeWidth}
+            fill="none"
+          />
+          <SvgCircle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            stroke={color}
+            strokeWidth={strokeWidth}
+            fill="none"
+            strokeDasharray={circumference}
+            strokeDashoffset={strokeDashoffset}
+            strokeLinecap="round"
+          />
+        </Svg>
         <Text style={[styles.progressRingValue, { color: colors.text }]}>
           {Math.round(progress)}%
         </Text>
@@ -190,11 +199,153 @@ function ProgressRing({
   );
 }
 
+// ─── AI Insights Card (Premium-gated) ───────────────────────────────────────
+function AIInsightsCard({ isDark, stats, insights, rooms }: {
+  isDark: boolean;
+  stats: any;
+  insights: any;
+  rooms: any[];
+}) {
+  const colors = getTheme(isDark);
+  const { isPro } = useSubscription();
+  const getMotivation = useGetMotivation();
+  const [aiInsight, setAiInsight] = useState<string | null>(null);
+  const [isLoadingAI, setIsLoadingAI] = useState(false);
+  const [hasAttempted, setHasAttempted] = useState(false);
+
+  const handleGetInsight = useCallback(async () => {
+    if (!isPro || isLoadingAI) return;
+    setIsLoadingAI(true);
+    try {
+      const context = `User has completed ${stats?.totalTasksCompleted ?? 0} tasks across ${rooms.length} rooms. Level ${stats?.level ?? 1}. ${stats?.totalMinutesCleaned ?? 0} minutes cleaned total. Current streak: ${stats?.currentStreak ?? 0} days. Provide an encouraging insight about their progress patterns.`;
+      const result = await getMotivation({
+        context,
+        currentStreak: stats?.currentStreak ?? 0,
+      });
+      if (result && typeof result === 'object' && 'message' in result) {
+        setAiInsight((result as { message: string }).message);
+      } else if (result && typeof result === 'string') {
+        setAiInsight(result);
+      }
+    } catch {
+      setAiInsight('Keep going! Your cleaning habits are building real momentum.');
+    } finally {
+      setIsLoadingAI(false);
+      setHasAttempted(true);
+    }
+  }, [isPro, getMotivation, stats, rooms, isLoadingAI]);
+
+  // Local insight generation (non-AI fallback)
+  const localInsight = useMemo(() => {
+    const streak = stats?.currentStreak ?? 0;
+    const tasks = stats?.totalTasksCompleted ?? 0;
+    const minutes = stats?.totalMinutesCleaned ?? 0;
+
+    if (streak >= 7) return `Your ${streak}-day streak shows real consistency. That is the hardest part of building a habit.`;
+    if (tasks > 50) return `${tasks} tasks completed! You have cleaned the equivalent of a small apartment several times over.`;
+    if (minutes > 120) return `${Math.round(minutes / 60)} hours of cleaning logged. That is real, measurable progress.`;
+    if (rooms.length >= 3) return `Maintaining ${rooms.length} rooms shows impressive organization. Focus on one at a time.`;
+    return 'Your cleaning journey is just getting started. Every session builds the habit.';
+  }, [stats, rooms]);
+
+  return (
+    <View style={[cardStyle(isDark), { padding: 20, position: 'relative', overflow: 'hidden' }]}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+        <Star size={18} color={V1.gold} />
+        <Text style={[styles.sectionTitle, { marginBottom: 0, color: isDark ? 'rgba(255,255,255,0.21)' : 'rgba(0,0,0,0.25)' }]}>
+          AI INSIGHTS
+        </Text>
+        {!isPro && (
+          <View style={{ backgroundColor: V1.gold + '20', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6, marginLeft: 'auto' }}>
+            <Text style={{ fontSize: 10, fontWeight: '700', color: V1.gold, fontFamily: BODY_FONT }}>PRO</Text>
+          </View>
+        )}
+      </View>
+
+      {isPro ? (
+        <>
+          <Text style={[styles.tipText, { color: colors.text, fontSize: 15, lineHeight: 22, marginBottom: 8 }]}>
+            {aiInsight ?? localInsight}
+          </Text>
+          {!hasAttempted && (
+            <Pressable
+              onPress={handleGetInsight}
+              style={{
+                backgroundColor: V1.indigo + '15',
+                paddingVertical: 10,
+                paddingHorizontal: 16,
+                borderRadius: RADIUS.sm,
+                alignItems: 'center',
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Get AI-powered insight"
+            >
+              <Text style={{ fontFamily: BODY_FONT, fontSize: 14, fontWeight: '600', color: V1.indigo }}>
+                {isLoadingAI ? 'Analyzing...' : 'Get AI Insight'}
+              </Text>
+            </Pressable>
+          )}
+        </>
+      ) : (
+        <>
+          {/* Blurred preview for free users */}
+          <Text style={[styles.tipText, {
+            color: colors.textMuted,
+            fontSize: 15,
+            lineHeight: 22,
+            marginBottom: 12,
+          }]} numberOfLines={2}>
+            {localInsight}
+          </Text>
+          <View style={{
+            position: 'absolute', top: 50, left: 0, right: 0, bottom: 0,
+            backgroundColor: isDark ? 'rgba(12,12,12,0.85)' : 'rgba(250,250,250,0.85)',
+            alignItems: 'center', justifyContent: 'center',
+            borderBottomLeftRadius: RADIUS.lg, borderBottomRightRadius: RADIUS.lg,
+          }}>
+            <Pressable
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                router.push('/paywall');
+              }}
+              style={{
+                backgroundColor: V1.gold,
+                paddingVertical: 10,
+                paddingHorizontal: 20,
+                borderRadius: RADIUS.pill,
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Upgrade for AI insights"
+            >
+              <Text style={{ fontFamily: BODY_FONT, fontSize: 14, fontWeight: '700', color: '#FFFFFF' }}>
+                Upgrade for AI Insights
+              </Text>
+            </Pressable>
+          </View>
+        </>
+      )}
+    </View>
+  );
+}
+
 export default function InsightsScreen() {
+  return (
+    <ScreenErrorBoundary screenName="insights">
+      <InsightsScreenContent />
+    </ScreenErrorBoundary>
+  );
+}
+
+function InsightsScreenContent() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { colors, isDark } = useTheme();
-  const { stats, rooms, collectionStats } = useDeclutter();
+  const rawScheme = useColorScheme();
+  const isDark = rawScheme === 'dark';
+  const reducedMotion = useReducedMotion();
+  const colors = getTheme(isDark);
+  const { stats, rooms: rawRooms, collectionStats } = useDeclutter();
+  const rooms = rawRooms ?? [];
+  const { width: SCREEN_WIDTH } = useWindowDimensions();
 
   const [timePeriod, setTimePeriod] = useState<TimePeriod>('week');
   const [isLoading] = useState(false);
@@ -207,19 +358,59 @@ export default function InsightsScreen() {
     // For now, we just simulate a network request duration
     await new Promise(resolve => setTimeout(resolve, 1000));
     setIsRefreshing(false);
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   }, []);
 
   // Check if user has any data
-  const hasData = stats.totalTasksCompleted > 0 || rooms.length > 0;
+  const hasData = (stats?.totalTasksCompleted ?? 0) > 0 || rooms.length > 0;
 
-  // Calculate insights
+  // Helper: get date range for time period filter
+  const getDateRange = useCallback((period: TimePeriod): { start: Date; end: Date } => {
+    const now = new Date();
+    const end = now;
+    let start: Date;
+    switch (period) {
+      case 'week': {
+        start = new Date(now);
+        start.setDate(start.getDate() - 7);
+        break;
+      }
+      case 'month': {
+        start = new Date(now);
+        start.setMonth(start.getMonth() - 1);
+        break;
+      }
+      case 'year': {
+        start = new Date(now);
+        start.setFullYear(start.getFullYear() - 1);
+        break;
+      }
+      default:
+        start = new Date(0); // all time
+    }
+    return { start, end };
+  }, []);
+
+  // Calculate insights — now filtered by time period
   const insights = useMemo(() => {
-    const totalTasks = rooms.reduce((sum, r) => sum + r.tasks.length, 0);
-    const completedTasks = rooms.reduce(
-      (sum, r) => sum + r.tasks.filter(t => t.completed).length,
-      0
-    );
+    const { start } = getDateRange(timePeriod);
+
+    // Gather all completed tasks with their completedAt dates
+    const allCompletedTasks: { completedAt: Date; task: any; roomName: string }[] = [];
+    rooms.forEach(r => {
+      (r.tasks ?? []).forEach(task => {
+        if (task.completed && task.completedAt) {
+          const completedDate = new Date(task.completedAt);
+          allCompletedTasks.push({ completedAt: completedDate, task, roomName: r.name });
+        }
+      });
+    });
+
+    // Filter by time period
+    const filteredCompleted = allCompletedTasks.filter(t => t.completedAt >= start);
+
+    const totalTasks = rooms.reduce((sum, r) => sum + (r.tasks?.length ?? 0), 0);
+    const completedTasks = filteredCompleted.length;
     const taskCompletionRate = totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0;
 
     // Room completion rates
@@ -227,16 +418,19 @@ export default function InsightsScreen() {
       name: r.name,
       emoji: r.emoji,
       progress: r.currentProgress,
-      tasks: r.tasks.length,
-      completed: r.tasks.filter(t => t.completed).length,
+      tasks: (r.tasks?.length ?? 0),
+      completed: (r.tasks ?? []).filter(t => {
+        if (!t.completed || !t.completedAt) return false;
+        return new Date(t.completedAt) >= start;
+      }).length,
     }));
 
     // Most active room
-    const mostActiveRoom = roomCompletionRates.sort(
+    const mostActiveRoom = [...roomCompletionRates].sort(
       (a, b) => b.completed - a.completed
     )[0];
 
-    // Weekly activity (derived from room history if available, otherwise 0)
+    // Weekly activity — use actual task completedAt dates
     const weeklyData = [
       { day: 'Mon', tasks: 0 },
       { day: 'Tue', tasks: 0 },
@@ -247,27 +441,33 @@ export default function InsightsScreen() {
       { day: 'Sun', tasks: 0 },
     ];
 
-    // In a real app, we would aggregate actual task completion dates here
-    // For now, we'll show 0s if no data, or a flat distribution of total tasks if we have them
-    if (stats.totalTasksCompleted > 0) {
-      const baseTasks = Math.floor(stats.totalTasksCompleted / 7);
-      const remainder = stats.totalTasksCompleted % 7;
-      
-      weeklyData.forEach((day, index) => {
-        day.tasks = baseTasks + (index < remainder ? 1 : 0);
-      });
-    }
+    // Map JS getDay() (0=Sun..6=Sat) to our array (0=Mon..6=Sun)
+    const dayMap: Record<number, number> = { 1: 0, 2: 1, 3: 2, 4: 3, 5: 4, 6: 5, 0: 6 };
 
-    const maxWeeklyTasks = Math.max(...weeklyData.map(d => d.tasks), 5); // Minimum scale of 5
+    // For week view, use last 7 days; for others, aggregate by day of week
+    filteredCompleted.forEach(({ completedAt }) => {
+      const dayIdx = dayMap[completedAt.getDay()] ?? 0;
+      weeklyData[dayIdx].tasks++;
+    });
 
-    // Average time per session
-    const avgTimePerSession = stats.totalTasksCompleted > 0
-      ? Math.round(stats.totalMinutesCleaned / stats.totalTasksCompleted * 10)
+    const maxWeeklyTasks = Math.max(...weeklyData.map(d => d.tasks), 5);
+
+    // Average time per task
+    const avgTimePerSession = completedTasks > 0
+      ? Math.round((stats?.totalMinutesCleaned ?? 0) / (stats?.totalTasksCompleted ?? 1) * 10)
       : 0;
 
-    // Collection progress
-    const totalCollectibles = 20; // Total unique collectibles in game
-    const collectionProgress = (collectionStats.uniqueCollected / totalCollectibles) * 100;
+    // Collection progress - use actual COLLECTIBLES array length
+    const totalCollectiblesCount = COLLECTIBLES?.filter((c: any) => !c.isSpecial)?.length ?? 20;
+    const collectionProgress = totalCollectiblesCount > 0
+      ? (collectionStats.uniqueCollected / totalCollectiblesCount) * 100
+      : 0;
+
+    // Period-specific stats for the stat tiles
+    const periodTasksDone = completedTasks;
+    const periodMinutes = filteredCompleted.reduce(
+      (sum, t) => sum + (t.task.estimatedMinutes || 3), 0
+    );
 
     return {
       taskCompletionRate,
@@ -277,8 +477,10 @@ export default function InsightsScreen() {
       maxWeeklyTasks,
       avgTimePerSession,
       collectionProgress,
+      periodTasksDone,
+      periodMinutes,
     };
-  }, [rooms, stats, collectionStats]);
+  }, [rooms, stats, collectionStats, timePeriod, getDateRange]);
 
   return (
     <LinearGradient
@@ -289,15 +491,15 @@ export default function InsightsScreen() {
 
       {/* Header */}
       <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
-        <TouchableOpacity
+        <Pressable
           style={styles.backButton}
           onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
             router.back();
           }}
         >
           <ChevronLeft size={24} color={colors.text} />
-        </TouchableOpacity>
+        </Pressable>
         <Text style={[styles.headerTitle, { color: colors.text }]}>
           Insights
         </Text>
@@ -315,8 +517,8 @@ export default function InsightsScreen() {
           <RefreshControl
             refreshing={isRefreshing}
             onRefresh={onRefresh}
-            tintColor={colors.primary}
-            colors={[colors.primary]}
+            tintColor={V1.coral}
+            colors={[V1.coral]}
           />
         }
       >
@@ -326,7 +528,7 @@ export default function InsightsScreen() {
         ) : !hasData ? (
           /* Empty State for New Users */
           <Animated.View
-            entering={FadeInDown.delay(100).duration(350)}
+            entering={reducedMotion ? undefined : FadeInDown.delay(100).duration(350)}
             style={styles.emptyStateContainer}
           >
             <ExpressiveStateView
@@ -337,7 +539,7 @@ export default function InsightsScreen() {
               description="After a few cleaning sessions, you will see your best days, peak times, and progress trends. Data makes the invisible visible."
               primaryLabel="Scan your first room"
               onPrimary={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
                 router.push('/(tabs)');
               }}
               accentColors={['#D8D0FF', '#8B82FF', '#5B6DFF'] as const}
@@ -349,21 +551,21 @@ export default function InsightsScreen() {
           <>
         {/* Time Period Selector */}
         <Animated.View
-          entering={FadeInDown.delay(100).duration(350)}
+          entering={reducedMotion ? undefined : FadeInDown.delay(100).duration(350)}
           style={styles.periodSelector}
           accessibilityRole="tablist"
         >
           {(['week', 'month', 'year', 'all'] as TimePeriod[]).map((period) => (
-            <TouchableOpacity
+            <Pressable
               key={period}
               style={[
                 styles.periodButton,
                 timePeriod === period && {
-                  backgroundColor: colors.primary,
+                  backgroundColor: V1.coral,
                 },
               ]}
               onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 setTimePeriod(period);
               }}
               accessibilityRole="tab"
@@ -373,12 +575,12 @@ export default function InsightsScreen() {
               <Text
                 style={[
                   styles.periodText,
-                  { color: timePeriod === period ? colors.textOnPrimary : colors.textSecondary },
+                  { color: timePeriod === period ? '#FFFFFF' : colors.textSecondary },
                 ]}
               >
                 {period.charAt(0).toUpperCase() + period.slice(1)}
               </Text>
-            </TouchableOpacity>
+            </Pressable>
           ))}
         </Animated.View>
 
@@ -386,45 +588,50 @@ export default function InsightsScreen() {
         <View style={styles.statsGrid}>
           <StatTile
             icon={CheckCheck}
-            label="Tasks Done"
-            value={stats.totalTasksCompleted}
-            color={colors.success}
+            label={timePeriod === 'all' ? 'Tasks Done' : `Tasks (${timePeriod})`}
+            value={timePeriod === 'all' ? (stats?.totalTasksCompleted ?? 0) : insights.periodTasksDone}
+            color={V1.green}
             delay={200}
+            isDark={isDark}
           />
           <StatTile
             icon={Flame}
             label="Day Streak"
-            value={stats.currentStreak}
-            change={{ value: 15, positive: true }}
+            value={stats?.currentStreak ?? 0}
             color="#F59E0B"
             delay={250}
+            isDark={isDark}
           />
           <StatTile
             icon={Clock}
-            label="Hours Cleaned"
-            value={Math.round(stats.totalMinutesCleaned / 60)}
-            color={colors.info}
+            label={timePeriod === 'all' ? 'Hours Cleaned' : `Hours (${timePeriod})`}
+            value={timePeriod === 'all'
+              ? Math.round((stats?.totalMinutesCleaned ?? 0) / 60)
+              : Math.round(insights.periodMinutes / 60)}
+            color={V1.blue}
             delay={300}
+            isDark={isDark}
           />
           <StatTile
             icon={Star}
             label="Level"
-            value={stats.level}
-            color={colors.primary}
+            value={stats?.level ?? 1}
+            color={V1.coral}
             delay={350}
+            isDark={isDark}
           />
         </View>
 
         {/* Weekly Activity Chart */}
-        <Animated.View entering={FadeInDown.delay(400).duration(350)}>
-          <GlassCard style={styles.chartCard}>
+        <Animated.View entering={reducedMotion ? undefined : FadeInDown.delay(400).duration(350)}>
+          <View style={[cardStyle(isDark), styles.chartCard]}>
             <View style={styles.chartHeader}>
               <Text style={[styles.chartTitle, { color: isDark ? 'rgba(255,255,255,0.21)' : 'rgba(0,0,0,0.25)' }]}>
                 WEEKLY ACTIVITY
               </Text>
               <View style={styles.chartLegend}>
                 <View
-                  style={[styles.legendDot, { backgroundColor: colors.primary }]}
+                  style={[styles.legendDot, { backgroundColor: V1.coral }]}
                 />
                 <Text style={[styles.legendText, { color: colors.textSecondary }]}>
                   Tasks
@@ -444,19 +651,20 @@ export default function InsightsScreen() {
                   value={day.tasks}
                   maxValue={insights.maxWeeklyTasks}
                   label={day.day}
-                  color={colors.primary}
+                  color={V1.coral}
                   delay={450 + index * 50}
+                  isDark={isDark}
                 />
               ))}
             </View>
-          </GlassCard>
+          </View>
         </Animated.View>
 
         {/* Progress Rings */}
-        <Animated.View entering={FadeInDown.delay(500).duration(350)}>
-          <GlassCard 
-            style={styles.progressCard}
-            accessibilityLabel={`Overall progress: Task completion ${Math.round(insights.taskCompletionRate)}%, Streak goal ${Math.min(stats.currentStreak * 10, 100)}%, Collection ${Math.round(insights.collectionProgress)}%`}
+        <Animated.View entering={reducedMotion ? undefined : FadeInDown.delay(500).duration(350)}>
+          <View
+            style={[cardStyle(isDark), styles.progressCard]}
+            accessibilityLabel={`Overall progress: Task completion ${Math.round(insights.taskCompletionRate)}%, Streak goal ${Math.min((stats?.currentStreak ?? 0) * 10, 100)}%, Collection ${Math.round(insights.collectionProgress)}%`}
           >
             <Text style={[styles.sectionTitle, { color: isDark ? 'rgba(255,255,255,0.21)' : 'rgba(0,0,0,0.25)' }]}>
               OVERALL PROGRESS
@@ -466,30 +674,33 @@ export default function InsightsScreen() {
                 progress={insights.taskCompletionRate}
                 size={80}
                 strokeWidth={8}
-                color={colors.success}
+                color={V1.green}
                 label="Tasks"
+                isDark={isDark}
               />
               <ProgressRing
-                progress={Math.min(stats.currentStreak * 10, 100)}
+                progress={Math.min((stats?.currentStreak ?? 0) * 10, 100)}
                 size={80}
                 strokeWidth={8}
                 color="#F59E0B"
                 label="Streak Goal"
+                isDark={isDark}
               />
               <ProgressRing
                 progress={insights.collectionProgress}
                 size={80}
                 strokeWidth={8}
-                color={colors.primary}
+                color={V1.coral}
                 label="Collection"
+                isDark={isDark}
               />
             </View>
-          </GlassCard>
+          </View>
         </Animated.View>
 
         {/* Room Performance */}
-        <Animated.View entering={FadeInDown.delay(600).duration(350)}>
-          <GlassCard style={styles.roomsCard}>
+        <Animated.View entering={reducedMotion ? undefined : FadeInDown.delay(600).duration(350)}>
+          <View style={[cardStyle(isDark), styles.roomsCard]}>
             <Text style={[styles.sectionTitle, { color: isDark ? 'rgba(255,255,255,0.21)' : 'rgba(0,0,0,0.25)' }]}>
               ROOM PERFORMANCE
             </Text>
@@ -514,7 +725,7 @@ export default function InsightsScreen() {
                           styles.roomProgressFill,
                           {
                             width: `${room.progress}%`,
-                            backgroundColor: colors.primary,
+                            backgroundColor: V1.coral,
                           },
                         ]}
                       />
@@ -532,12 +743,12 @@ export default function InsightsScreen() {
                 Add rooms to see performance data
               </Text>
             )}
-          </GlassCard>
+          </View>
         </Animated.View>
 
         {/* Collection Stats */}
-        <Animated.View entering={FadeInDown.delay(700).duration(350)}>
-          <GlassCard style={styles.collectionCard}>
+        <Animated.View entering={reducedMotion ? undefined : FadeInDown.delay(700).duration(350)}>
+          <View style={[cardStyle(isDark), styles.collectionCard]}>
             <Text style={[styles.sectionTitle, { color: isDark ? 'rgba(255,255,255,0.21)' : 'rgba(0,0,0,0.25)' }]}>
               COLLECTION STATS
             </Text>
@@ -618,12 +829,22 @@ export default function InsightsScreen() {
                 </Text>
               </View>
             </View>
-          </GlassCard>
+          </View>
+        </Animated.View>
+
+        {/* AI Insights (Premium) */}
+        <Animated.View entering={reducedMotion ? undefined : FadeInDown.delay(750).duration(350)}>
+          <AIInsightsCard
+            isDark={isDark}
+            stats={stats}
+            insights={insights}
+            rooms={rooms}
+          />
         </Animated.View>
 
         {/* Quick Tips */}
-        <Animated.View entering={FadeInDown.delay(800).duration(350)}>
-          <GlassCard style={styles.tipsCard}>
+        <Animated.View entering={reducedMotion ? undefined : FadeInDown.delay(800).duration(350)}>
+          <View style={[cardStyle(isDark), styles.tipsCard]}>
             <View style={styles.tipsHeader}>
               <Lightbulb size={24} color="#F59E0B" />
               <Text style={[styles.sectionTitle, { marginLeft: 8, color: isDark ? 'rgba(255,255,255,0.21)' : 'rgba(0,0,0,0.25)' }]}>
@@ -631,38 +852,38 @@ export default function InsightsScreen() {
               </Text>
             </View>
             <View style={styles.tipsList}>
-              {stats.currentStreak < 3 && (
+              {(stats?.currentStreak ?? 0) < 3 && (
                 <View style={styles.tipItem}>
-                  <Flame size={16} color={colors.warning} />
+                  <Flame size={16} color={V1.amber} />
                   <Text style={[styles.tipText, { color: colors.textSecondary }]}>
                     ADHD tip: Just do one tiny task today. Consistency beats intensity. Even 2 minutes counts.
                   </Text>
                 </View>
               )}
-              {stats.currentStreak >= 3 && stats.currentStreak < 7 && (
+              {(stats?.currentStreak ?? 0) >= 3 && (stats?.currentStreak ?? 0) < 7 && (
                 <View style={styles.tipItem}>
-                  <Flame size={16} color={colors.warning} />
+                  <Flame size={16} color={V1.amber} />
                   <Text style={[styles.tipText, { color: colors.textSecondary }]}>
-                    {7 - stats.currentStreak} more days to a 7-day streak badge! You are building real momentum.
+                    {7 - (stats?.currentStreak ?? 0)} more days to a 7-day streak badge! You are building real momentum.
                   </Text>
                 </View>
               )}
               {insights.roomCompletionRates.some(r => r.progress < 50) && (
                 <View style={styles.tipItem}>
-                  <Home size={16} color={colors.info} />
+                  <Home size={16} color={V1.blue} />
                   <Text style={[styles.tipText, { color: colors.textSecondary }]}>
                     ADHD-friendly approach: finish one room before starting the next. Visible progress keeps you motivated.
                   </Text>
                 </View>
               )}
               <View style={styles.tipItem}>
-                <Clock size={16} color={colors.success} />
+                <Clock size={16} color={V1.green} />
                 <Text style={[styles.tipText, { color: colors.textSecondary }]}>
                   Try a 5-minute focus session if 25 feels too long. Short wins build confidence for longer ones.
                 </Text>
               </View>
             </View>
-          </GlassCard>
+          </View>
         </Animated.View>
         </>
         )}
@@ -690,7 +911,8 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     flex: 1,
-    ...Typography.title3,
+    fontFamily: DISPLAY_FONT,
+    fontSize: 20, fontWeight: '600', lineHeight: 25,
     textAlign: 'center',
   },
   headerSpacer: {
@@ -707,14 +929,15 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   periodButton: {
-    paddingVertical: Spacing.xs,
-    paddingHorizontal: Spacing.md,
-    borderRadius: BorderRadius.chip,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: RADIUS.md,
     minHeight: 44,
     justifyContent: 'center',
   },
   periodText: {
-    ...Typography.subheadlineMedium,
+    fontFamily: BODY_FONT,
+    fontSize: 15, fontWeight: '500', lineHeight: 20,
   },
   statsGrid: {
     flexDirection: 'row',
@@ -722,7 +945,8 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   statTile: {
-    width: (SCREEN_WIDTH - 44) / 2,
+    flex: 1,
+    minWidth: '45%',
   },
   statTileInner: {
     padding: 16,
@@ -739,11 +963,13 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   statValue: {
-    ...Typography.title1,
+    fontFamily: DISPLAY_FONT,
+    fontSize: 28, fontWeight: '700', letterSpacing: -0.4, lineHeight: 34,
   },
   statLabel: {
-    ...Typography.caption1,
-    marginTop: Spacing.hairline,
+    fontFamily: BODY_FONT,
+    fontSize: 12, fontWeight: '400', lineHeight: 16,
+    marginTop: 2,
   },
   changeContainer: {
     flexDirection: 'row',
@@ -765,6 +991,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   chartTitle: {
+    fontFamily: BODY_FONT,
     fontSize: 11,
     fontWeight: '600',
     letterSpacing: 1.5,
@@ -818,11 +1045,12 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   sectionTitle: {
+    fontFamily: BODY_FONT,
     fontSize: 11,
     fontWeight: '600',
     letterSpacing: 1.5,
     textTransform: 'uppercase',
-    marginBottom: Spacing.md,
+    marginBottom: 16,
   },
   progressRings: {
     flexDirection: 'row',
@@ -863,7 +1091,8 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   roomName: {
-    ...Typography.subheadlineMedium,
+    fontFamily: BODY_FONT,
+    fontSize: 15, fontWeight: '500', lineHeight: 20,
   },
   roomProgress: {
     flex: 1,
@@ -960,24 +1189,27 @@ const styles = StyleSheet.create({
     fontSize: 36,
   },
   emptyStateTitle: {
-    ...Typography.title2,
-    marginBottom: Spacing.xs,
+    fontFamily: DISPLAY_FONT,
+    fontSize: 22, fontWeight: '700', letterSpacing: -0.4, lineHeight: 28,
+    marginBottom: 8,
     textAlign: 'center',
   },
   emptyStateSubtitle: {
-    ...Typography.body,
+    fontFamily: BODY_FONT,
+    fontSize: 17, fontWeight: '400', lineHeight: 22,
     textAlign: 'center',
-    marginBottom: Spacing.lg,
+    marginBottom: 24,
   },
   emptyStateButton: {
     paddingVertical: 14,
-    paddingHorizontal: Spacing.lg,
-    borderRadius: BorderRadius.lg,
+    paddingHorizontal: 24,
+    borderRadius: RADIUS.md,
     minHeight: 44,
     justifyContent: 'center',
     alignItems: 'center',
   },
   emptyStateButtonText: {
-    ...Typography.buttonMedium,
+    fontFamily: BODY_FONT,
+    fontSize: 16, fontWeight: '600', lineHeight: 21,
   },
 });

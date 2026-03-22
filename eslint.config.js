@@ -8,6 +8,12 @@ module.exports = defineConfig([
     ignores: ['dist/*'],
   },
   {
+    // React Native <Text> handles apostrophes correctly — no need for HTML entity escaping
+    rules: {
+      'react/no-unescaped-entities': 'off',
+    },
+  },
+  {
     files: ['jest.setup.js', '**/__tests__/**'],
     languageOptions: {
       globals: {

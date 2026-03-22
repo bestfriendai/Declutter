@@ -15,21 +15,13 @@ import type {
 } from 'expo-notifications';
 import { Platform } from 'react-native';
 
-// Configure notification behavior
-if (notificationsAvailable) {
-  Notifications.setNotificationHandler({
-    handleNotification: async () => ({
-      shouldShowAlert: true,
-      shouldPlaySound: true,
-      shouldSetBadge: true,
-      shouldShowBanner: true,
-      shouldShowList: true,
-    }),
-  });
-}
+// NOTE: Notification handler is configured in app/_layout.tsx (root layout).
+// Do NOT set it here to avoid duplicate handlers.
+
+import { STORAGE_KEYS } from '@/constants/storageKeys';
 
 // Storage key for notification token
-const NOTIFICATION_TOKEN_KEY = '@declutterly_notification_token';
+const NOTIFICATION_TOKEN_KEY = STORAGE_KEYS.NOTIFICATION_TOKEN;
 
 // Notification categories
 export type NotificationCategory =
@@ -176,12 +168,141 @@ export async function scheduleDailyReminder(
       },
     });
 
-    await AsyncStorage.setItem('daily-reminder-id', identifier);
+    await AsyncStorage.setItem(STORAGE_KEYS.DAILY_REMINDER_ID, identifier);
     return identifier;
   } catch (error) {
     if (__DEV__) console.error('Error scheduling daily reminder:', error);
     return null;
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PERSONALITY-DRIVEN NOTIFICATIONS
+// ─────────────────────────────────────────────────────────────────────────────
+
+type PersonalityType = 'spark' | 'bubbles' | 'dusty' | 'tidy';
+type NotificationMoment = 'comeback' | 'streak_risk' | 'daily_reminder' | 'achievement';
+
+const PERSONALITY_MESSAGES: Record<PersonalityType, Record<NotificationMoment, string[]>> = {
+  spark: {
+    comeback: [
+      "Let's GO! Your room misses you! \u{26A1}",
+      "ENERGY CHECK! Time to crush some tasks! \u{1F525}",
+      "You've been away too long! Let's make sparks fly! \u{26A1}",
+    ],
+    streak_risk: [
+      "Your streak is in danger! Quick, do ONE thing! \u{26A1}",
+      "Don't let the fire die! 60 seconds is all it takes! \u{1F525}",
+      "STREAK ALERT! Jump in for a speed round! \u{26A1}",
+    ],
+    daily_reminder: [
+      "Rise and SHINE! Today's the day we conquer clutter! \u{26A1}",
+      "Let's GO! Your space is ready for a transformation! \u{1F525}",
+      "ENERGY MODE: ON! Time to clean! \u{26A1}",
+    ],
+    achievement: [
+      "BOOM! You're CRUSHING it! Keep that energy! \u{26A1}\u{1F525}",
+      "UNSTOPPABLE! Look at you go! \u{1F4AA}\u{26A1}",
+      "That's what I'm TALKING about! You're on FIRE! \u{1F525}",
+    ],
+  },
+  bubbles: {
+    comeback: [
+      "Hey friend, your space is waiting for a little love \u{1FAE7}",
+      "Hehe, I missed you! Wanna tidy up together? \u{1F60A}",
+      "Welcome back, friend! No rush, just happy to see you \u{1FAE7}",
+    ],
+    streak_risk: [
+      "Psst, your streak needs a little hug! Just one tiny task? \u{1FAE7}",
+      "Your streak is getting sleepy... wake it up with one task! \u{1F60A}",
+      "A gentle reminder: your streak would love some attention \u{1FAE7}",
+    ],
+    daily_reminder: [
+      "Good morning, sunshine! Ready for a gentle tidy? \u{1FAE7}",
+      "Hehe, cleaning is so much fun together! Shall we? \u{1F60A}",
+      "Your space would love a little sparkle today \u{1FAE7}",
+    ],
+    achievement: [
+      "Yaaay! You did it! I'm so proud of you! \u{1F60A}\u{2728}",
+      "That was beautiful! Your space is glowing! \u{1FAE7}\u{2728}",
+      "Hehe, look how amazing that turned out! \u{1F60A}",
+    ],
+  },
+  dusty: {
+    comeback: [
+      "No rush, but your room could use some attention when you're ready \u{1F9F8}",
+      "Hey. Take your time. I'll be here when you're ready to tidy \u{1F9F9}",
+      "Your space will wait. But whenever you're ready, I'm here \u{1F9F8}",
+    ],
+    streak_risk: [
+      "Your streak's been good to you. Return the favor with 60 seconds? \u{1F9F8}",
+      "No pressure, but your streak could use a quick check-in \u{1F9F9}",
+      "Slow and steady keeps the streak alive. One small thing? \u{1F9F8}",
+    ],
+    daily_reminder: [
+      "Slow and steady, friend. Every small step counts \u{1F9F8}",
+      "One task at a time. No rush. You've got this \u{1F9F9}",
+      "Your pace is your pace. Ready when you are \u{1F9F8}",
+    ],
+    achievement: [
+      "Well done. Quiet progress is still progress \u{1F9F8}\u{2728}",
+      "See? Slow and steady wins. Nice work \u{1F9F9}",
+      "That's the way. One step at a time \u{1F9F8}",
+    ],
+  },
+  tidy: {
+    comeback: [
+      "3 tasks remaining in your kitchen. 15 minutes should do it \u{1F4CB}",
+      "Your cleaning queue has updates. Shall we review? \u{1F4CB}",
+      "Status update: your rooms could use a refresh \u{1F4CB}",
+    ],
+    streak_risk: [
+      "Streak status: at risk. 1 task required to maintain \u{1F4CB}",
+      "Data point: your streak ends today unless you complete 1 task \u{1F4CB}",
+      "Efficiency tip: 60 seconds now saves your streak \u{1F4CB}",
+    ],
+    daily_reminder: [
+      "Daily briefing: your schedule has room for a quick tidy \u{1F4CB}",
+      "Task queue ready. Estimated time: 10 minutes \u{1F4CB}",
+      "Morning check-in: 3 quick wins available today \u{1F4CB}",
+    ],
+    achievement: [
+      "Task complete. Efficiency rating: excellent \u{1F4CB}\u{2705}",
+      "Well organized. Your completion rate is up \u{1F4CA}",
+      "Achievement logged. Progress metrics looking strong \u{1F4CB}",
+    ],
+  },
+};
+
+/**
+ * Get a personality-appropriate notification message.
+ * Uses the user's mascot personality to customize notification copy.
+ */
+export function getPersonalityNotification(
+  personality: PersonalityType | string,
+  type: NotificationMoment
+): { title: string; body: string } {
+  const validPersonality = (
+    ['spark', 'bubbles', 'dusty', 'tidy'].includes(personality)
+      ? personality
+      : 'dusty'
+  ) as PersonalityType;
+
+  const messages = PERSONALITY_MESSAGES[validPersonality][type];
+  const body = messages[Math.floor(Math.random() * messages.length)];
+
+  // Generate appropriate title based on type
+  const titles: Record<NotificationMoment, string[]> = {
+    comeback: ['Welcome back!', 'Hey there!', 'Look who\'s here!'],
+    streak_risk: ['Streak alert!', 'Quick heads up!', 'Streak check!'],
+    daily_reminder: ['Time to tidy!', 'Daily reminder', 'Cleaning time!'],
+    achievement: ['Amazing work!', 'Achievement!', 'Well done!'],
+  };
+
+  const titleOptions = titles[type];
+  const title = titleOptions[Math.floor(Math.random() * titleOptions.length)];
+
+  return { title, body };
 }
 
 // Get random reminder message
@@ -236,7 +357,7 @@ export async function scheduleStreakReminder(
       },
     });
 
-    await AsyncStorage.setItem('streak-reminder-id', identifier);
+    await AsyncStorage.setItem(STORAGE_KEYS.STREAK_REMINDER_ID, identifier);
     return identifier;
   } catch (error) {
     if (__DEV__) console.error('Error scheduling streak reminder:', error);
@@ -360,15 +481,19 @@ const WELCOME_BACK_NOTIFICATIONS = [
 export async function scheduleShameFreeReminder(
   hour: number,
   minute: number,
-  enabled: boolean = true
+  enabled: boolean = true,
+  mascotPersonality?: string
 ): Promise<string | null> {
   await cancelScheduledReminder('daily-reminder');
 
   if (!enabled) return null;
 
   try {
-    const message = SHAME_FREE_REMINDERS[Math.floor(Math.random() * SHAME_FREE_REMINDERS.length)];
-    
+    // Use personality-aware copy when mascot personality is available
+    const message = mascotPersonality
+      ? getPersonalityNotification(mascotPersonality, 'daily_reminder')
+      : SHAME_FREE_REMINDERS[Math.floor(Math.random() * SHAME_FREE_REMINDERS.length)];
+
     const identifier = await Notifications.scheduleNotificationAsync({
       content: {
         title: message.title,
@@ -384,7 +509,7 @@ export async function scheduleShameFreeReminder(
       },
     });
 
-    await AsyncStorage.setItem('daily-reminder-id', identifier);
+    await AsyncStorage.setItem(STORAGE_KEYS.DAILY_REMINDER_ID, identifier);
     return identifier;
   } catch (error) {
     if (__DEV__) console.error('Error scheduling shame-free reminder:', error);
@@ -396,9 +521,15 @@ export async function scheduleShameFreeReminder(
  * Send welcome back notification
  * Called when user returns after 2+ days
  */
-export async function notifyWelcomeBack(_daysSinceActivity: number): Promise<void> {
-  const message = WELCOME_BACK_NOTIFICATIONS[Math.floor(Math.random() * WELCOME_BACK_NOTIFICATIONS.length)];
-  
+export async function notifyWelcomeBack(
+  _daysSinceActivity: number,
+  mascotPersonality?: string
+): Promise<void> {
+  // Use personality-aware copy when available
+  const message = mascotPersonality
+    ? getPersonalityNotification(mascotPersonality, 'comeback')
+    : WELCOME_BACK_NOTIFICATIONS[Math.floor(Math.random() * WELCOME_BACK_NOTIFICATIONS.length)];
+
   await showNotification(
     message.title,
     message.body,
@@ -467,7 +598,7 @@ export async function scheduleGracePeriodReminder(gracePeriodEndsAt: string): Pr
       },
     });
 
-    await AsyncStorage.setItem('grace-reminder-id', identifier);
+    await AsyncStorage.setItem(STORAGE_KEYS.GRACE_REMINDER_ID, identifier);
     return identifier;
   } catch (error) {
     if (__DEV__) console.error('Error scheduling grace period reminder:', error);
@@ -493,10 +624,12 @@ export async function cancelAllNotifications(): Promise<void> {
   try {
     await Notifications.cancelAllScheduledNotificationsAsync();
     await AsyncStorage.multiRemove([
-      'daily-reminder-id',
-      'streak-reminder-id',
-      'grace-reminder-id',
-      'optimal-notification-id',
+      STORAGE_KEYS.DAILY_REMINDER_ID,
+      STORAGE_KEYS.STREAK_REMINDER_ID,
+      STORAGE_KEYS.GRACE_REMINDER_ID,
+      STORAGE_KEYS.OPTIMAL_NOTIFICATION_ID,
+      STORAGE_KEYS.COMEBACK_NUDGE_ID,
+      STORAGE_KEYS.SESSION_CELEBRATION_ID,
     ]);
   } catch (error) {
     if (__DEV__) console.error('Error canceling all notifications:', error);
@@ -664,6 +797,184 @@ export async function scheduleMotivationalNotification(): Promise<string | null>
     });
   } catch (error) {
     if (__DEV__) console.error('Error scheduling motivational notification:', error);
+    return null;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SMART DAILY REMINDER — room-aware, specific
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface SmartReminderRoom {
+  name: string;
+  incompleteTasks: number;
+  totalMinutes: number;
+}
+
+/**
+ * Schedule a smart daily reminder that references actual room data.
+ * Picks the most urgent room and creates a specific, actionable message.
+ * Falls back to generic shame-free messages if no room data is available.
+ */
+export async function scheduleSmartDailyReminder(
+  hour: number,
+  minute: number,
+  rooms: SmartReminderRoom[] = [],
+  enabled: boolean = true
+): Promise<string | null> {
+  if (!notificationsAvailable) return null;
+
+  await cancelScheduledReminder('daily-reminder');
+
+  if (!enabled) return null;
+
+  let title: string;
+  let body: string;
+
+  // Find the room with the most incomplete tasks
+  const urgentRoom = rooms
+    .filter(r => r.incompleteTasks > 0)
+    .sort((a, b) => b.incompleteTasks - a.incompleteTasks)[0];
+
+  if (urgentRoom) {
+    title = `Your ${urgentRoom.name} is waiting`;
+    body = `${urgentRoom.incompleteTasks} quick task${urgentRoom.incompleteTasks !== 1 ? 's' : ''} (${urgentRoom.totalMinutes} min total). You've got this!`;
+  } else {
+    // Fall back to generic shame-free messages
+    const message = SHAME_FREE_REMINDERS[Math.floor(Math.random() * SHAME_FREE_REMINDERS.length)];
+    title = message.title;
+    body = message.body;
+  }
+
+  try {
+    const identifier = await Notifications.scheduleNotificationAsync({
+      content: {
+        title,
+        body,
+        data: { category: 'reminder' } as NotificationData,
+        sound: 'default',
+        categoryIdentifier: 'reminder',
+      },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.DAILY,
+        hour,
+        minute,
+      },
+    });
+
+    await AsyncStorage.setItem(STORAGE_KEYS.DAILY_REMINDER_ID, identifier);
+    return identifier;
+  } catch (error) {
+    if (__DEV__) console.error('Error scheduling smart daily reminder:', error);
+    return null;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ROOM FRESHNESS, COMEBACK NUDGE & SESSION CELEBRATION
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Schedule a room freshness alert that fires once after N hours.
+ * Nudges the user to revisit a room whose freshness is dropping.
+ */
+export async function scheduleRoomFreshnessAlert(
+  roomName: string,
+  hoursFromNow: number = 48
+): Promise<string | null> {
+  if (!notificationsAvailable) return null;
+
+  const key = `freshness-${roomName.toLowerCase().replace(/\s/g, '-')}`;
+  await cancelScheduledReminder(key);
+
+  try {
+    const identifier = await Notifications.scheduleNotificationAsync({
+      content: {
+        title: `${roomName} needs attention`,
+        body: `Your ${roomName.toLowerCase()} freshness is dropping. Quick 5-min sweep?`,
+        data: { category: 'reminder' } as NotificationData,
+        sound: 'default',
+        categoryIdentifier: 'reminders',
+      },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+        seconds: hoursFromNow * 3600,
+      },
+    });
+
+    await AsyncStorage.setItem(`${key}-id`, identifier);
+    return identifier;
+  } catch (error) {
+    if (__DEV__) console.error('Error scheduling room freshness alert:', error);
+    return null;
+  }
+}
+
+/**
+ * Schedule a comeback nudge for inactive users.
+ * Fires once after N days. Each call replaces the previous nudge.
+ * Messages are shame-free, sourced from the comeback engine philosophy.
+ */
+export async function scheduleComebackNudge(
+  daysFromNow: number = 3
+): Promise<string | null> {
+  if (!notificationsAvailable) return null;
+
+  await cancelScheduledReminder('comeback-nudge');
+
+  try {
+    const identifier = await Notifications.scheduleNotificationAsync({
+      content: {
+        title: 'No pressure!',
+        body: 'Want to do just one tiny thing today? Dusty misses you.',
+        data: { category: 'motivation' } as NotificationData,
+        sound: true,
+      },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+        seconds: daysFromNow * 86400,
+      },
+    });
+
+    await AsyncStorage.setItem(STORAGE_KEYS.COMEBACK_NUDGE_ID, identifier);
+    return identifier;
+  } catch (error) {
+    if (__DEV__) console.error('Error scheduling comeback nudge:', error);
+    return null;
+  }
+}
+
+/**
+ * Schedule a celebration notification after a cleaning session.
+ * Fires 1 hour later when the user has likely put the phone down,
+ * reinforcing the positive feeling.
+ */
+export async function scheduleSessionEndCelebration(
+  tasksCompleted: number,
+  xpEarned: number
+): Promise<string | null> {
+  if (!notificationsAvailable) return null;
+
+  await cancelScheduledReminder('session-celebration');
+
+  try {
+    const identifier = await Notifications.scheduleNotificationAsync({
+      content: {
+        title: 'Nice work today!',
+        body: `You crushed ${tasksCompleted} task${tasksCompleted > 1 ? 's' : ''} and earned ${xpEarned} XP. Dusty is proud!`,
+        data: { category: 'achievement' } as NotificationData,
+        sound: false,
+      },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+        seconds: 3600, // 1 hour later
+      },
+    });
+
+    await AsyncStorage.setItem(STORAGE_KEYS.SESSION_CELEBRATION_ID, identifier);
+    return identifier;
+  } catch (error) {
+    if (__DEV__) console.error('Error scheduling session celebration:', error);
     return null;
   }
 }

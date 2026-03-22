@@ -2,18 +2,20 @@
  * Declutterly -- Task Customize Screen (V1)
  * Matches Pencil design: 6iIOk
  *
- * - "Customize Tasks" header with task count & total time
- * - Task Detail Level slider (Simple <-> Detailed)
- * - Grouped task cards by area with toggle switches
- * - Individual task checkboxes with time estimates
- * - "Add to Room" CTA
- * - "Start with easy wins instead" secondary action
+ * Improvements:
+ * - Animated toggle switch (spring translateX for thumb)
+ * - Task expansion on long press (show description, subtasks)
+ * - Bottom gradient fade above fixed section
+ * - Fixed CTA hierarchy: "Easy Wins" = primary coral, "Add all tasks" = secondary text
+ * - Empty group handling (message when all tasks deselected)
+ * - Loading spinner on submit buttons during submission
  */
 
 import * as Haptics from 'expo-haptics';
 import { router, useLocalSearchParams } from 'expo-router';
 import React, { useCallback, useMemo, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   Pressable,
   ScrollView,
@@ -22,42 +24,152 @@ import {
   View,
 } from 'react-native';
 import { useColorScheme } from '@/hooks/useColorScheme';
-import Animated, { FadeInDown } from 'react-native-reanimated';
+import { useReducedMotion } from '@/hooks/useReducedMotion';
+import Animated, {
+  FadeInDown,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronLeft, Check } from 'lucide-react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useDeclutter } from '@/context/DeclutterContext';
+import { V1, BODY_FONT, DISPLAY_FONT, RADIUS, SPACING } from '@/constants/designTokens';
 import { CleaningTask, RoomType } from '@/types/declutter';
-
-// ─── V1 Design Tokens ────────────────────────────────────────────────────────
-const V1 = {
-  coral: '#FF6B6B',
-  green: '#66BB6A',
-  amber: '#FFB74D',
-  blue: '#64B5F6',
-  dark: {
-    bg: '#0C0C0C',
-    card: '#1A1A1A',
-    border: 'rgba(255,255,255,0.08)',
-    text: '#FFFFFF',
-    textSecondary: 'rgba(255,255,255,0.5)',
-    textMuted: 'rgba(255,255,255,0.3)',
-  },
-  light: {
-    bg: '#FAFAFA',
-    card: '#F6F7F8',
-    border: '#E5E7EB',
-    text: '#1A1A1A',
-    textSecondary: '#6B7280',
-    textMuted: '#9CA3AF',
-  },
-};
 
 function getRoomEmoji(type: RoomType): string {
   const map: Record<string, string> = {
-    bedroom: '🛏️', kitchen: '🍳', bathroom: '🚿', livingRoom: '🛋️',
-    office: '💻', garage: '🔧', closet: '👕', other: '🏠',
+    bedroom: '\uD83D\uDECF\uFE0F',
+    kitchen: '\uD83C\uDF73',
+    bathroom: '\uD83D\uDEBF',
+    livingRoom: '\uD83D\uDECB\uFE0F',
+    office: '\uD83D\uDCBB',
+    garage: '\uD83D\uDD27',
+    closet: '\uD83D\uDC55',
+    other: '\uD83C\uDFE0',
   };
-  return map[type] || '🏠';
+  return map[type] || '\uD83C\uDFE0';
+}
+
+// ── Animated Toggle Switch ──────────────────────────────────────────────────
+
+function AnimatedToggle({
+  isOn,
+  onToggle,
+  isDark,
+}: {
+  isOn: boolean;
+  onToggle: () => void;
+  isDark: boolean;
+}) {
+  const translateX = useSharedValue(isOn ? 18 : 0);
+
+  // Sync with external state
+  React.useEffect(() => {
+    translateX.value = withSpring(isOn ? 18 : 0, {
+      damping: 15,
+      stiffness: 200,
+    });
+  }, [isOn]);
+
+  const thumbStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: translateX.value }],
+  }));
+
+  return (
+    <Pressable
+      onPress={onToggle}
+      accessibilityRole="switch"
+      accessibilityState={{ checked: isOn }}
+      style={[
+        styles.toggleSwitch,
+        isOn
+          ? { backgroundColor: V1.blue }
+          : { backgroundColor: isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.1)' },
+      ]}
+    >
+      <Animated.View style={[styles.toggleThumb, thumbStyle]} />
+    </Pressable>
+  );
+}
+
+// ── Expandable Task Row ─────────────────────────────────────────────────────
+
+function TaskRow({
+  task,
+  isSelected,
+  isDark,
+  onToggle,
+}: {
+  task: CleaningTask;
+  isSelected: boolean;
+  isDark: boolean;
+  onToggle: () => void;
+}) {
+  const t = isDark ? V1.dark : V1.light;
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <View>
+      <Pressable
+        onPress={onToggle}
+        onLongPress={() => {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+          setExpanded((prev) => !prev);
+        }}
+        style={[styles.taskRow, { borderBottomColor: t.border }]}
+      >
+        <View
+          style={[
+            styles.taskCheckbox,
+            isSelected
+              ? { backgroundColor: V1.green, borderColor: V1.green }
+              : {
+                  borderColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.15)',
+                },
+          ]}
+        >
+          {isSelected && <Check size={14} color="#FFFFFF" strokeWidth={3} />}
+        </View>
+        <Text
+          style={[styles.taskName, { color: isSelected ? t.text : t.textMuted }]}
+          numberOfLines={expanded ? undefined : 1}
+        >
+          {task.title}
+        </Text>
+        <Text style={[styles.taskTime, { color: t.textMuted }]}>
+          {task.estimatedMinutes || 3}m
+        </Text>
+      </Pressable>
+
+      {/* Expanded details */}
+      {expanded && (
+        <View style={[styles.expandedDetails, { backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)' }]}>
+          {task.description ? (
+            <Text style={[styles.expandedDesc, { color: t.textSecondary }]}>
+              {task.description}
+            </Text>
+          ) : null}
+          {task.subtasks && task.subtasks.length > 0 && (
+            <View style={styles.expandedSubtasks}>
+              <Text style={[styles.expandedSubLabel, { color: t.textMuted }]}>Subtasks:</Text>
+              {task.subtasks.map((st) => (
+                <Text key={st.id} style={[styles.expandedSubItem, { color: t.textSecondary }]}>
+                  {'\u2022'} {st.title}
+                </Text>
+              ))}
+            </View>
+          )}
+          {task.whyThisMatters ? (
+            <Text style={[styles.expandedWhy, { color: V1.coral }]}>
+              Why: {task.whyThisMatters}
+            </Text>
+          ) : null}
+        </View>
+      )}
+    </View>
+  );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -73,9 +185,12 @@ export default function TaskCustomizeScreen() {
 
   const rawScheme = useColorScheme();
   const isDark = rawScheme === 'dark';
+  const reducedMotion = useReducedMotion();
   const t = isDark ? V1.dark : V1.light;
   const insets = useSafeAreaInsets();
-  const { addRoom, setTasksForRoom, addPhotoToRoom, setActiveRoom } = useDeclutter();
+  const { addRoom, setTasksForRoom, addPhotoToRoom, setActiveRoom, settings, updateSettings } =
+    useDeclutter();
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Parse tasks
   const allTasks: CleaningTask[] = useMemo(() => {
@@ -88,13 +203,13 @@ export default function TaskCustomizeScreen() {
 
   // Track which tasks are selected
   const [selectedIds, setSelectedIds] = useState<Set<string>>(
-    new Set(allTasks.map(t => t.id))
+    new Set(allTasks.map((tk) => tk.id)),
   );
 
   // Group tasks by zone
   const groupedTasks = useMemo(() => {
     const map = new Map<string, CleaningTask[]>();
-    allTasks.forEach(task => {
+    allTasks.forEach((task) => {
       const zone = task.zone || 'General';
       if (!map.has(zone)) map.set(zone, []);
       map.get(zone)!.push(task);
@@ -105,12 +220,12 @@ export default function TaskCustomizeScreen() {
   const selectedCount = selectedIds.size;
   const removedCount = allTasks.length - selectedCount;
   const totalMinutes = allTasks
-    .filter(t => selectedIds.has(t.id))
-    .reduce((sum, t) => sum + (t.estimatedMinutes || 3), 0);
+    .filter((tk) => selectedIds.has(tk.id))
+    .reduce((sum, tk) => sum + (tk.estimatedMinutes || 3), 0);
 
   const toggleTask = useCallback((taskId: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setSelectedIds(prev => {
+    setSelectedIds((prev) => {
       const next = new Set(prev);
       if (next.has(taskId)) {
         next.delete(taskId);
@@ -123,26 +238,28 @@ export default function TaskCustomizeScreen() {
 
   const toggleGroup = useCallback((tasks: CleaningTask[]) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setSelectedIds(prev => {
+    setSelectedIds((prev) => {
       const next = new Set(prev);
-      const allSelected = tasks.every(t => next.has(t.id));
+      const allSelected = tasks.every((t) => next.has(t.id));
       if (allSelected) {
-        tasks.forEach(t => next.delete(t.id));
+        tasks.forEach((t) => next.delete(t.id));
       } else {
-        tasks.forEach(t => next.add(t.id));
+        tasks.forEach((t) => next.add(t.id));
       }
       return next;
     });
   }, []);
 
   const handleAddToRoom = useCallback(async () => {
+    if (isSubmitting) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    const selectedTasks = allTasks.filter(t => selectedIds.has(t.id));
+    const selectedTasks = allTasks.filter((tk) => selectedIds.has(tk.id));
     if (selectedTasks.length === 0) {
       Alert.alert('No tasks selected', 'Please select at least one task.');
       return;
     }
 
+    setIsSubmitting(true);
     try {
       const room = await addRoom({
         name: roomName || 'Room',
@@ -162,18 +279,27 @@ export default function TaskCustomizeScreen() {
 
       setTasksForRoom(room.id, selectedTasks);
       setActiveRoom(room.id);
-      router.replace(`/room/${room.id}`);
+      router.replace({ pathname: '/room/[id]', params: { id: room.id } });
     } catch (err) {
       Alert.alert('Error', 'Failed to create room');
+    } finally {
+      setIsSubmitting(false);
     }
-  }, [allTasks, selectedIds, roomName, roomType, photoUri]);
+  }, [isSubmitting, allTasks, selectedIds, roomName, roomType, photoUri]);
 
   const handleEasyWins = useCallback(async () => {
+    if (isSubmitting) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    const easyTasks = allTasks
-      .sort((a, b) => (a.estimatedMinutes || 3) - (b.estimatedMinutes || 3))
+    const easyTasks = [...allTasks]
+      .sort((a, b) => {
+        const phaseA = a.phase ?? 99;
+        const phaseB = b.phase ?? 99;
+        if (phaseA !== phaseB) return phaseA - phaseB;
+        return (a.estimatedMinutes || 3) - (b.estimatedMinutes || 3);
+      })
       .slice(0, 3);
 
+    setIsSubmitting(true);
     try {
       const room = await addRoom({
         name: roomName || 'Room',
@@ -193,128 +319,192 @@ export default function TaskCustomizeScreen() {
 
       setTasksForRoom(room.id, easyTasks);
       setActiveRoom(room.id);
-      router.replace(`/room/${room.id}`);
+      router.replace({ pathname: '/room/[id]', params: { id: room.id } });
     } catch (err) {
       Alert.alert('Error', 'Failed to create room');
+    } finally {
+      setIsSubmitting(false);
     }
-  }, [allTasks, roomName, roomType, photoUri]);
+  }, [isSubmitting, allTasks, roomName, roomType, photoUri]);
 
   return (
     <View style={[styles.container, { backgroundColor: t.bg }]}>
       {/* Header */}
       <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
-        <Pressable onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.back(); }} hitSlop={12}>
+        <Pressable
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            router.back();
+          }}
+          hitSlop={12}
+        >
           <ChevronLeft size={24} color={t.text} />
         </Pressable>
         <View>
           <Text style={[styles.headerTitle, { color: t.text }]}>Customize Tasks</Text>
           <Text style={[styles.headerSubtitle, { color: t.textSecondary }]}>
-            {selectedCount} tasks selected {'\u00B7'} ~{totalMinutes} min
+            {selectedCount} tasks selected {'\u00B7'} about {totalMinutes} min
           </Text>
         </View>
         <View style={{ width: 24 }} />
       </View>
 
-      {/* Detail Level slider (decorative) */}
+      {/* Detail Level selector */}
       <View style={styles.detailLevel}>
         <Text style={[styles.detailLabel, { color: t.textSecondary }]}>Task Detail Level</Text>
         <View style={styles.detailSlider}>
-          <Text style={[styles.detailEndLabel, { color: t.textMuted }]}>Simple</Text>
-          <View style={[styles.sliderTrack, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)' }]}>
-            <View style={[styles.sliderFill, { backgroundColor: V1.coral }]} />
-            <View style={[styles.sliderThumb, { backgroundColor: '#FFFFFF' }]} />
-          </View>
-          <Text style={[styles.detailEndLabel, { color: t.textMuted }]}>Detailed</Text>
+          {(['normal', 'detailed', 'ultra'] as const).map((level) => {
+            const isActive = (settings?.taskBreakdownLevel ?? 'detailed') === level;
+            const labels = { normal: 'Simple', detailed: 'Detailed', ultra: 'Ultra' };
+            return (
+              <Pressable
+                key={level}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  updateSettings?.({ taskBreakdownLevel: level });
+                }}
+                accessibilityRole="button"
+                accessibilityLabel={`Set task detail level to ${labels[level]}`}
+                accessibilityState={{ selected: isActive }}
+                style={[
+                  styles.detailChip,
+                  {
+                    backgroundColor: isActive
+                      ? V1.coral
+                      : isDark
+                        ? 'rgba(255,255,255,0.08)'
+                        : 'rgba(0,0,0,0.06)',
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.detailChipText,
+                    { color: isActive ? '#FFFFFF' : t.textSecondary },
+                  ]}
+                >
+                  {labels[level]}
+                </Text>
+              </Pressable>
+            );
+          })}
         </View>
       </View>
 
       <ScrollView
-        contentContainerStyle={{ paddingBottom: insets.bottom + 140 }}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 160 }}
         showsVerticalScrollIndicator={false}
       >
         {groupedTasks.map(([groupName, tasks], groupIndex) => {
-          const groupSelected = tasks.filter(t => selectedIds.has(t.id)).length;
+          const groupSelected = tasks.filter((tk) => selectedIds.has(tk.id)).length;
           const allSelected = groupSelected === tasks.length;
+          const noneSelected = groupSelected === 0;
 
           return (
             <Animated.View
               key={groupName}
-              entering={FadeInDown.delay(groupIndex * 60).duration(300)}
+              entering={
+                reducedMotion ? undefined : FadeInDown.delay(groupIndex * 60).duration(300)
+              }
             >
               {/* Group header */}
               <View style={styles.groupHeader}>
                 <View style={styles.groupHeaderLeft}>
                   <View style={[styles.groupDot, { backgroundColor: V1.coral }]} />
                   <Text style={[styles.groupName, { color: t.text }]}>{groupName}</Text>
-                  <View style={[styles.groupCountPill, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)' }]}>
+                  <View
+                    style={[
+                      styles.groupCountPill,
+                      {
+                        backgroundColor: isDark
+                          ? 'rgba(255,255,255,0.08)'
+                          : 'rgba(0,0,0,0.06)',
+                      },
+                    ]}
+                  >
                     <Text style={[styles.groupCountText, { color: t.textSecondary }]}>
                       {tasks.length} tasks
                     </Text>
                   </View>
                 </View>
-                {/* Group toggle */}
-                <Pressable
-                  onPress={() => toggleGroup(tasks)}
-                  style={[
-                    styles.toggleSwitch,
-                    allSelected
-                      ? { backgroundColor: V1.blue }
-                      : { backgroundColor: isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.1)' },
-                  ]}
-                >
-                  <View style={[
-                    styles.toggleThumb,
-                    allSelected && { transform: [{ translateX: 18 }] },
-                  ]} />
-                </Pressable>
+                {/* Animated group toggle */}
+                <AnimatedToggle
+                  isOn={allSelected}
+                  onToggle={() => toggleGroup(tasks)}
+                  isDark={isDark}
+                />
               </View>
 
+              {/* Empty group message */}
+              {noneSelected && (
+                <View style={styles.emptyGroupMessage}>
+                  <Text style={[styles.emptyGroupText, { color: t.textMuted }]}>
+                    All tasks removed. Toggle to add them back.
+                  </Text>
+                </View>
+              )}
+
               {/* Tasks */}
-              {tasks.map(task => {
-                const isSelected = selectedIds.has(task.id);
-                return (
-                  <Pressable
-                    key={task.id}
-                    onPress={() => toggleTask(task.id)}
-                    style={[styles.taskRow, { borderBottomColor: t.border }]}
-                  >
-                    <View style={[
-                      styles.taskCheckbox,
-                      isSelected
-                        ? { backgroundColor: V1.green, borderColor: V1.green }
-                        : { borderColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.15)' },
-                    ]}>
-                      {isSelected && <Check size={14} color="#FFFFFF" strokeWidth={3} />}
-                    </View>
-                    <Text style={[
-                      styles.taskName,
-                      { color: isSelected ? t.text : t.textMuted },
-                    ]} numberOfLines={1}>
-                      {task.title}
-                    </Text>
-                    <Text style={[styles.taskTime, { color: t.textMuted }]}>
-                      {task.estimatedMinutes || 3}m
-                    </Text>
-                  </Pressable>
-                );
-              })}
+              {tasks.map((task) => (
+                <TaskRow
+                  key={task.id}
+                  task={task}
+                  isSelected={selectedIds.has(task.id)}
+                  isDark={isDark}
+                  onToggle={() => toggleTask(task.id)}
+                />
+              ))}
             </Animated.View>
           );
         })}
       </ScrollView>
 
-      {/* Bottom CTAs */}
+      {/* Bottom gradient fade */}
+      <LinearGradient
+        colors={[
+          isDark ? 'rgba(12,12,12,0)' : 'rgba(250,250,250,0)',
+          isDark ? 'rgba(12,12,12,0.95)' : 'rgba(250,250,250,0.95)',
+          t.bg,
+        ]}
+        style={styles.bottomGradient}
+        pointerEvents="none"
+      />
+
+      {/* Bottom CTAs -- Fixed hierarchy: Easy Wins = primary, See all = secondary */}
       <View style={[styles.bottomSection, { paddingBottom: insets.bottom + 20, backgroundColor: t.bg }]}>
         <Text style={[styles.removedText, { color: t.textMuted }]}>
           {removedCount} tasks removed
         </Text>
-        <Pressable onPress={handleAddToRoom} style={[styles.addButton, { backgroundColor: V1.coral }]}>
-          <Text style={styles.addButtonText}>Add to Room</Text>
+
+        {/* Primary: Easy Wins with gradient */}
+        <Pressable
+          onPress={handleEasyWins}
+          disabled={isSubmitting}
+          style={({ pressed }) => [{ opacity: pressed ? 0.88 : 1, width: '100%' }]}
+        >
+          <LinearGradient
+            colors={[V1.coral, '#FF5252']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={[styles.primaryButton, { opacity: isSubmitting ? 0.6 : 1 }]}
+          >
+            {isSubmitting ? (
+              <ActivityIndicator color="#FFFFFF" size="small" />
+            ) : (
+              <Text style={styles.primaryButtonText}>Start with Easy Wins</Text>
+            )}
+          </LinearGradient>
         </Pressable>
-        <Pressable onPress={handleEasyWins}>
-          <Text style={[styles.easyWinsText, { color: V1.coral }]}>
-            Start with easy wins instead
-          </Text>
+
+        {/* Secondary: See all tasks */}
+        <Pressable onPress={handleAddToRoom} disabled={isSubmitting}>
+          {isSubmitting ? (
+            <ActivityIndicator color={V1.coral} size="small" style={{ paddingVertical: 8 }} />
+          ) : (
+            <Text style={[styles.secondaryText, { color: V1.coral, opacity: isSubmitting ? 0.5 : 1 }]}>
+              Add all {selectedCount} tasks
+            </Text>
+          )}
         </Pressable>
       </View>
     </View>
@@ -335,10 +525,12 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   headerTitle: {
+    fontFamily: DISPLAY_FONT,
     fontSize: 20,
     fontWeight: '700',
   },
   headerSubtitle: {
+    fontFamily: BODY_FONT,
     fontSize: 13,
     marginTop: 2,
   },
@@ -357,35 +549,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
   },
-  detailEndLabel: {
-    fontSize: 12,
-  },
-  sliderTrack: {
+  detailChip: {
     flex: 1,
-    height: 6,
-    borderRadius: 3,
-    position: 'relative',
-    justifyContent: 'center',
+    paddingVertical: 8,
+    borderRadius: 10,
+    alignItems: 'center',
   },
-  sliderFill: {
-    position: 'absolute',
-    left: 0,
-    top: 0,
-    bottom: 0,
-    width: '60%',
-    borderRadius: 3,
-  },
-  sliderThumb: {
-    position: 'absolute',
-    left: '56%',
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 3,
+  detailChipText: {
+    fontFamily: BODY_FONT,
+    fontSize: 13,
+    fontWeight: '600',
   },
 
   // Groups
@@ -407,6 +580,7 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   groupName: {
+    fontFamily: DISPLAY_FONT,
     fontSize: 16,
     fontWeight: '700',
   },
@@ -420,7 +594,7 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
 
-  // Toggle switch
+  // Animated toggle switch
   toggleSwitch: {
     width: 44,
     height: 26,
@@ -433,6 +607,17 @@ const styles = StyleSheet.create({
     height: 22,
     borderRadius: 11,
     backgroundColor: '#FFFFFF',
+  },
+
+  // Empty group
+  emptyGroupMessage: {
+    paddingHorizontal: 36,
+    paddingVertical: 10,
+  },
+  emptyGroupText: {
+    fontSize: 13,
+    fontStyle: 'italic',
+    fontFamily: BODY_FONT,
   },
 
   // Tasks
@@ -454,12 +639,59 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   taskName: {
+    fontFamily: BODY_FONT,
     flex: 1,
     fontSize: 15,
   },
   taskTime: {
+    fontFamily: BODY_FONT,
     fontSize: 13,
     fontWeight: '500',
+  },
+
+  // Expanded task details
+  expandedDetails: {
+    paddingHorizontal: 36,
+    paddingVertical: 10,
+    paddingLeft: 70,
+    gap: 6,
+  },
+  expandedDesc: {
+    fontFamily: BODY_FONT,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  expandedSubtasks: {
+    gap: 2,
+  },
+  expandedSubLabel: {
+    fontFamily: BODY_FONT,
+    fontSize: 11,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 2,
+  },
+  expandedSubItem: {
+    fontFamily: BODY_FONT,
+    fontSize: 13,
+    paddingLeft: 8,
+  },
+  expandedWhy: {
+    fontFamily: BODY_FONT,
+    fontSize: 12,
+    fontWeight: '500',
+    fontStyle: 'italic',
+    marginTop: 4,
+  },
+
+  // Bottom gradient
+  bottomGradient: {
+    position: 'absolute',
+    bottom: 130,
+    left: 0,
+    right: 0,
+    height: 40,
   },
 
   // Bottom
@@ -476,18 +708,25 @@ const styles = StyleSheet.create({
   removedText: {
     fontSize: 13,
   },
-  addButton: {
+  primaryButton: {
     width: '100%',
     paddingVertical: 16,
     borderRadius: 28,
     alignItems: 'center',
+    shadowColor: '#FF6B6B',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
   },
-  addButtonText: {
+  primaryButtonText: {
+    fontFamily: BODY_FONT,
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '700',
   },
-  easyWinsText: {
+  secondaryText: {
+    fontFamily: BODY_FONT,
     fontSize: 14,
     fontWeight: '600',
     paddingVertical: 8,

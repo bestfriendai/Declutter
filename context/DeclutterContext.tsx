@@ -3,74 +3,66 @@
  * Global state management for the declutter app
  */
 
-import { api } from '@/convex/_generated/api';
-import type { Id } from '@/convex/_generated/dataModel';
+import { AppBootstrapScreen } from '@/components/ui/AppBootstrapScreen';
 import { convex } from '@/config/convex';
 import { defaultCollectionStats, defaultSettings, defaultStats } from '@/constants/defaultState';
 import { Time } from '@/constants/time';
 import { SyncData, useAuth } from '@/context/AuthContext';
+import { api } from '@/convex/_generated/api';
+import type { Id } from '@/convex/_generated/dataModel';
 import { setForcedColorScheme } from '@/hooks/useColorScheme';
+import { getComebackBonusXP } from '@/services/comebackEngine';
+import { notifyLevelUp, notifyRoomComplete } from '@/services/notifications';
 import { setHapticsEnabled } from '@/services/haptics';
 import {
-  hydrateCloudState,
-  hydrateCollection,
-  hydrateCollectionStats,
-  hydrateMascot,
-  hydrateRooms,
-  hydrateSettings,
-  hydrateStats,
-  hydrateUserProfile,
+    hydrateCloudState,
+    hydrateCollection,
+    hydrateCollectionStats,
+    hydrateMascot,
+    hydrateRooms,
+    hydrateSettings,
+    hydrateStats,
+    hydrateUserProfile,
 } from '@/services/hydration';
 import { persistPhotoLocally } from '@/services/localPhotos';
+import { recordTaskCompletion, clearTaskHistory } from '@/services/taskOptimizer';
 import {
-  deleteSecureValue,
-  loadSecureJson,
-  saveSecureJson,
-  SECURE_KEYS,
+    deleteSecureValue,
+    loadSecureJson,
+    saveSecureJson,
+    SECURE_KEYS,
 } from '@/services/secureStorage';
-import { AppBootstrapScreen } from '@/components/ui/AppBootstrapScreen';
 import {
-  AppSettings,
-  Badge,
-  BADGES,
-  CleaningSession,
-  CleaningTask,
-  CollectedItem,
-  COLLECTIBLES,
-  CollectionStats,
-  DeclutterState,
-  FocusSession,
-  Mascot,
-  MascotMood,
-  MascotPersonality,
-  PhotoCapture,
-  Room,
-  SpawnEvent,
-  UserProfile,
-  UserStats,
+    AppSettings,
+    Badge,
+    BADGES,
+    CleaningSession,
+    CleaningTask,
+    CollectedItem,
+    COLLECTIBLES,
+    CollectionStats,
+    DeclutterState,
+    FocusSession,
+    Mascot,
+    MascotMood,
+    MascotPersonality,
+    PhotoCapture,
+    Room,
+    RoomType,
+    SpawnEvent,
+    UserProfile,
+    UserStats,
 } from '@/types/declutter';
 import { toConvexId } from '@/utils/convexIds';
+import { generateId } from '@/utils/id';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, ReactNode, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { AppState, type AppStateStatus } from 'react-native';
 
-// Storage keys
-const STORAGE_KEYS = {
-  ROOMS: '@declutterly_rooms',
-  STATS: '@declutterly_stats',
-  SETTINGS: '@declutterly_settings',
-  API_KEY: '@declutterly_api_key',
-  MASCOT: '@declutterly_mascot',
-  COLLECTION: '@declutterly_collection',
-  COLLECTION_STATS: '@declutterly_collection_stats',
-};
+import { STORAGE_KEYS } from '@/constants/storageKeys';
 
 // Create context
 export const DeclutterContext = createContext<DeclutterState | null>(null);
-
-// Generate unique ID
-function generateId(): string {
-  return `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
-}
 
 // Provider component
 export function DeclutterProvider({ children }: { children: ReactNode }) {
@@ -78,9 +70,15 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [rooms, setRooms] = useState<Room[]>([]);
   const [stats, setStats] = useState<UserStats>(defaultStats);
+  // Ref always reflects the latest committed stats so callbacks can read the
+  // current value without causing stale-closure bugs or nested setState calls.
+  const statsRef = useRef(stats);
+  statsRef.current = stats;
   const [settings, setSettingsState] = useState<AppSettings>(defaultSettings);
   const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
-  const [currentSession, setCurrentSession] = useState<CleaningSession | null>(null);
+  // Dead session code removed — session tracking is now handled by focus mode.
+  // Keep a static null value to satisfy the DeclutterState interface.
+  const currentSession: CleaningSession | null = null;
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
@@ -99,8 +97,12 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
   // Celebration state for achievements
   const [pendingCelebration, setPendingCelebration] = useState<Badge[]>([]);
 
+  // Comeback bonus multiplier — applies extra XP for returning users
+  const [comebackMultiplier, setComebackMultiplier] = useState<number>(1);
+
   // Sync error state
   const [syncError, setSyncError] = useState<string | null>(null);
+  const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'saved' | 'error'>('idle');
   const [isHydratingCloud, setIsHydratingCloud] = useState(false);
   // Ref-based hydration guard: ensures the sync effect never fires in the same
   // React commit that applyCloudData set new state values, even if React
@@ -112,12 +114,55 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
     loadData();
   }, []);
 
+  // Check for comeback multiplier on initial load.
+  // Wait until cloud hydration finishes (so stats reflect server data) or
+  // fall back after 3 seconds for offline / anonymous users.
+  const comebackCheckedRef = useRef(false);
+  useEffect(() => {
+    if (!isLoaded || comebackCheckedRef.current) return;
+
+    // If cloud hydration is still in progress, wait for it to complete
+    // (or time out after 3 seconds so offline users still get comeback bonuses).
+    if (isHydratingCloud) {
+      const timeout = setTimeout(() => {
+        if (!comebackCheckedRef.current) {
+          comebackCheckedRef.current = true;
+          const lastActivity = stats.lastActivityDate;
+          if (!lastActivity) return;
+          const lastDate = new Date(lastActivity);
+          const now = new Date();
+          const diffDays = Math.floor((now.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24));
+          if (diffDays >= 2) {
+            const { multiplier } = getComebackBonusXP(10, diffDays);
+            setComebackMultiplier(multiplier);
+          }
+        }
+      }, 3000);
+      return () => clearTimeout(timeout);
+    }
+
+    // Cloud hydration complete (or user is not authenticated) — check now
+    comebackCheckedRef.current = true;
+    if (!stats.lastActivityDate) return;
+    const lastDate = new Date(stats.lastActivityDate);
+    const now = new Date();
+    const diffDays = Math.floor((now.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24));
+    if (diffDays >= 2) {
+      const { multiplier } = getComebackBonusXP(10, diffDays);
+      setComebackMultiplier(multiplier);
+    }
+  }, [isLoaded, isHydratingCloud]); // re-run when hydration completes
+
   // Save data when it changes (skip during cloud hydration to avoid
-  // writing partially-applied cloud state to disk)
+  // writing partially-applied cloud state to disk). Debounced to avoid
+  // hammering AsyncStorage on every rapid state change.
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => {
     if (isLoaded && !isHydratingCloudRef.current) {
-      saveData();
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = setTimeout(() => saveData(), 2000);
     }
+    return () => clearTimeout(saveTimerRef.current);
   }, [user, rooms, stats, settings, mascot, collection, collectionStats, isLoaded]);
 
   useEffect(() => {
@@ -173,6 +218,17 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
     isHydratingCloudRef.current = true;
     setIsHydratingCloud(true);
 
+    // Safety timeout: force-clear hydrating flag if hydration hasn't
+    // completed after 5 seconds (e.g. app backgrounded during hydration,
+    // network stall, or promise never settling).
+    const hydrationTimeout = setTimeout(() => {
+      if (isHydratingCloudRef.current) {
+        if (__DEV__) console.warn('Hydration timed out after 5s — force-clearing hydrating flag');
+        isHydratingCloudRef.current = false;
+        setIsHydratingCloud(false);
+      }
+    }, 5000);
+
     void (async () => {
       try {
         const cloudData = await loadFromCloud();
@@ -185,6 +241,7 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
           setSyncError('Unable to load your latest synced data.');
         }
       } finally {
+        clearTimeout(hydrationTimeout);
         if (!cancelled) {
           setIsHydratingCloud(false);
           // Delay clearing the ref so the sync effect that runs in the same
@@ -197,8 +254,20 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
       }
     })();
 
+    // AppState listener: reset hydrating flag if app goes to background
+    // during hydration so it doesn't get stuck.
+    const appStateSubscription = AppState.addEventListener('change', (nextAppState: AppStateStatus) => {
+      if ((nextAppState === 'background' || nextAppState === 'inactive') && isHydratingCloudRef.current) {
+        if (__DEV__) console.warn('App backgrounded during hydration — clearing hydrating flag');
+        isHydratingCloudRef.current = false;
+        setIsHydratingCloud(false);
+      }
+    });
+
     return () => {
       cancelled = true;
+      clearTimeout(hydrationTimeout);
+      appStateSubscription.remove();
     };
   }, [applyCloudData, isAuthenticated, isAnonymous, isLoaded, loadFromCloud]);
 
@@ -228,9 +297,14 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
         collectionStats,
       };
 
-      syncToCloud(syncData).catch(error => {
+      setSyncStatus('syncing');
+      syncToCloud(syncData).then(() => {
+        setSyncStatus('saved');
+        setTimeout(() => setSyncStatus('idle'), 2000);
+      }).catch(error => {
         if (__DEV__) console.error('Background sync failed:', error);
         setSyncError('Unable to sync your data. Changes saved locally.');
+        setSyncStatus('error');
       });
     }, Time.CLOUD_SYNC_DEBOUNCE_MS);
 
@@ -240,6 +314,39 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
       }
     };
   }, [user, rooms, stats, settings, mascot, collection, collectionStats, isLoaded, isAuthenticated, isAnonymous, isHydratingCloud, syncToCloud]);
+
+  // Flush pending sync immediately when app goes to background
+  useEffect(() => {
+    const handleAppStateChange = (nextAppState: AppStateStatus) => {
+      if (nextAppState === 'background' || nextAppState === 'inactive') {
+        // Immediately sync when going to background
+        if (isLoaded && isAuthenticated && !isAnonymous && !isHydratingCloudRef.current) {
+          // Cancel any pending debounced sync
+          if (syncTimeoutRef.current) {
+            clearTimeout(syncTimeoutRef.current);
+            syncTimeoutRef.current = null;
+          }
+
+          const syncData: SyncData = {
+            profile: user || undefined,
+            rooms,
+            stats,
+            settings,
+            mascot: mascot || undefined,
+            collection,
+            collectionStats,
+          };
+
+          syncToCloud(syncData).catch(error => {
+            if (__DEV__) console.error('Background sync failed:', error);
+          });
+        }
+      }
+    };
+
+    const subscription = AppState.addEventListener('change', handleAppStateChange);
+    return () => subscription.remove();
+  }, [isLoaded, isAuthenticated, isAnonymous, user, rooms, stats, settings, mascot, collection, collectionStats, syncToCloud]);
 
   const updateMascotStatusRef = useRef<() => void>(() => {});
 
@@ -385,6 +492,18 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
         case 'time':
           shouldUnlock = updatedStats.totalMinutesCleaned >= badge.requirement;
           break;
+        case 'comeback':
+          shouldUnlock = (updatedStats.comebackCount ?? 0) >= badge.requirement;
+          break;
+        case 'longComeback':
+          // longComeback badges unlock when the user has returned after 7+ days away.
+          // The comeback engine validates the gap length before incrementing comebackCount,
+          // so any comeback qualifies once comebackCount >= 1.
+          shouldUnlock = (updatedStats.comebackCount ?? 0) >= 1;
+          break;
+        case 'sessions':
+          shouldUnlock = (updatedStats.totalCleaningSessions ?? 0) >= badge.requirement;
+          break;
       }
 
       if (shouldUnlock) {
@@ -439,12 +558,39 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
     setRooms(prev =>
       prev.map(room => (room.id === roomId ? { ...room, ...updates } : room))
     );
-  }, []);
+
+    // Sync room update to Convex
+    if (isAuthenticated && !isAnonymous) {
+      const convexUpdates: Record<string, unknown> = {};
+      if (updates.name !== undefined) convexUpdates.name = updates.name;
+      if (updates.type !== undefined) convexUpdates.type = updates.type;
+      if (updates.emoji !== undefined) convexUpdates.emoji = updates.emoji;
+      if (updates.messLevel !== undefined) convexUpdates.messLevel = updates.messLevel;
+      if (updates.currentProgress !== undefined) convexUpdates.currentProgress = updates.currentProgress;
+      if (updates.aiSummary !== undefined) convexUpdates.aiSummary = updates.aiSummary;
+      if (updates.motivationalMessage !== undefined) convexUpdates.motivationalMessage = updates.motivationalMessage;
+      if (Object.keys(convexUpdates).length > 0) {
+        convex.mutation(api.rooms.update, {
+          id: toConvexId<'rooms'>(roomId),
+          ...convexUpdates,
+        }).catch((error) => {
+          if (__DEV__) console.error('Failed to update room in Convex:', error);
+        });
+      }
+    }
+  }, [isAnonymous, isAuthenticated]);
 
   const deleteRoom = useCallback((roomId: string) => {
     setRooms(prev => prev.filter(room => room.id !== roomId));
     setActiveRoomId(prev => prev === roomId ? null : prev);
-  }, []);
+
+    // Sync deletion to Convex
+    if (isAuthenticated && !isAnonymous) {
+      void convex.mutation(api.rooms.remove, { id: toConvexId<'rooms'>(roomId) }).catch((error) => {
+        if (__DEV__) console.error('Failed to delete room in Convex:', error);
+      });
+    }
+  }, [isAuthenticated, isAnonymous]);
 
   const addPhotoToRoom = useCallback(async (roomId: string, photoData: Omit<PhotoCapture, 'id'>) => {
     const photoId = generateId();
@@ -559,7 +705,42 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
         room.id === roomId ? { ...room, tasks } : room
       )
     );
-  }, []);
+
+    // Persist tasks to Convex backend
+    if (isAuthenticated && !isAnonymous) {
+      const convexTasks = tasks.map((t, i) => ({
+        title: t.title,
+        description: t.description || '',
+        emoji: t.emoji || '📋',
+        priority: t.priority || 'medium' as const,
+        difficulty: t.difficulty || 'medium' as const,
+        estimatedMinutes: t.estimatedMinutes || 5,
+        completed: t.completed || false,
+        tips: t.tips,
+        zone: t.zone,
+        targetObjects: t.targetObjects,
+        destinationLocation: t.destination?.location,
+        destinationInstructions: t.destination?.instructions,
+        category: t.category,
+        energyRequired: t.energyRequired,
+        decisionLoad: t.decisionLoad,
+        visualImpact: t.visualImpact,
+        whyThisMatters: t.whyThisMatters,
+        resistanceHandler: t.resistanceHandler,
+        suppliesNeeded: t.suppliesNeeded,
+        dependencies: t.dependencies,
+        enables: t.enables,
+        parallelWith: t.parallelWith,
+        order: i,
+      }));
+      convex.mutation(api.tasks.createMany, {
+        roomId: toConvexId<'rooms'>(roomId),
+        tasks: convexTasks,
+      }).catch((error) => {
+        if (__DEV__) console.error('Failed to persist tasks to Convex:', error);
+      });
+    }
+  }, [isAnonymous, isAuthenticated]);
 
   const addTaskToRoom = useCallback((roomId: string, task: Omit<CleaningTask, 'id'>) => {
     const newTask: CleaningTask = {
@@ -595,12 +776,17 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
       activity: 'cheering',
     } : null);
 
+    // Sync mascot feeding to Convex
+    if (isAuthenticated && !isAnonymous) {
+      convex.mutation(api.mascots.feed, {}).catch((err) => { if (__DEV__) console.warn('Sync failed:', err?.message); });
+    }
+
     // Reset activity after animation - with cleanup
     clearMascotActivityTimeout();
     mascotActivityTimeoutRef.current = setTimeout(() => {
       setMascot(prev => prev ? { ...prev, activity: 'idle' } : null);
     }, Time.MASCOT_SHORT_ACTIVITY_MS);
-  }, [mascot, clearMascotActivityTimeout]);
+  }, [mascot, clearMascotActivityTimeout, isAnonymous, isAuthenticated]);
 
   // Moved before toggleTask to avoid temporal dead zone
   const spawnCollectibleAction = useCallback((): SpawnEvent | null => {
@@ -615,12 +801,15 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
 
     if (eligible.length === 0) return null;
 
-    // Roll for spawn
+    // Normalize spawn chances so they sum to 1.0
+    // Without normalization, cumulative probability exceeds 1.0 and rare/legendary
+    // items at the end of the array can never spawn.
+    const totalChance = eligible.reduce((sum, c) => sum + c.spawnChance, 0);
     const roll = Math.random();
     let cumulative = 0;
 
     for (const collectible of eligible) {
-      cumulative += collectible.spawnChance;
+      cumulative += collectible.spawnChance / totalChance;
       if (roll <= cumulative) {
         const spawn: SpawnEvent = {
           collectible,
@@ -644,6 +833,9 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
     let taskMinutes = 0;
     let roomJustCompleted = false;
     let roomWasCompleted = false;
+    let completedTaskRef: CleaningTask | null = null;
+    let roomTypeRef: RoomType | undefined;
+    let completedRoomName: string | undefined;
 
     setRooms(prev => {
       const room = prev.find(r => r.id === roomId);
@@ -653,6 +845,10 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
 
       const wasCompleted = task.completed;
       taskMinutes = task.estimatedMinutes;
+      // Capture task + room data for the learning system
+      completedTaskRef = task;
+      roomTypeRef = room?.type;
+      completedRoomName = room?.name;
 
       // Check if room was 100% before this change
       const prevCompletedCount = room?.tasks.filter(t => t.completed).length || 0;
@@ -682,6 +878,8 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
           ...r,
           tasks: updatedTasks,
           currentProgress: newProgress,
+          // Update lastCleanedAt when a task is completed (freshness decay system)
+          ...(taskJustCompleted ? { lastCleanedAt: Date.now() } : {}),
         };
       });
 
@@ -704,7 +902,8 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
             newStreak = wasYesterday ? prevStats.currentStreak + 1 : 1;
           }
 
-          const newXp = prevStats.xp + 10 + (roomJustCompleted ? 50 : 0);
+          const baseXp = 10 + (roomJustCompleted ? 50 : 0);
+          const newXp = prevStats.xp + Math.round(baseXp * comebackMultiplier);
           let updatedStats: UserStats = {
             ...prevStats,
             totalTasksCompleted: prevStats.totalTasksCompleted + 1,
@@ -721,24 +920,37 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
           if (newBadges.length > 0) {
             updatedStats = { ...updatedStats, badges: [...updatedStats.badges, ...newBadges] };
             setPendingCelebration(prev => [...prev, ...newBadges]);
+            // Push notifications for badges are handled server-side by
+            // badges._checkAndUnlockInternal to avoid duplicate notifications.
+            // Client-side checkBadges() is only for instant UI celebration.
+          }
+
+          // Notify on level up
+          const prevLevel = calculateLevel(prevStats.xp);
+          const newLevel = updatedStats.level;
+          if (newLevel > prevLevel) {
+            notifyLevelUp(newLevel).catch(() => {});
+          }
+
+          // Reset comeback multiplier after first task completion with bonus
+          if (comebackMultiplier > 1) {
+            setComebackMultiplier(1);
           }
 
           return updatedStats;
         });
 
-        // Update current session if active
-        if (currentSession) {
-          setCurrentSession(prev => prev ? {
-            ...prev,
-            tasksCompletedIds: [...prev.tasksCompletedIds, taskId],
-          } : null);
-        }
-
         if (mascot) {
           feedMascotAction();
         }
 
-        if (settings.arCollectionEnabled) {
+        // Notify when a room is fully completed
+        if (roomJustCompleted && completedRoomName) {
+          notifyRoomComplete(completedRoomName, roomId).catch(() => {});
+        }
+
+        // 25% chance to spawn a collectible on task completion
+        if (settings.arCollectionEnabled && Math.random() < 0.25) {
           const spawn = spawnCollectibleAction();
           if (spawn) {
             setActiveSpawn(spawn);
@@ -752,26 +964,51 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
           } : null);
         }
 
+        // Feed task completion data to the learning system (fire and forget)
+        if (completedTaskRef) {
+          recordTaskCompletion(
+            completedTaskRef,
+            undefined, // actualMinutes not tracked yet
+            false, // wasSkipped = false (completed)
+            roomTypeRef,
+          ).catch(() => {});
+        }
+
+        // Sync task completion to Convex backend
+        if (isAuthenticated && !isAnonymous) {
+          convex.mutation(api.tasks.toggle, {
+            id: toConvexId<'tasks'>(taskId),
+          }).catch((err) => { if (__DEV__) console.warn('Sync failed:', err?.message); });
+
+          // Trigger server-side stats update (badges, leaderboard, variable rewards)
+          convex.mutation(api.stats.incrementTask, {
+            minutesCleaned: taskMinutes || 5,
+          }).catch((err) => { if (__DEV__) console.warn('Sync failed:', err?.message); });
+
+          // If room just completed, record it server-side
+          if (roomJustCompleted) {
+            convex.mutation(api.stats.incrementRoom, {}).catch((err) => { if (__DEV__) console.warn('Sync failed:', err?.message); });
+          }
+        }
+
         // Record daily activity for analytics (fire and forget)
         if (isAuthenticated && !isAnonymous) {
+          const taskXpEarned = Math.round((10 + (roomJustCompleted ? 50 : 0)) * comebackMultiplier);
           convex.mutation(api.activityLog.recordDailyActivity, {
             tasksCompleted: 1,
             minutesCleaned: taskMinutes || 5,
-          }).catch(() => {});
+            xpEarned: taskXpEarned,
+          }).catch((err) => { if (__DEV__) console.warn('Sync failed:', err?.message); });
         }
 
-        // Check for variable reward every 3rd task (fire and forget)
+        // Variable rewards are now generated automatically inside stats.incrementTask.
+        // No need to call checkForReward from the client.
+
+        // Update challenge progress (fire and forget)
         if (isAuthenticated && !isAnonymous) {
-          // Read the latest totalTasksCompleted from the stats update above
-          setStats(prevStats => {
-            const count = prevStats.totalTasksCompleted;
-            if (count > 0 && count % 3 === 0) {
-              convex.mutation(api.variableRewards.checkForReward, {
-                taskCount: count,
-              }).catch(() => {});
-            }
-            return prevStats; // no change, just reading
-          });
+          convex.mutation(api.social.incrementMyProgress, {
+            increment: 1,
+          }).catch((err) => { if (__DEV__) console.warn('Sync failed:', err?.message); });
         }
       } else if (taskJustUncompleted) {
         // Decrement stats when uncompleting a task (but never go below 0)
@@ -788,16 +1025,18 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
           };
         });
 
-        // Remove from current session if active
-        if (currentSession) {
-          setCurrentSession(prev => prev ? {
-            ...prev,
-            tasksCompletedIds: prev.tasksCompletedIds.filter(id => id !== taskId),
-          } : null);
+        // Sync un-completion to Convex
+        if (isAuthenticated && !isAnonymous) {
+          convex.mutation(api.tasks.toggle, {
+            id: toConvexId<'tasks'>(taskId),
+          }).catch((err) => { if (__DEV__) console.warn('Sync failed:', err?.message); });
+
+          convex.mutation(api.stats.decrementTask, {}).catch((err) => { if (__DEV__) console.warn('Sync failed:', err?.message); });
         }
+
       }
     });
-  }, [mascot, focusSession?.isActive, settings.arCollectionEnabled, feedMascotAction, spawnCollectibleAction, currentSession, isAuthenticated, isAnonymous]);
+  }, [mascot, focusSession?.isActive, settings.arCollectionEnabled, feedMascotAction, spawnCollectibleAction, isAuthenticated, isAnonymous, comebackMultiplier]);
 
   const toggleSubTask = useCallback((roomId: string, taskId: string, subTaskId: string) => {
     setRooms(prev =>
@@ -836,7 +1075,14 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
         };
       })
     );
-  }, []);
+
+    // Sync deletion to Convex
+    if (isAuthenticated && !isAnonymous) {
+      convex.mutation(api.tasks.remove, { id: toConvexId<'tasks'>(taskId) }).catch((error) => {
+        if (__DEV__) console.error('Failed to delete task from Convex:', error);
+      });
+    }
+  }, [isAnonymous, isAuthenticated]);
 
   const restoreTask = useCallback((roomId: string, task: CleaningTask, originalIndex?: number) => {
     setRooms(prev =>
@@ -895,7 +1141,24 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
         };
       })
     );
-  }, []);
+
+    // Sync task update to Convex (only send fields the mutation accepts)
+    if (isAuthenticated && !isAnonymous) {
+      const patch: Record<string, unknown> = { id: toConvexId<'tasks'>(taskId) };
+      if (updates.title !== undefined) patch.title = updates.title;
+      if (updates.description !== undefined) patch.description = updates.description;
+      if (updates.emoji !== undefined) patch.emoji = updates.emoji;
+      if (updates.priority !== undefined) patch.priority = updates.priority;
+      if (updates.difficulty !== undefined) patch.difficulty = updates.difficulty;
+      if (updates.estimatedMinutes !== undefined) patch.estimatedMinutes = updates.estimatedMinutes;
+      if (updates.completed !== undefined) patch.completed = updates.completed;
+      if (updates.visualImpact !== undefined) patch.visualImpact = updates.visualImpact;
+      if (updates.energyRequired !== undefined) patch.energyRequired = updates.energyRequired;
+      convex.mutation(api.tasks.update, patch as Parameters<typeof convex.mutation<typeof api.tasks.update>>[1]).catch((error) => {
+        if (__DEV__) console.error('Failed to update task in Convex:', error);
+      });
+    }
+  }, [isAnonymous, isAuthenticated]);
 
   const setActiveRoom = useCallback((roomId: string | null) => {
     setActiveRoomId(roomId);
@@ -915,31 +1178,20 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
     setStats(prev => ({ ...prev, ...updates }));
   }, []);
 
-  const startSession = useCallback((roomId: string, focusMode: boolean) => {
-    const session: CleaningSession = {
-      id: generateId(),
-      roomId,
-      startedAt: new Date(),
-      tasksCompletedIds: [],
-      focusMode,
-    };
-    setCurrentSession(session);
-  }, []);
-
-  const endSession = useCallback(() => {
-    // Simply end the session - streak updates are now handled in toggleTask
-    setCurrentSession(prevSession => {
-      if (prevSession && prevSession.tasksCompletedIds.length > 0) {
-        // Session had tasks completed - good job!
-        // Streak was already updated when tasks were toggled
-      }
-      return null;
-    });
-  }, []);
+  // startSession / endSession stubs — dead code removed, kept as no-ops for interface compat
+  const startSession = useCallback((_roomId: string, _focusMode: boolean) => {}, []);
+  const endSession = useCallback(() => {}, []);
 
   const completeOnboarding = useCallback(() => {
     setUser(prev => prev ? { ...prev, onboardingComplete: true } : null);
-  }, []);
+
+    // Sync onboarding completion to Convex
+    if (isAuthenticated && !isAnonymous) {
+      convex.mutation(api.users.update, {
+        onboardingComplete: true,
+      }).catch((err) => { if (__DEV__) console.warn('Sync failed:', err?.message); });
+    }
+  }, [isAnonymous, isAuthenticated]);
 
   // =====================
   // MASCOT ACTIONS
@@ -962,7 +1214,17 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
       accessories: [],
     };
     setMascot(newMascot);
-  }, []);
+
+    // Sync mascot creation to Convex
+    if (isAuthenticated && !isAnonymous) {
+      convex.mutation(api.mascots.create, {
+        name,
+        personality,
+      }).catch((error) => {
+        if (__DEV__) console.error('Failed to create mascot in Convex:', error);
+      });
+    }
+  }, [isAnonymous, isAuthenticated]);
 
   const updateMascotAction = useCallback((updates: Partial<Mascot>) => {
     setMascot(prev => prev ? { ...prev, ...updates } : null);
@@ -1099,7 +1361,7 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
         rareCount: collectible.rarity === 'rare' ? prevStats.rareCount + 1 : prevStats.rareCount,
         epicCount: collectible.rarity === 'epic' ? prevStats.epicCount + 1 : prevStats.epicCount,
         legendaryCount: collectible.rarity === 'legendary' ? prevStats.legendaryCount + 1 : prevStats.legendaryCount,
-        lastCollected: new Date(),
+        lastCollected: Date.now(),
       }));
 
       return [...prev, newItem];
@@ -1115,6 +1377,18 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
     // Clear active spawn
     setActiveSpawn(null);
 
+    // Sync collection to Convex
+    if (isAuthenticated && !isAnonymous) {
+      convex.mutation(api.collection.collect, {
+        collectibleId,
+        rarity: collectible.rarity,
+        ...(roomId ? { roomId: toConvexId<'rooms'>(roomId) } : {}),
+        ...(taskId ? { taskId: toConvexId<'tasks'>(taskId) } : {}),
+      }).catch((error) => {
+        if (__DEV__) console.error('Failed to sync collection to Convex:', error);
+      });
+    }
+
     // Mascot gets excited - with cleanup
     if (mascot) {
       setMascot(prev => prev ? { ...prev, activity: 'cheering', mood: 'excited' } : null);
@@ -1123,7 +1397,7 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
         setMascot(prev => prev ? { ...prev, activity: 'idle' } : null);
       }, Time.MASCOT_SHORT_ACTIVITY_MS);
     }
-  }, [mascot, clearMascotActivityTimeout]);
+  }, [mascot, clearMascotActivityTimeout, isAnonymous, isAuthenticated]);
 
   const dismissSpawn = useCallback(() => {
     setActiveSpawn(null);
@@ -1147,13 +1421,15 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
         AsyncStorage.removeItem(STORAGE_KEYS.COLLECTION_STATS),
       ]);
 
+      // Clear task optimizer history
+      await clearTaskHistory();
+
       // Reset all state to defaults
       setUser(null);
       setRooms([]);
       setStats(defaultStats);
       setSettingsState(defaultSettings);
       setActiveRoomId(null);
-      setCurrentSession(null);
       setMascot(null);
       setFocusSession(null);
       setCollection([]);
@@ -1196,7 +1472,9 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
     isAnalyzing,
     analysisError,
     syncError,
+    syncStatus,
     pendingCelebration,
+    comebackMultiplier,
     setUser: setUserAction,
     addRoom,
     updateRoom,
@@ -1251,7 +1529,9 @@ export function DeclutterProvider({ children }: { children: ReactNode }) {
     isAnalyzing,
     analysisError,
     syncError,
+    syncStatus,
     pendingCelebration,
+    comebackMultiplier,
   ]);
 
   if (!isLoaded) {

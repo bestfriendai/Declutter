@@ -1,6 +1,6 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { internalMutation, mutation, query } from "./_generated/server";
 
 /**
  * Reward type definitions with probabilities and amounts
@@ -46,17 +46,25 @@ function getRewardAmount(type: RewardType): number {
 }
 
 /**
- * Check if a reward should be given after task completion
- * Triggers every 3rd task — generates a random mystery reward
+ * Check if a reward should be given after task completion.
+ *
+ * DEPRECATED: Variable rewards are now generated inside stats.incrementTask
+ * (the single source of truth). This mutation is kept for backward compatibility
+ * but will return { rewarded: false } if a reward was already granted by
+ * incrementTask for the same taskCount. Do NOT call both from the client —
+ * incrementTask handles reward generation automatically.
  */
-export const checkForReward = mutation({
+/**
+ * DEPRECATED & INTERNAL: Variable rewards are now generated inside stats.incrementTask.
+ * This is kept as an internal mutation for backward compatibility / server-side use only.
+ * Not callable from clients to prevent reward farming.
+ */
+export const checkForReward = internalMutation({
   args: {
+    userId: v.id("users"),
     taskCount: v.number(), // current total tasks completed
   },
   handler: async (ctx, args) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
-
     // Only trigger on every 3rd task
     if (args.taskCount % 3 !== 0 || args.taskCount === 0) {
       return { rewarded: false };
@@ -65,7 +73,7 @@ export const checkForReward = mutation({
     // Check if we already gave a reward for this task number
     const existingRewards = await ctx.db
       .query("variableRewards")
-      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .withIndex("by_userId", (q) => q.eq("userId", args.userId))
       .collect();
 
     const alreadyRewarded = existingRewards.some(
@@ -76,12 +84,12 @@ export const checkForReward = mutation({
       return { rewarded: false };
     }
 
-    // Generate reward
+    // Generate reward using shared config
     const rewardType = pickRewardType();
     const amount = getRewardAmount(rewardType);
 
     const rewardId = await ctx.db.insert("variableRewards", {
-      userId,
+      userId: args.userId,
       taskNumber: args.taskCount,
       rewardType,
       amount,

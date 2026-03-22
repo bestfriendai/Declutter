@@ -14,7 +14,9 @@
  * - Checkbox animations
  */
 
-import * as Haptics from 'expo-haptics';
+import { useColorScheme } from '@/hooks/useColorScheme';
+import { impact } from '@/services/haptics';
+import { ImpactFeedbackStyle } from 'expo-haptics';
 import React, { useEffect } from 'react';
 import {
     Pressable,
@@ -22,7 +24,6 @@ import {
     Text,
     View,
 } from 'react-native';
-import { useColorScheme } from '@/hooks/useColorScheme';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
     Extrapolation,
@@ -38,13 +39,13 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { ColorTokens, EnergyColors } from '@/constants/Colors';
+import { V1, BODY_FONT, DISPLAY_FONT, RADIUS } from '@/constants/designTokens';
 import { useCardPress } from '@/hooks/useAnimatedPress';
-import { Typography } from '@/theme/typography';
 import { CleaningTask, EnergyLevel, VisualImpact } from '@/types/declutter';
 
 function getEnergyColor(energy: EnergyLevel): string {
   switch (energy) {
-    case 'minimal': return EnergyColors.minimal;
+    case 'exhausted': return EnergyColors.minimal;
     case 'low': return EnergyColors.light;
     case 'moderate': return EnergyColors.moderate;
     case 'high': return EnergyColors.intense;
@@ -54,7 +55,7 @@ function getEnergyColor(energy: EnergyLevel): string {
 
 function getEnergyEmoji(energy: EnergyLevel): string {
   switch (energy) {
-    case 'minimal': return '\u{1F634}';
+    case 'exhausted': return '\u{1F634}';
     case 'low': return '\u{1F610}';
     case 'moderate': return '\u{1F642}';
     case 'high': return '\u26A1';
@@ -99,7 +100,7 @@ export function SwipeableTaskCard({
 
       if (newTranslateX <= -SWIPE_THRESHOLD && !hasTriggeredHaptic.value) {
         hasTriggeredHaptic.value = true;
-        runOnJS(Haptics.impactAsync)(Haptics.ImpactFeedbackStyle.Medium);
+        runOnJS(impact)(ImpactFeedbackStyle.Medium);
       } else if (newTranslateX > -SWIPE_THRESHOLD && hasTriggeredHaptic.value) {
         hasTriggeredHaptic.value = false;
       }
@@ -416,6 +417,44 @@ export default function TaskCard({
                     </View>
                   )}
                 </View>
+                {/* Location zone — shown when NOT expanded */}
+                {!expanded && !task.completed && task.zone && (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 }}>
+                    <Text style={{ fontSize: 11, color: timeColor }}>📍</Text>
+                    <Text style={{ fontSize: 12, color: timeColor, flex: 1 }} numberOfLines={1}>
+                      {task.zone}
+                    </Text>
+                  </View>
+                )}
+                {/* Destination row — shown when NOT expanded and destination exists */}
+                {!expanded && !task.completed && task.destination?.location && (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: task.zone ? 2 : 4 }}>
+                    <Text style={{ fontSize: 11, color: timeColor }}>→</Text>
+                    <Text style={{ fontSize: 12, color: timeColor, flex: 1 }} numberOfLines={1}>
+                      {task.destination.location}
+                    </Text>
+                  </View>
+                )}
+                {/* Phase badge — shown collapsed */}
+                {!expanded && !task.completed && task.phase && (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
+                    <View style={{
+                      backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+                      paddingHorizontal: 6,
+                      paddingVertical: 2,
+                      borderRadius: 6,
+                    }}>
+                      <Text style={{
+                        fontSize: 10,
+                        fontWeight: '600',
+                        color: isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.35)',
+                        letterSpacing: 0.3,
+                      }}>
+                        P{task.phase}
+                      </Text>
+                    </View>
+                  </View>
+                )}
               </View>
 
               {/* Expand arrow — styled chevron container */}
@@ -437,7 +476,7 @@ export default function TaskCard({
             {expanded && (
               <View style={[styles.expandedContent, { borderTopColor: isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)' }]}>
                 {task.description && (
-                  <Text style={[Typography.subheadline, { color: isDark ? '#ABABAB' : '#666666', marginBottom: 12 }]}>
+                  <Text style={[{ fontFamily: BODY_FONT, fontSize: 14 }, { color: isDark ? '#ABABAB' : '#666666', marginBottom: 12 }]}>
                     {task.description}
                   </Text>
                 )}
@@ -476,6 +515,30 @@ export default function TaskCard({
                   </View>
                 )}
 
+                {/* Destination & location — in expanded view */}
+                {(task.destination || (task.targetObjects && task.targetObjects.length > 0)) && (
+                  <View style={[
+                    styles.motivationBox,
+                    {
+                      backgroundColor: isDark ? 'rgba(255,183,77,0.12)' : 'rgba(255,183,77,0.10)',
+                      borderLeftWidth: 3,
+                      borderLeftColor: '#FBBF24',
+                      marginBottom: 8,
+                    },
+                  ]}>
+                    {task.targetObjects && task.targetObjects.length > 0 && (
+                      <Text style={{ fontSize: 12, color: isDark ? '#FBBF24' : '#D97706', fontWeight: '600', marginBottom: 4 }}>
+                        📍 {task.targetObjects.slice(0, 2).join(' · ')}
+                      </Text>
+                    )}
+                    {task.destination?.location && (
+                      <Text style={{ fontSize: 12, color: isDark ? '#ABABAB' : '#555555' }}>
+                        → {task.destination.location}{task.destination.instructions ? ` · ${task.destination.instructions}` : ''}
+                      </Text>
+                    )}
+                  </View>
+                )}
+
                 {task.whyThisMatters && (
                   <View style={[
                     styles.motivationBox,
@@ -485,8 +548,8 @@ export default function TaskCard({
                       borderLeftColor: colors.success,
                     },
                   ]}>
-                    <Text style={[Typography.caption1Medium, { color: colors.success, fontSize: 13, fontWeight: '600' }]}>{'\u{1F49A}'} Why this matters:</Text>
-                    <Text style={[Typography.caption1, { color: isDark ? '#ABABAB' : '#555555', marginTop: 4 }]}>
+                    <Text style={[{ fontFamily: BODY_FONT, fontSize: 12, fontWeight: '600' as const }, { color: colors.success, fontSize: 13, fontWeight: '600' }]}>{'\u{1F49A}'} Why this matters:</Text>
+                    <Text style={[{ fontFamily: BODY_FONT, fontSize: 12 }, { color: isDark ? '#ABABAB' : '#555555', marginTop: 4 }]}>
                       {task.whyThisMatters}
                     </Text>
                   </View>
@@ -501,10 +564,23 @@ export default function TaskCard({
                       borderLeftColor: colors.info,
                     },
                   ]}>
-                    <Text style={[Typography.caption1Medium, { color: colors.info, fontSize: 13, fontWeight: '600' }]}>{'\u{1F917}'} Feeling stuck?</Text>
-                    <Text style={[Typography.caption1, { color: isDark ? '#ABABAB' : '#555555', marginTop: 4 }]}>
+                    <Text style={[{ fontFamily: BODY_FONT, fontSize: 12, fontWeight: '600' as const }, { color: colors.info, fontSize: 13, fontWeight: '600' }]}>{'\u{1F917}'} Feeling stuck?</Text>
+                    <Text style={[{ fontFamily: BODY_FONT, fontSize: 12 }, { color: isDark ? '#ABABAB' : '#555555', marginTop: 4 }]}>
                       {task.resistanceHandler}
                     </Text>
+                  </View>
+                )}
+
+                {task.mentalBenefit && (
+                  <View style={[styles.aiInsight, { backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)' }]}>
+                    <Text style={[styles.aiInsightLabel, { color: isDark ? 'rgba(255,255,255,0.45)' : 'rgba(0,0,0,0.45)' }]}>Mental benefit</Text>
+                    <Text style={[styles.aiInsightText, { color: isDark ? '#ABABAB' : '#555555' }]}>{task.mentalBenefit}</Text>
+                  </View>
+                )}
+                {task.suppliesNeeded && task.suppliesNeeded.length > 0 && (
+                  <View style={[styles.aiInsight, { backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)' }]}>
+                    <Text style={[styles.aiInsightLabel, { color: isDark ? 'rgba(255,255,255,0.45)' : 'rgba(0,0,0,0.45)' }]}>You'll need</Text>
+                    <Text style={[styles.aiInsightText, { color: isDark ? '#ABABAB' : '#555555' }]}>{task.suppliesNeeded.join(' \u00B7 ')}</Text>
                   </View>
                 )}
 
@@ -517,11 +593,11 @@ export default function TaskCard({
                       padding: 12,
                     },
                   ]}>
-                    <Text style={[Typography.caption1Medium, { color: colors.primary, marginBottom: 6 }]}>
+                    <Text style={[{ fontFamily: BODY_FONT, fontSize: 12, fontWeight: '600' as const }, { color: colors.primary, marginBottom: 6 }]}>
                       {'\u{1F4A1}'} Tips:
                     </Text>
                     {task.tips.map((tip, i) => (
-                      <Text key={i} style={[Typography.caption1, { color: isDark ? '#ABABAB' : '#555555', marginBottom: 4 }]}>
+                      <Text key={i} style={[{ fontFamily: BODY_FONT, fontSize: 12 }, { color: isDark ? '#ABABAB' : '#555555', marginBottom: 4 }]}>
                         {'\u2022'} {tip}
                       </Text>
                     ))}
@@ -537,7 +613,7 @@ export default function TaskCard({
                       padding: 12,
                     },
                   ]}>
-                    <Text style={[Typography.caption1Medium, { color: textColor, marginBottom: 8 }]}>
+                    <Text style={[{ fontFamily: BODY_FONT, fontSize: 12, fontWeight: '600' as const }, { color: textColor, marginBottom: 8 }]}>
                       Steps ({completedSubtasks}/{task.subtasks!.length}):
                     </Text>
                     {task.subtasks!.map(st => (
@@ -562,7 +638,7 @@ export default function TaskCard({
                         </View>
                         <Text
                           style={[
-                            Typography.subheadline,
+                            { fontFamily: BODY_FONT, fontSize: 14 },
                             {
                               color: textColor,
                               textDecorationLine: st.completed ? 'line-through' : 'none',
@@ -577,18 +653,39 @@ export default function TaskCard({
                   </View>
                 )}
 
+                {/* Phase badge */}
+                {task.phase && task.phaseName && (
+                  <View style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    marginBottom: 12,
+                    gap: 8,
+                  }}>
+                    <View style={{
+                      backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+                      paddingHorizontal: 8,
+                      paddingVertical: 4,
+                      borderRadius: 8,
+                    }}>
+                      <Text style={{ fontSize: 11, fontWeight: '700', color: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.4)', letterSpacing: 0.5 }}>
+                        PHASE {task.phase} · {task.phaseName?.toUpperCase()}
+                      </Text>
+                    </View>
+                  </View>
+                )}
+
                 <View style={styles.actionButtonRow}>
                   <Pressable
                     onPress={(e) => {
                       e.stopPropagation();
-                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      impact(ImpactFeedbackStyle.Light);
                       onEdit();
                     }}
                     style={[styles.editTaskButton, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)', flex: 1 }]}
                     accessibilityRole="button"
                     accessibilityLabel="Edit task"
                   >
-                    <Text style={[Typography.subheadlineMedium, { color: colors.primary }]}>
+                    <Text style={[{ fontFamily: BODY_FONT, fontSize: 14, fontWeight: '500' as const }, { color: colors.primary }]}>
                       {'\u270F\uFE0F'} Edit
                     </Text>
                   </Pressable>
@@ -596,14 +693,14 @@ export default function TaskCard({
                   <Pressable
                     onPress={(e) => {
                       e.stopPropagation();
-                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                      impact(ImpactFeedbackStyle.Medium);
                       onDelete();
                     }}
                     style={[styles.deleteTaskButton, { backgroundColor: isDark ? 'rgba(255,69,58,0.12)' : 'rgba(255,59,48,0.08)', flex: 1 }]}
                     accessibilityRole="button"
                     accessibilityLabel={`Delete task: ${task.title}`}
                   >
-                    <Text style={[Typography.subheadlineMedium, { color: colors.error }]}>
+                    <Text style={[{ fontFamily: BODY_FONT, fontSize: 14, fontWeight: '500' as const }, { color: colors.error }]}>
                       {'\u{1F5D1}\uFE0F'} Delete
                     </Text>
                   </Pressable>
@@ -743,5 +840,21 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     minHeight: 44,
     justifyContent: 'center',
+  },
+  aiInsight: {
+    marginTop: 8,
+    padding: 10,
+    borderRadius: 8,
+  },
+  aiInsightLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 2,
+  },
+  aiInsightText: {
+    fontSize: 13,
+    lineHeight: 18,
   },
 });

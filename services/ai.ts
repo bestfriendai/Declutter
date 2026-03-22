@@ -1,16 +1,16 @@
 import { convex } from '@/config/convex';
-import { api } from '@/convex/_generated/api';
 import { FALLBACK_MOTIVATIONS } from '@/constants/copy';
 import { Time } from '@/constants/time';
+import { api } from '@/convex/_generated/api';
 import {
-  AIAnalysisError,
-  AIMotivationError,
-  AIProgressError,
-  toError,
+    AIAnalysisError,
+    AIMotivationError,
+    AIProgressError,
+    toError,
 } from '@/services/errors';
 import { logger } from '@/services/logger';
-import { AIAnalysisResult, CleaningTask, EnergyLevel, PhotoQuality, PhotoQualityFeedback, ProgressAnalysisResult } from '@/types/declutter';
-import { retryWithTimeout, isNetworkError, isServerError } from '@/utils/retry';
+import { AIAnalysisResult, CleaningTask, EnergyLevel, PhotoQuality, PhotoQualityFeedback, ProgressAnalysisResult, RoomType } from '@/types/declutter';
+import { isNetworkError, isServerError, retryWithTimeout } from '@/utils/retry';
 import { sanitizeAiContext } from '@/utils/sanitize';
 
 /** Timeout for AI analysis calls (30s) — generous for image analysis */
@@ -36,7 +36,7 @@ export function getProviderInfo(): {
 } {
   return {
     name: 'Google',
-    model: 'Gemini 2.5 Flash',
+    model: 'Gemini 2.5 Flash Lite',
     features: [
       'Fast multimodal analysis',
       'ADHD-friendly task breakdown',
@@ -51,9 +51,28 @@ export function getProviderInfo(): {
 
 export async function analyzeRoomImage(
   base64Image: string,
-  additionalContext?: string
-): Promise<AIAnalysisResult> {
-  const sanitizedContext = sanitizeAiContext(additionalContext);
+  additionalContext?: string,
+  energyLevel?: string,
+  timeAvailable?: number,
+  focusArea?: string,
+  userProfile?: { taskHistory: string; preferences: string; energyPatterns: string; taskBreakdownLevel?: string },
+): Promise<AIAnalysisResult & { isFallback?: boolean }> {
+  // Build rich context string that includes user profile data for personalization
+  let enrichedContext = additionalContext || '';
+  if (userProfile) {
+    const profileLines: string[] = [];
+    if (userProfile.taskHistory) profileLines.push(`Task history: ${userProfile.taskHistory}`);
+    if (userProfile.preferences) profileLines.push(`User preferences: ${userProfile.preferences}`);
+    if (userProfile.energyPatterns) profileLines.push(`Energy patterns: ${userProfile.energyPatterns}`);
+    if (userProfile.taskBreakdownLevel) profileLines.push(`Task breakdown level: ${userProfile.taskBreakdownLevel}`);
+    if (profileLines.length > 0) {
+      enrichedContext = enrichedContext
+        ? `${enrichedContext}\n\nUser cleaning profile (personalize tasks to this user):\n${profileLines.join('\n')}`
+        : `User cleaning profile (personalize tasks to this user):\n${profileLines.join('\n')}`;
+    }
+  }
+
+  const sanitizedContext = sanitizeAiContext(enrichedContext);
 
   try {
     return await retryWithTimeout(
@@ -61,6 +80,9 @@ export async function analyzeRoomImage(
         return convex.action(api.gemini.analyzeRoom, {
           base64Image,
           additionalContext: sanitizedContext,
+          energyLevel: energyLevel as "exhausted" | "low" | "moderate" | "high" | "hyperfocused" | undefined,
+          timeAvailable,
+          focusArea,
         });
       },
       AI_ANALYSIS_TIMEOUT_MS,
@@ -207,17 +229,20 @@ export function getFilteredTasks(
   energyLevel: EnergyLevel
 ): CleaningTask[] {
   const energyAllowMap: Record<EnergyLevel, EnergyLevel[]> = {
-    minimal: ['minimal'],
-    low: ['minimal', 'low'],
-    moderate: ['minimal', 'low', 'moderate'],
-    high: ['minimal', 'low', 'moderate', 'high'],
+    exhausted: ['exhausted'],
+    low: ['exhausted', 'low'],
+    moderate: ['exhausted', 'low', 'moderate'],
+    high: ['exhausted', 'low', 'moderate', 'high'],
+    hyperfocused: ['exhausted', 'low', 'moderate', 'high', 'hyperfocused'],
   };
 
-  const allowedEnergies = energyAllowMap[energyLevel] || ['minimal', 'low', 'moderate', 'high'];
-  const isExhausted = energyLevel === 'minimal';
+  const allowedEnergies = energyAllowMap[energyLevel] || ['exhausted', 'low', 'moderate', 'high'];
+  const isExhausted = energyLevel === 'exhausted';
 
   let filtered = tasks.filter((task) => {
-    const taskEnergy = task.energyRequired || 'low';
+    // Normalize legacy 'minimal' value to 'exhausted' for backward compatibility
+    const rawEnergy = task.energyRequired || 'low';
+    const taskEnergy: EnergyLevel = (rawEnergy as string) === 'minimal' ? 'exhausted' : rawEnergy;
     if (!allowedEnergies.includes(taskEnergy)) return false;
     if (isExhausted && task.decisionLoad && task.decisionLoad !== 'none') return false;
     if (energyLevel === 'low' && task.difficulty === 'challenging') return false;
@@ -317,49 +342,93 @@ function getLocalMotivationFallback(): MotivationResponse {
   return FALLBACK_MOTIVATIONS[Math.floor(Math.random() * FALLBACK_MOTIVATIONS.length)];
 }
 
-function getFallbackAnalysis(_context?: string): AIAnalysisResult {
-  return {
+function getFallbackAnalysis(context?: string): AIAnalysisResult & { isFallback: boolean } {
+  // Detect room type from context string (e.g. "Room type: kitchen")
+  const roomMatch = context?.match(/Room type:\s*(\w+)/i);
+  const roomType = roomMatch?.[1]?.toLowerCase() || 'other';
+
+  const fallbackTaskSets: Record<string, { tasks: CleaningTask[]; quickWins: string[] }> = {
+    kitchen: {
+      tasks: [
+        { id: 'fallback-1', title: 'Wipe down the main counter surface with a paper towel · EST 4 min', description: 'Clear crumbs and spills from the primary counter', estimatedMinutes: 4, difficulty: 'quick', category: 'surface_clearing', priority: 'high', visualImpact: 'high', completed: false, phase: 1, phaseName: 'Operation Floor Rescue', emoji: '🧽' },
+        { id: 'fallback-2', title: 'Load dirty dishes from the sink → dishwasher or drying rack · EST 5 min', description: 'Biggest visual impact in the kitchen', estimatedMinutes: 5, difficulty: 'medium', category: 'organization', priority: 'high', visualImpact: 'high', completed: false, phase: 1, phaseName: 'Operation Floor Rescue', emoji: '🍽️' },
+        { id: 'fallback-3', title: 'Tie up the trash bag and carry to bin outside · EST 3 min', description: 'Grab the bag, tie it, walk it out', estimatedMinutes: 3, difficulty: 'quick', category: 'trash_removal', priority: 'high', visualImpact: 'high', completed: false, phase: 1, phaseName: 'Operation Floor Rescue', emoji: '🗑️' },
+        { id: 'fallback-4', title: 'Wipe down the stovetop surface with cleaning spray · EST 3 min', description: 'Spray, wait 10 seconds, wipe', estimatedMinutes: 3, difficulty: 'quick', category: 'surface_clearing', priority: 'medium', visualImpact: 'medium', completed: false, phase: 2, phaseName: 'Counter Strike', emoji: '✨' },
+      ] as CleaningTask[],
+      quickWins: ['Wipe counter', 'Take out trash'],
+    },
+    bedroom: {
+      tasks: [
+        { id: 'fallback-1', title: 'Grab any visible clothing off the floor near the bed → laundry basket · EST 3 min', description: 'Scoop up everything within arm\'s reach', estimatedMinutes: 3, difficulty: 'quick', category: 'organization', priority: 'high', visualImpact: 'high', completed: false, phase: 1, phaseName: 'Operation Floor Rescue', emoji: '👕' },
+        { id: 'fallback-2', title: 'Straighten the sheets and pillows on the bed · EST 2 min', description: 'Pull the duvet up, fluff the pillows — instant room transformation', estimatedMinutes: 2, difficulty: 'quick', category: 'surface_clearing', priority: 'high', visualImpact: 'high', completed: false, phase: 1, phaseName: 'Operation Floor Rescue', emoji: '🛏️' },
+        { id: 'fallback-3', title: 'Clear items from the nightstand surface → where they belong · EST 5 min', description: 'Cups to kitchen, books to shelf, trash to bin', estimatedMinutes: 5, difficulty: 'medium', category: 'organization', priority: 'medium', visualImpact: 'medium', completed: false, phase: 2, phaseName: 'Counter Strike', emoji: '📦' },
+      ] as CleaningTask[],
+      quickWins: ['Floor pickup', 'Make the bed'],
+    },
+    bathroom: {
+      tasks: [
+        { id: 'fallback-1', title: 'Wipe the bathroom mirror with a damp cloth · EST 2 min', description: 'Instant sparkle', estimatedMinutes: 2, difficulty: 'quick', category: 'surface_clearing', priority: 'high', visualImpact: 'high', completed: false, phase: 1, phaseName: 'Operation Floor Rescue', emoji: '🪞' },
+        { id: 'fallback-2', title: 'Scrub the sink basin with soap and water · EST 3 min', description: 'Quick scrub, rinse, done', estimatedMinutes: 3, difficulty: 'quick', category: 'surface_clearing', priority: 'high', visualImpact: 'high', completed: false, phase: 1, phaseName: 'Operation Floor Rescue', emoji: '🧼' },
+        { id: 'fallback-3', title: 'Clear items from the bathroom counter → cabinet or basket · EST 3 min', description: 'Put products back where they go', estimatedMinutes: 3, difficulty: 'quick', category: 'organization', priority: 'medium', visualImpact: 'medium', completed: false, phase: 2, phaseName: 'Counter Strike', emoji: '🧴' },
+        { id: 'fallback-4', title: 'Hang up towels neatly on the towel rack · EST 2 min', description: 'Straighten and fold over rack', estimatedMinutes: 2, difficulty: 'quick', category: 'organization', priority: 'medium', visualImpact: 'medium', completed: false, phase: 1, phaseName: 'Operation Floor Rescue', emoji: '🛁' },
+      ] as CleaningTask[],
+      quickWins: ['Wipe mirror', 'Scrub sink'],
+    },
+    livingRoom: {
+      tasks: [
+        { id: 'fallback-1', title: 'Gather remote controls, cups, and plates from the couch area → their spots · EST 3 min', description: 'Collect everything on and around the couch', estimatedMinutes: 3, difficulty: 'quick', category: 'organization', priority: 'high', visualImpact: 'high', completed: false, phase: 1, phaseName: 'Operation Floor Rescue', emoji: '🛋️' },
+        { id: 'fallback-2', title: 'Fluff and straighten couch cushions and throw pillows · EST 2 min', description: 'Quick fluff — instant living room glow-up', estimatedMinutes: 2, difficulty: 'quick', category: 'surface_clearing', priority: 'high', visualImpact: 'high', completed: false, phase: 1, phaseName: 'Operation Floor Rescue', emoji: '✨' },
+        { id: 'fallback-3', title: 'Clear the coffee table completely → items to where they belong · EST 5 min', description: 'One surface, total reset', estimatedMinutes: 5, difficulty: 'medium', category: 'surface_clearing', priority: 'medium', visualImpact: 'high', completed: false, phase: 2, phaseName: 'Counter Strike', emoji: '🧹' },
+      ] as CleaningTask[],
+      quickWins: ['Couch area cleanup', 'Fluff cushions'],
+    },
+    office: {
+      tasks: [
+        { id: 'fallback-1', title: 'Stack loose papers on the desk into one pile → don\'t sort yet · EST 3 min', description: 'Just gather into a single stack for now', estimatedMinutes: 3, difficulty: 'quick', category: 'organization', priority: 'high', visualImpact: 'high', completed: false, phase: 1, phaseName: 'Operation Floor Rescue', emoji: '📄' },
+        { id: 'fallback-2', title: 'Clear cups, plates, and snack wrappers from the desk → kitchen/trash · EST 2 min', description: 'Food items off the workspace', estimatedMinutes: 2, difficulty: 'quick', category: 'trash_removal', priority: 'high', visualImpact: 'high', completed: false, phase: 1, phaseName: 'Operation Floor Rescue', emoji: '🗑️' },
+        { id: 'fallback-3', title: 'Gather stray pens, cables, and small items → a desk organizer or drawer · EST 4 min', description: 'Corral the small clutter', estimatedMinutes: 4, difficulty: 'quick', category: 'organization', priority: 'medium', visualImpact: 'medium', completed: false, phase: 2, phaseName: 'Counter Strike', emoji: '🖊️' },
+      ] as CleaningTask[],
+      quickWins: ['Stack papers', 'Clear food items'],
+    },
+    closet: {
+      tasks: [
+        { id: 'fallback-1', title: 'Pick up any clothes that have fallen off hangers → re-hang or basket · EST 3 min', description: 'Floor items first', estimatedMinutes: 3, difficulty: 'quick', category: 'organization', priority: 'high', visualImpact: 'high', completed: false, phase: 1, phaseName: 'Operation Floor Rescue', emoji: '👕' },
+        { id: 'fallback-2', title: 'Straighten shoes into a line along the closet floor · EST 2 min', description: 'Pairs together, line them up', estimatedMinutes: 2, difficulty: 'quick', category: 'organization', priority: 'high', visualImpact: 'high', completed: false, phase: 1, phaseName: 'Operation Floor Rescue', emoji: '👟' },
+        { id: 'fallback-3', title: 'Fold and stack items on shelves that have toppled over · EST 5 min', description: 'Reset the stacks', estimatedMinutes: 5, difficulty: 'medium', category: 'organization', priority: 'medium', visualImpact: 'medium', completed: false, phase: 2, phaseName: 'Counter Strike', emoji: '📦' },
+      ] as CleaningTask[],
+      quickWins: ['Re-hang clothes', 'Line up shoes'],
+    },
+    garage: {
+      tasks: [
+        { id: 'fallback-1', title: 'Sweep visible debris from the garage floor into a pile · EST 5 min', description: 'One sweep across the main area', estimatedMinutes: 5, difficulty: 'quick', category: 'surface_clearing', priority: 'high', visualImpact: 'high', completed: false, phase: 1, phaseName: 'Operation Floor Rescue', emoji: '🧹' },
+        { id: 'fallback-2', title: 'Collect any trash bags, boxes, and recyclables → trash area · EST 4 min', description: 'Visible trash out first', estimatedMinutes: 4, difficulty: 'quick', category: 'trash_removal', priority: 'high', visualImpact: 'high', completed: false, phase: 1, phaseName: 'Operation Floor Rescue', emoji: '🗑️' },
+        { id: 'fallback-3', title: 'Group scattered tools back onto the workbench or pegboard · EST 5 min', description: 'Tools to their home', estimatedMinutes: 5, difficulty: 'medium', category: 'organization', priority: 'medium', visualImpact: 'medium', completed: false, phase: 2, phaseName: 'Counter Strike', emoji: '🔧' },
+      ] as CleaningTask[],
+      quickWins: ['Sweep floor', 'Remove trash'],
+    },
+  };
+
+  const defaultFallback = {
     tasks: [
-      {
-        id: 'fallback-1',
-        title: 'Pick up any visible trash',
-        description: 'Grab anything that is obviously garbage and toss it.',
-        estimatedMinutes: 2,
-        difficulty: 'quick',
-        category: 'trash_removal',
-        priority: 'high',
-        visualImpact: 'high',
-        completed: false,
-      },
-      {
-        id: 'fallback-2',
-        title: 'Clear one surface',
-        description: 'Pick any flat surface and move everything off it to a temporary pile.',
-        estimatedMinutes: 3,
-        difficulty: 'quick',
-        category: 'surface_clearing',
-        priority: 'high',
-        visualImpact: 'high',
-        completed: false,
-      },
-      {
-        id: 'fallback-3',
-        title: 'Put 5 things where they belong',
-        description: 'Just 5 items. Walk each one home.',
-        estimatedMinutes: 5,
-        difficulty: 'quick',
-        category: 'organization',
-        priority: 'medium',
-        visualImpact: 'medium',
-        completed: false,
-      },
+      { id: 'fallback-1', title: 'Collect any visible trash from the nearest surface → trash bag · EST 2 min', description: 'Grab anything that is obviously garbage and toss it.', estimatedMinutes: 2, difficulty: 'quick' as const, category: 'trash_removal' as const, priority: 'high' as const, visualImpact: 'high' as const, completed: false, phase: 1, phaseName: 'Operation Floor Rescue', emoji: '🗑️' },
+      { id: 'fallback-2', title: 'Clear one flat surface completely → move items to a temporary pile · EST 3 min', description: 'Pick any flat surface and move everything off it to a temporary pile.', estimatedMinutes: 3, difficulty: 'quick' as const, category: 'surface_clearing' as const, priority: 'high' as const, visualImpact: 'high' as const, completed: false, phase: 1, phaseName: 'Operation Floor Rescue', emoji: '✨' },
+      { id: 'fallback-3', title: 'Walk 5 items to where they belong → their home spot · EST 5 min', description: 'Just 5 items. Walk each one home.', estimatedMinutes: 5, difficulty: 'quick' as const, category: 'organization' as const, priority: 'medium' as const, visualImpact: 'medium' as const, completed: false, phase: 2, phaseName: 'Counter Strike', emoji: '📦' },
     ] as CleaningTask[],
-    roomType: 'other',
+    quickWins: ['Collect visible trash', 'Clear one surface'],
+  };
+
+  const selected = fallbackTaskSets[roomType] || defaultFallback;
+  const totalTime = selected.tasks.reduce((sum, t) => sum + t.estimatedMinutes, 0);
+
+  return {
+    tasks: selected.tasks,
+    roomType: roomType as RoomType,
     messLevel: 50,
-    estimatedTotalTime: 10,
+    estimatedTotalTime: totalTime,
     summary: 'Quick starter tasks to get you moving',
-    quickWins: ['Pick up visible trash', 'Clear one surface'],
+    quickWins: selected.quickWins,
     encouragement: "We couldn't analyze the photo right now, but here are some quick wins to get started!",
     photoQuality: { lighting: 'good', coverage: 'full', clarity: 'clear', confidence: 0.5 },
+    isFallback: true,
   };
 }

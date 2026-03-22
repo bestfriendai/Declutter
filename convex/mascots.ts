@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { getAuthUserId } from "@convex-dev/auth/server";
+import { sanitizeInput } from "./shared";
 
 export const get = query({
   args: {},
@@ -10,7 +11,7 @@ export const get = query({
 
     return await ctx.db
       .query("mascots")
-      .filter((q) => q.eq(q.field("userId"), userId))
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
       .first();
   },
 });
@@ -32,13 +33,16 @@ export const create = mutation({
     // Check if mascot already exists
     const existing = await ctx.db
       .query("mascots")
-      .filter((q) => q.eq(q.field("userId"), userId))
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
       .first();
     if (existing) return existing._id;
 
+    const sanitizedName = sanitizeInput(args.name, 50);
+    if (!sanitizedName) throw new Error("Mascot name cannot be empty");
+
     return await ctx.db.insert("mascots", {
       userId,
-      name: args.name,
+      name: sanitizedName,
       personality: args.personality,
       mood: "happy",
       activity: "idle",
@@ -82,12 +86,16 @@ export const update = mutation({
 
     const mascot = await ctx.db
       .query("mascots")
-      .filter((q) => q.eq(q.field("userId"), userId))
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
       .first();
     if (!mascot) throw new Error("Mascot not found");
 
     const updates: Record<string, unknown> = {};
-    if (args.name !== undefined) updates.name = args.name;
+    if (args.name !== undefined) {
+      const sanitizedName = sanitizeInput(args.name, 50);
+      if (!sanitizedName) throw new Error("Mascot name cannot be empty");
+      updates.name = sanitizedName;
+    }
     if (args.personality !== undefined) updates.personality = args.personality;
     if (args.mood !== undefined) updates.mood = args.mood;
     if (args.activity !== undefined) updates.activity = args.activity;
@@ -112,7 +120,7 @@ export const feed = mutation({
 
     const mascot = await ctx.db
       .query("mascots")
-      .filter((q) => q.eq(q.field("userId"), userId))
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
       .first();
     if (!mascot) throw new Error("Mascot not found");
 
@@ -141,7 +149,7 @@ export const interact = mutation({
 
     const mascot = await ctx.db
       .query("mascots")
-      .filter((q) => q.eq(q.field("userId"), userId))
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
       .first();
     if (!mascot) throw new Error("Mascot not found");
 

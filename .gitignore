@@ -70,3 +70,6 @@ vendor/
 coverage/
 .cache/
 tmp/
+
+# Test scripts
+scripts/

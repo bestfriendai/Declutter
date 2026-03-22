@@ -5,110 +5,65 @@
  */
 
 import { PromptModal } from '@/components/ui/PromptModal';
+import { DEV_SKIP_AUTH } from '@/constants/app';
+import { V1 } from '@/constants/designTokens';
 import { useColorScheme } from '@/hooks/useColorScheme';
-import { useRevenueCat, PRODUCT_IDS } from '@/hooks/useRevenueCat';
+import { useReducedMotion } from '@/hooks/useReducedMotion';
+import { PRODUCT_IDS, useRevenueCat } from '@/hooks/useRevenueCat';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { Heart, Leaf, Star, X } from 'lucide-react-native';
+import { ScreenErrorBoundary } from '@/components/ErrorBoundary';
 import React, { useCallback, useMemo, useState } from 'react';
 import {
-  ActivityIndicator,
-  Alert,
-  Linking,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
+    ActivityIndicator,
+    Alert,
+    Linking,
+    Pressable,
+    ScrollView,
+    StyleSheet,
+    Text,
+    View,
 } from 'react-native';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Heart, Brain, Timer, Smile, X, Leaf, Star } from 'lucide-react-native';
 
-// ─── V1 Color Palette ────────────────────────────────────────────────────────
-const V1 = {
-  coral: '#FF6B6B',
-  green: '#66BB6A',
-  amber: '#FFB74D',
-  gold: '#FFD54F',
-  dark: {
-    bg: '#0C0C0C',
-    card: '#1A1A1A',
-    border: 'rgba(255,255,255,0.08)',
-    text: '#FFFFFF',
-    textSecondary: 'rgba(255,255,255,0.5)',
-    textMuted: 'rgba(255,255,255,0.3)',
-  },
-  light: {
-    bg: '#FAFAFA',
-    card: '#F6F7F8',
-    border: '#E5E7EB',
-    text: '#1A1A1A',
-    textSecondary: '#6B7280',
-    textMuted: '#9CA3AF',
-  },
-};
-
-// ─── Features list ───────────────────────────────────────────────────────────
+// ─── Features list (expanded for more value) ────────────────────────────────
 const FEATURES = [
-  'Unlimited room scans & AI tasks',
-  '15-Minute Blitz with smart task picks',
-  'Mascot growth & full customization',
-  'Complete progress tracking & streaks',
-  'Feel proud of your clean space',
-  'Routines that fit your ADHD brain',
+  { text: 'Unlimited AI room scans', color: V1.coral },
+  { text: 'ADHD-optimized task breakdowns', color: V1.indigo },
+  { text: '15-minute Blitz with smart picks', color: V1.blue },
+  { text: 'Mascot companion & adventures', color: V1.amber },
+  { text: 'Weekly cleaning leagues', color: V1.gold },
+  { text: 'Variable rewards & rare collectibles', color: V1.green },
+  { text: 'Accountability partners', color: V1.coral },
+  { text: 'Full progress analytics & insights', color: V1.blue },
 ];
-
-// ─── Benefit mini-cards ──────────────────────────────────────────────────────
-const BENEFITS = [
-  {
-    icon: 'brain' as const,
-    title: 'ADHD-First',
-    subtitle: 'Designed for how your brain works',
-  },
-  {
-    icon: 'timer' as const,
-    title: '15-Min Sessions',
-    subtitle: 'Quick wins that build momentum',
-  },
-  {
-    icon: 'smile' as const,
-    title: 'No Judgment',
-    subtitle: 'Start where you are, go at your pace',
-  },
-];
-
-function BenefitIcon({ name, size, color }: { name: string; size: number; color: string }) {
-  switch (name) {
-    case 'brain':
-      return <Brain size={size} color={color} />;
-    case 'timer':
-      return <Timer size={size} color={color} />;
-    case 'smile':
-      return <Smile size={size} color={color} />;
-    default:
-      return <Heart size={size} color={color} />;
-  }
-}
 
 // ─── Feature row ─────────────────────────────────────────────────────────────
 function FeatureRow({
   text,
+  color,
   isDark,
   delay,
 }: {
   text: string;
+  color: string;
   isDark: boolean;
   delay: number;
 }) {
   const t = isDark ? V1.dark : V1.light;
+  const reducedMotion = useReducedMotion();
   return (
     <Animated.View
-      entering={FadeInDown.delay(delay).duration(350)}
+      entering={reducedMotion ? undefined : FadeInDown.delay(delay).duration(350)}
       style={styles.featureRow}
     >
-      <Leaf size={18} color="#C4A87A" />
+      <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: color + '20', alignItems: 'center', justifyContent: 'center' }}>
+        <Leaf size={14} color={color} />
+      </View>
       <Text style={[styles.featureText, { color: t.text }]}>{text}</Text>
     </Animated.View>
   );
@@ -118,10 +73,20 @@ function FeatureRow({
 // Main Screen
 // ─────────────────────────────────────────────────────────────────────────────
 export default function PaywallScreen() {
+  return (
+    <ScreenErrorBoundary screenName="paywall">
+      <PaywallScreenContent />
+    </ScreenErrorBoundary>
+  );
+}
+
+function PaywallScreenContent() {
   const rawScheme = useColorScheme();
   const isDark = rawScheme === 'dark';
   const t = isDark ? V1.dark : V1.light;
   const insets = useSafeAreaInsets();
+
+  const reducedMotion = useReducedMotion();
 
   const {
     isLoading,
@@ -132,6 +97,7 @@ export default function PaywallScreen() {
   } = useRevenueCat();
 
   const [isPurchasing, setIsPurchasing] = useState(false);
+  const [purchaseError, setPurchaseError] = useState<string | null>(null);
   const [selectedTier, setSelectedTier] = useState<'monthly' | 'annual'>(
     'annual'
   );
@@ -147,8 +113,17 @@ export default function PaywallScreen() {
     [plans]
   );
 
+  // Derive trial days from the currently selected plan
+  const selectedPlanObj = selectedTier === 'annual' ? annualPlan : monthlyPlan;
+  const trialDays = selectedPlanObj?.trialDays ?? 0;
+
+  const navigateIntoApp = useCallback(() => {
+    router.replace('/where-are-you');
+  }, []);
+
   const handlePurchase = useCallback(async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+    setPurchaseError(null);
     setIsPurchasing(true);
     try {
       const planId =
@@ -156,54 +131,43 @@ export default function PaywallScreen() {
       const success = await purchasePlan(planId);
       if (success) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        router.replace('/notification-permission');
+        navigateIntoApp();
+        return;
       }
     } catch {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      Alert.alert('Purchase Failed', 'Something went wrong. Please try again.');
-    } finally {
-      setIsPurchasing(false);
+      setPurchaseError('Purchase failed. Please try again.');
     }
-  }, [purchasePlan, selectedTier]);
+    setIsPurchasing(false);
+  }, [navigateIntoApp, purchasePlan, selectedTier]);
 
   const handleRestore = useCallback(async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setPurchaseError(null);
     setIsPurchasing(true);
     try {
       const success = await restorePurchases();
       if (success) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        Alert.alert('Restored!', 'Your subscription has been restored.', [
-          {
-            text: 'Continue',
-            onPress: () => router.replace('/notification-permission'),
-          },
-        ]);
-      } else {
-        Alert.alert(
-          'No Subscription Found',
-          "We couldn't find an active subscription to restore."
-        );
+        navigateIntoApp();
+        return;
       }
+      setPurchaseError("No active subscription found to restore.");
     } catch {
-      Alert.alert(
-        'Restore Failed',
-        'Unable to restore purchases. Please try again.'
-      );
-    } finally {
-      setIsPurchasing(false);
+      setPurchaseError('Unable to restore purchases. Please try again.');
     }
-  }, [restorePurchases]);
+    setIsPurchasing(false);
+  }, [navigateIntoApp, restorePurchases]);
 
   const handleClose = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    router.replace('/notification-permission');
-  }, []);
+    navigateIntoApp();
+  }, [navigateIntoApp]);
 
   const handleContinueFree = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    router.replace('/notification-permission');
-  }, []);
+    navigateIntoApp();
+  }, [navigateIntoApp]);
 
   const openTerms = () => Linking.openURL('https://declutterly.app/terms');
   const openPrivacy = () => Linking.openURL('https://declutterly.app/privacy');
@@ -248,7 +212,7 @@ export default function PaywallScreen() {
         showsVerticalScrollIndicator={false}
       >
         {/* Close button */}
-        <Animated.View entering={FadeIn.delay(100).duration(350)}>
+        <Animated.View entering={reducedMotion ? undefined : FadeIn.delay(100).duration(350)}>
           <Pressable
             onPress={handleClose}
             style={[
@@ -264,7 +228,7 @@ export default function PaywallScreen() {
 
         {/* DECLUTTER PRO badge */}
         <Animated.View
-          entering={FadeInDown.delay(150).duration(350)}
+          entering={reducedMotion ? undefined : FadeInDown.delay(150).duration(350)}
           style={styles.proBadgeWrap}
         >
           <LinearGradient
@@ -278,7 +242,7 @@ export default function PaywallScreen() {
         </Animated.View>
 
         {/* Hero heading */}
-        <Animated.View entering={FadeInDown.delay(200).duration(350)}>
+        <Animated.View entering={reducedMotion ? undefined : FadeInDown.delay(200).duration(350)}>
           <Text style={[styles.heroTitle, { color: t.text }]}>
             A Clearer Space{'\n'}Starts Here.
           </Text>
@@ -289,7 +253,7 @@ export default function PaywallScreen() {
 
         {/* "Built for ADHD Brains" badge */}
         <Animated.View
-          entering={FadeInDown.delay(280).duration(350)}
+          entering={reducedMotion ? undefined : FadeInDown.delay(280).duration(350)}
           style={styles.adhdBadgeWrap}
         >
           <View
@@ -317,79 +281,41 @@ export default function PaywallScreen() {
           </View>
         </Animated.View>
 
+        {/* Social proof */}
+        <Animated.View
+          entering={reducedMotion ? undefined : FadeInDown.delay(290).duration(350)}
+          style={{ alignItems: 'center', marginBottom: 8 }}
+        >
+          <Text style={[{ fontSize: 13, fontWeight: '500', color: t.textSecondary, textAlign: 'center' }]}>
+            Join 2,400+ people decluttering with ADHD
+          </Text>
+        </Animated.View>
+
         {/* Feature list */}
         <View style={styles.featuresList}>
           {FEATURES.map((feature, idx) => (
             <FeatureRow
-              key={feature}
-              text={feature}
+              key={feature.text}
+              text={feature.text}
+              color={feature.color}
               isDark={isDark}
-              delay={300 + idx * 50}
+              delay={300 + idx * 40}
             />
           ))}
         </View>
 
-        {/* 3 Benefit mini-cards */}
-        <Animated.View
-          entering={FadeInDown.delay(600).duration(350)}
-          style={styles.benefitsRow}
-        >
-          {BENEFITS.map((benefit) => (
-            <View
-              key={benefit.title}
-              style={[
-                styles.benefitCard,
-                { backgroundColor: t.card, borderColor: t.border },
-              ]}
-            >
-              <BenefitIcon name={benefit.icon} size={20} color={V1.coral} />
-              <Text
-                style={[styles.benefitTitle, { color: t.text }]}
-                numberOfLines={1}
-              >
-                {benefit.title}
-              </Text>
-              <Text
-                style={[styles.benefitSubtitle, { color: t.textMuted }]}
-                numberOfLines={2}
-              >
-                {benefit.subtitle}
-              </Text>
-            </View>
-          ))}
-        </Animated.View>
-
-        {/* "Designed by" tagline */}
-        <Animated.View entering={FadeInDown.delay(650).duration(350)}>
-          <Text style={[styles.designedBy, { color: t.textMuted }]}>
-            Designed by someone with ADHD, for people with ADHD
-          </Text>
-        </Animated.View>
-
-        {/* Testimonial */}
-        <Animated.View entering={FadeInDown.delay(650).duration(350)} style={{ marginTop: 20 }}>
-          <View style={[styles.testimonialCard, { backgroundColor: t.card, borderColor: t.border }]}>
-            <View style={styles.starsRow}>
-              {[1,2,3,4,5].map(i => <Star key={i} size={14} color="#C4A87A" fill="#C4A87A" />)}
-            </View>
-            <Text style={[styles.testimonialQuote, { color: t.text }]}>
-              {'"Finally an app that understands how my ADHD brain works with cleaning!"'}
-            </Text>
-            <Text style={[styles.testimonialAuthor, { color: t.textMuted }]}>
-              — Beta Tester
-            </Text>
-          </View>
-        </Animated.View>
-
         {/* Pricing cards */}
         <Animated.View
-          entering={FadeInDown.delay(700).duration(350)}
+          entering={reducedMotion ? undefined : FadeInDown.delay(700).duration(350)}
           style={styles.pricingSection}
         >
           <View style={styles.pricingCards}>
             {/* Monthly */}
             <Pressable
               onPress={() => { Haptics.selectionAsync(); setSelectedTier('monthly'); }}
+              accessibilityRole="button"
+              accessibilityLabel="Select monthly plan"
+              accessibilityState={{ selected: selectedTier === 'monthly' }}
               style={[styles.priceCard, { borderColor: selectedTier === 'monthly' ? '#C4A87A' : t.border, backgroundColor: t.card }]}
             >
               <Text style={[styles.priceCardLabel, { color: t.textSecondary }]}>Monthly</Text>
@@ -400,6 +326,9 @@ export default function PaywallScreen() {
             {/* Annual */}
             <Pressable
               onPress={() => { Haptics.selectionAsync(); setSelectedTier('annual'); }}
+              accessibilityRole="button"
+              accessibilityLabel="Select annual plan"
+              accessibilityState={{ selected: selectedTier === 'annual' }}
               style={[styles.priceCard, styles.priceCardHighlight, { borderColor: selectedTier === 'annual' ? '#C4A87A' : t.border, backgroundColor: selectedTier === 'annual' ? (isDark ? 'rgba(196,168,122,0.12)' : 'rgba(196,168,122,0.08)') : t.card }]}
             >
               <View style={styles.saveBadge}><Text style={styles.saveBadgeText}>Save 33%</Text></View>
@@ -411,11 +340,38 @@ export default function PaywallScreen() {
           </View>
         </Animated.View>
 
+        {/* Trial banner */}
+        {trialDays > 0 && (
+          <Animated.View
+            entering={reducedMotion ? undefined : FadeInDown.delay(750).duration(350)}
+            style={{
+              alignItems: 'center',
+              gap: 4,
+              paddingVertical: 12,
+              paddingHorizontal: 20,
+              borderRadius: 16,
+              backgroundColor: isDark ? 'rgba(102,187,106,0.1)' : 'rgba(102,187,106,0.08)',
+              borderWidth: 1,
+              borderColor: isDark ? 'rgba(102,187,106,0.2)' : 'rgba(102,187,106,0.15)',
+              marginBottom: 8,
+            }}
+          >
+            <Text style={{ fontSize: 15, fontWeight: '700', color: V1.green, textAlign: 'center' }}>
+              {trialDays}-Day Free Trial
+            </Text>
+            <Text style={{ fontSize: 13, fontWeight: '500', color: t.textSecondary, textAlign: 'center' }}>
+              No charge until the trial ends. Cancel anytime.
+            </Text>
+          </Animated.View>
+        )}
+
         {/* CTA Button */}
-        <Animated.View entering={FadeInDown.delay(800).duration(350)}>
+        <Animated.View entering={reducedMotion ? undefined : FadeInDown.delay(800).duration(350)}>
           <Pressable
             onPress={handlePurchase}
             disabled={isPurchasing || isLoading}
+            accessibilityRole="button"
+            accessibilityLabel={`${trialDays > 0 ? `Start ${trialDays}-day free trial` : 'Subscribe'}, ${selectedTier === 'annual' ? 'annual plan' : 'monthly plan'}`}
             style={({ pressed }) => [
               styles.ctaButton,
               { opacity: pressed ? 0.85 : 1 },
@@ -427,14 +383,50 @@ export default function PaywallScreen() {
               {isPurchasing ? (
                 <ActivityIndicator color={isDark ? '#1A1A1A' : '#FFFFFF'} />
               ) : (
-                <Text style={[styles.ctaText, { color: isDark ? '#1A1A1A' : '#FFFFFF' }]}>Start My Free Week</Text>
+                <Text style={[styles.ctaText, { color: isDark ? '#1A1A1A' : '#FFFFFF' }]}>
+                  {trialDays > 0 ? 'Start My Free 7 Days' : 'Subscribe Now'}
+                </Text>
               )}
             </View>
           </Pressable>
         </Animated.View>
 
+        {/* Cancel anytime reassurance */}
+        <Text style={[{ fontSize: 13, fontWeight: '500', color: t.textMuted, textAlign: 'center', marginBottom: 8 }]}>
+          Cancel anytime. No questions asked.
+        </Text>
+
+        {/* Purchase / restore error banner */}
+        {purchaseError ? (
+          <Animated.View
+            entering={reducedMotion ? undefined : FadeIn.duration(300)}
+            style={[styles.purchaseErrorBanner, { backgroundColor: 'rgba(255,59,48,0.12)' }]}
+          >
+            <Text style={styles.purchaseErrorText}>{purchaseError}</Text>
+          </Animated.View>
+        ) : null}
+
+        {/* Weekly + daily price breakdown */}
+        {selectedTier === 'annual' && (
+          <View style={{ alignItems: 'center', gap: 2, marginBottom: 4 }}>
+            <Text style={[{ fontSize: 14, fontWeight: '700', color: V1.green, textAlign: 'center' }]}>
+              Just $0.77/week
+            </Text>
+            <Text style={[{ fontSize: 12, fontWeight: '500', color: t.textMuted, textAlign: 'center' }]}>
+              That's $0.11/day for a clearer space
+            </Text>
+          </View>
+        )}
+
+        {/* Auto-renewal disclosure */}
+        <Text style={[styles.autoRenewalText, { color: t.textMuted }]}>
+          {trialDays > 0
+            ? `Free for ${trialDays} days, then ${selectedTier === 'annual' ? `${annualPlan?.price ?? '$39.99'}/year` : `${monthlyPlan?.price ?? '$4.99'}/month`}. Cancel anytime.`
+            : `${selectedTier === 'annual' ? `${annualPlan?.price ?? '$39.99'}/year` : `${monthlyPlan?.price ?? '$4.99'}/month`}. Cancel anytime.`}
+        </Text>
+
         {/* Continue with free plan */}
-        <Pressable onPress={handleContinueFree} style={styles.freeLink}>
+        <Pressable onPress={handleContinueFree} style={styles.freeLink} accessibilityRole="button" accessibilityLabel="Continue with free plan">
           <Text style={[styles.freeLinkText, { color: t.textSecondary }]}>
             Continue with free plan
           </Text>
@@ -442,7 +434,7 @@ export default function PaywallScreen() {
 
         {/* Restore + Terms + Privacy */}
         <View style={styles.linksRow}>
-          <Pressable onPress={handleRestore} hitSlop={12}>
+          <Pressable onPress={handleRestore} hitSlop={12} accessibilityRole="button" accessibilityLabel="Restore purchases">
             <Text style={[styles.footerLink, { color: t.textMuted }]}>
               Restore
             </Text>
@@ -450,7 +442,7 @@ export default function PaywallScreen() {
           <Text style={[styles.footerDot, { color: t.textMuted }]}>
             {' \u00B7 '}
           </Text>
-          <Pressable onPress={openTerms} hitSlop={12}>
+          <Pressable onPress={openTerms} hitSlop={12} accessibilityRole="button" accessibilityLabel="Open terms">
             <Text style={[styles.footerLink, { color: t.textMuted }]}>
               Terms
             </Text>
@@ -458,7 +450,7 @@ export default function PaywallScreen() {
           <Text style={[styles.footerDot, { color: t.textMuted }]}>
             {' \u00B7 '}
           </Text>
-          <Pressable onPress={openPrivacy} hitSlop={12}>
+          <Pressable onPress={openPrivacy} hitSlop={12} accessibilityRole="button" accessibilityLabel="Open privacy policy">
             <Text style={[styles.footerLink, { color: t.textMuted }]}>
               Privacy
             </Text>
@@ -467,15 +459,35 @@ export default function PaywallScreen() {
 
         {/* Guarantee */}
         <Text style={[styles.guarantee, { color: t.textMuted }]}>
-          7-day free trial {'\u00B7'} Cancel anytime {'\u00B7'} Money-back
+          {trialDays > 0 ? `${trialDays}-day free trial \u00B7 ` : ''}Cancel anytime {'\u00B7'} Money-back
           guarantee
         </Text>
+
+        {/* Dev bypass button */}
+        {DEV_SKIP_AUTH && (
+          <Pressable
+            onPress={() => router.replace('/where-are-you')}
+            style={{
+              alignItems: 'center',
+              paddingVertical: 12,
+              marginTop: 8,
+              backgroundColor: 'rgba(255,59,48,0.08)',
+              borderRadius: 12,
+            }}
+            accessibilityRole="button"
+            accessibilityLabel="Skip paywall for testing"
+          >
+            <Text style={{ fontSize: 14, fontWeight: '600', color: '#FF453A' }}>
+              Skip for Testing (DEV)
+            </Text>
+          </Pressable>
+        )}
       </ScrollView>
 
-      {/* Error display */}
+      {/* RevenueCat load error */}
       {error && (
         <Animated.View
-          entering={FadeIn}
+          entering={reducedMotion ? undefined : FadeIn}
           style={[
             styles.errorBanner,
             {
@@ -520,9 +532,9 @@ const styles = StyleSheet.create({
 
   // ── Close ──
   closeButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
     alignSelf: 'flex-end',
@@ -597,60 +609,6 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 
-  // ── Benefits ──
-  benefitsRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginBottom: 16,
-  },
-  benefitCard: {
-    flex: 1,
-    borderRadius: 14,
-    borderWidth: 1,
-    padding: 12,
-    alignItems: 'center',
-    gap: 6,
-  },
-  benefitTitle: {
-    fontSize: 12,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-  benefitSubtitle: {
-    fontSize: 10,
-    textAlign: 'center',
-    lineHeight: 14,
-  },
-
-  // ── Designed by ──
-  designedBy: {
-    fontSize: 13,
-    fontStyle: 'italic',
-    textAlign: 'center',
-    marginBottom: 20,
-  },
-
-  // ── Testimonial ──
-  testimonialCard: {
-    borderRadius: 16,
-    borderWidth: 1,
-    padding: 16,
-    gap: 8,
-    marginBottom: 20,
-  },
-  starsRow: {
-    flexDirection: 'row',
-    gap: 2,
-  },
-  testimonialQuote: {
-    fontSize: 14,
-    fontStyle: 'italic',
-    lineHeight: 20,
-  },
-  testimonialAuthor: {
-    fontSize: 12,
-  },
-
   // ── Pricing cards ──
   pricingSection: {
     marginBottom: 16,
@@ -714,11 +672,21 @@ const styles = StyleSheet.create({
     letterSpacing: -0.2,
   },
 
+  // ── Auto-renewal ──
+  autoRenewalText: {
+    fontSize: 12,
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 8,
+  },
+
   // ── Free link ──
   freeLink: {
     alignItems: 'center',
     paddingVertical: 10,
     marginBottom: 12,
+    minHeight: 44,
+    justifyContent: 'center',
   },
   freeLinkText: {
     fontSize: 14,
@@ -746,7 +714,20 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
 
-  // ── Error ──
+  // ── Purchase error (inline, below CTA) ──
+  purchaseErrorBanner: {
+    borderRadius: 12,
+    padding: 12,
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  purchaseErrorText: {
+    fontSize: 13,
+    color: '#FF453A',
+    textAlign: 'center',
+  },
+
+  // ── RevenueCat load error (floating) ──
   errorBanner: {
     position: 'absolute',
     left: 24,

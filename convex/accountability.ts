@@ -6,6 +6,7 @@
 
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
+import { internal } from "./_generated/api";
 import { mutation, query } from "./_generated/server";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -94,8 +95,6 @@ export const createPair = mutation({
       status: "pending",
       createdAt: Date.now(),
       inviteCode,
-      userActiveToday: false,
-      partnerActiveToday: false,
       nudgeCount: 0,
       bothActiveStreak: 0,
       totalBothActiveDays: 0,
@@ -190,12 +189,13 @@ export const getMyPartner = query({
       .withIndex("by_userId", (q) => q.eq("userId", partnerId))
       .first();
 
+    const today = new Date().toISOString().split("T")[0];
     const partnerActiveToday = isUserSide
-      ? activePair.partnerActiveToday
-      : activePair.userActiveToday;
+      ? activePair.lastPartnerActiveDate === today
+      : activePair.lastUserActiveDate === today;
     const userActiveToday = isUserSide
-      ? activePair.userActiveToday
-      : activePair.partnerActiveToday;
+      ? activePair.lastUserActiveDate === today
+      : activePair.lastPartnerActiveDate === today;
 
     // Calculate nudges sent today
     const dayStart = startOfDay();
@@ -247,19 +247,22 @@ export const sendNudge = mutation({
 
     if (!activePair) throw new Error("No active partner");
 
-    // Check daily nudge limit per sender
+    // Check daily nudge limit per sender — tracked independently per side
     const dayStart = startOfDay();
     const isUserSide = activePair.userId === userId;
 
-    // Use lastNudgeSent for userId's nudges, lastNudgeReceived for partnerId's nudges
+    // userId-side uses nudgeCount + lastNudgeSent
+    // partnerId-side uses partnerNudgeCount + lastNudgeReceived
     const senderLastNudge = isUserSide
       ? activePair.lastNudgeSent
       : activePair.lastNudgeReceived;
 
+    const rawCount = isUserSide
+      ? activePair.nudgeCount
+      : (activePair.partnerNudgeCount ?? 0);
+
     const todayCount =
-      senderLastNudge && senderLastNudge >= dayStart
-        ? activePair.nudgeCount
-        : 0;
+      senderLastNudge && senderLastNudge >= dayStart ? rawCount : 0;
 
     if (todayCount >= MAX_NUDGES_PER_DAY) {
       return {
@@ -276,11 +279,23 @@ export const sendNudge = mutation({
 
     const now = Date.now();
 
+    // Persist per-side counter only — no shared field mutation
     await ctx.db.patch(activePair._id, {
-      nudgeCount: todayCount + 1,
       ...(isUserSide
-        ? { lastNudgeSent: now }
-        : { lastNudgeReceived: now }),
+        ? { nudgeCount: todayCount + 1, lastNudgeSent: now }
+        : { partnerNudgeCount: todayCount + 1, lastNudgeReceived: now }),
+    });
+
+    // ── Send push notification to the partner ──
+    const partnerId = isUserSide ? activePair.partnerId : activePair.userId;
+    const senderUser = await ctx.db.get(userId);
+    const senderName = senderUser?.name?.trim() || "Your partner";
+
+    await ctx.scheduler.runAfter(0, internal.notifications._sendPushNotification, {
+      userId: partnerId,
+      title: `${senderName} nudged you! \u{1F49B}`,
+      body: nudgeMessage,
+      data: { type: "nudge" },
     });
 
     return {
@@ -315,18 +330,31 @@ export const updateActivity = mutation({
       ...pairsAsPartner.filter((p) => p.status === "active"),
     ];
 
+    const today = new Date().toISOString().split("T")[0];
+
     for (const pair of activePairs) {
       const isUserSide = pair.userId === userId;
 
-      const updates: Record<string, unknown> = isUserSide
-        ? { userActiveToday: true }
-        : { partnerActiveToday: true };
+      // Check if this side was already marked active today (avoid double-counting)
+      const alreadyActiveToday = isUserSide ? pair.lastUserActiveDate === today : pair.lastPartnerActiveDate === today;
 
-      // Check if both are now active
-      const otherActive = isUserSide ? pair.partnerActiveToday : pair.userActiveToday;
-      if (otherActive) {
+      const updates: Record<string, unknown> = isUserSide
+        ? { lastUserActiveDate: today }
+        : { lastPartnerActiveDate: today };
+
+      // Only increment bothActiveStreak/totalBothActiveDays if:
+      // 1. The other side is already active today
+      // 2. This side was NOT already active (i.e., this is the first activity today for this user)
+      // 3. The lastBothActiveDate is not today (prevents double-counting if both sides re-trigger)
+      const otherActive = isUserSide ? pair.lastPartnerActiveDate === today : pair.lastUserActiveDate === today;
+      if (
+        otherActive &&
+        !alreadyActiveToday &&
+        (pair as Record<string, unknown>).lastBothActiveDate !== today
+      ) {
         updates.bothActiveStreak = (pair.bothActiveStreak ?? 0) + 1;
         updates.totalBothActiveDays = (pair.totalBothActiveDays ?? 0) + 1;
+        updates.lastBothActiveDate = today;
       }
 
       await ctx.db.patch(pair._id, updates);
@@ -360,7 +388,10 @@ export const getBothActiveBonus = query({
       return { hasPartner: false, bothActive: false, bonusPercent: 0 };
     }
 
-    const bothActive = activePair.userActiveToday && activePair.partnerActiveToday;
+    const today = new Date().toISOString().split("T")[0];
+    const bothActive =
+      activePair.lastUserActiveDate === today &&
+      activePair.lastPartnerActiveDate === today;
 
     return {
       hasPartner: true,

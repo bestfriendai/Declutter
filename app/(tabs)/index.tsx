@@ -1,11 +1,15 @@
 /**
  * Declutterly -- Home Screen (V1 Core Flow)
+ * Thin orchestrator that imports sub-components from components/home/
  * Matches Pencil designs: rSSHH (populated) + TPr0p (empty state)
  */
 
 import { useDeclutter } from '@/context/DeclutterContext';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { useSubscription, FREE_ROOM_LIMIT } from '@/hooks/useSubscription';
+import { useRoomFreshness } from '@/hooks/useRoomFreshness';
+import { useTodaysTasks, type TodayTask } from '@/hooks/useTodaysTasks';
+import { useConsistencyScore } from '@/hooks/useConsistencyScore';
 import {
   V1,
   BODY_FONT,
@@ -15,19 +19,35 @@ import {
   cardStyle,
   getTheme,
 } from '@/constants/designTokens';
+import {
+  getWelcomeBackMessage,
+  getOneTinyThingTask,
+  shouldShowComebackFlow,
+  formatGracePeriodBadge,
+  type OneTinyThingTask,
+  type ComebackStatus,
+} from '@/services/comebackEngine';
+import {
+  scheduleShameFreeReminder,
+  scheduleComebackNudge,
+  checkNotificationPermissions,
+} from '@/services/notifications';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
-import React, { useCallback, useMemo } from 'react';
+import { useReducedMotion } from '@/hooks/useReducedMotion';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
+  Modal,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
   View,
-  Dimensions,
+  useWindowDimensions,
 } from 'react-native';
 import Animated, {
   FadeInDown,
@@ -36,59 +56,27 @@ import Animated, {
   withSpring,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Flame, Camera, Sparkles } from 'lucide-react-native';
+import { Zap, Gift, Clock } from 'lucide-react-native';
+import { useUnclaimedRewards, useClaimReward, useCheckComebackStatus } from '@/hooks/useConvex';
+import { ScreenErrorBoundary } from '@/components/ErrorBoundary';
+import { QueryErrorState } from '@/components/ui/QueryErrorState';
+import { toConvexId } from '@/utils/convexIds';
+
+// Sub-components
+import {
+  HomeHeader,
+  StreakCard,
+  TodaysTasksCard,
+  RoomGrid,
+  ComebackBanner,
+  GracePeriodBadge,
+  StreakNudge,
+  EmptyState,
+  HomeSkeleton,
+  ScanRoomFAB,
+} from '@/components/home';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
-
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-
-// ─── Helper: Day greeting ────────────────────────────────────────────────────
-function getTimeContext(): string {
-  const now = new Date();
-  const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-  const day = days[now.getDay()];
-  const hour = now.getHours();
-  let timeOfDay = 'morning';
-  if (hour >= 12 && hour < 17) timeOfDay = 'afternoon';
-  else if (hour >= 17) timeOfDay = 'evening';
-  return `${day} ${timeOfDay}`;
-}
-
-// ─── Motivational quotes ─────────────────────────────────────────────────────
-const QUOTES = [
-  'Small steps create big change',
-  'Progress, not perfection',
-  'Every tidy corner is a tiny victory',
-  'You deserve a space that feels good',
-  'One thing at a time, one room at a time',
-];
-
-function getQuote(): string {
-  const idx = Math.floor(Date.now() / (1000 * 60 * 60 * 6)) % QUOTES.length; // Changes every 6h
-  return QUOTES[idx];
-}
-
-// ─── Freshness label helper ──────────────────────────────────────────────────
-function getFreshnessLabel(progress: number): { label: string; color: string } {
-  if (progress >= 90) return { label: 'Sparkling', color: V1.green };
-  if (progress >= 70) return { label: 'Fresh', color: V1.green };
-  if (progress >= 40) return { label: 'Getting there', color: V1.amber };
-  return { label: 'Needs love', color: V1.coral };
-}
-
-// ─── Room emoji by type ──────────────────────────────────────────────────────
-function getRoomIcon(type: string): string {
-  switch (type) {
-    case 'bedroom': return '🛏️';
-    case 'kitchen': return '🍳';
-    case 'bathroom': return '🚿';
-    case 'livingRoom': return '🛋️';
-    case 'office': return '💻';
-    case 'garage': return '🔧';
-    case 'closet': return '👕';
-    default: return '🏠';
-  }
-}
 
 // ─── Animated press hook ─────────────────────────────────────────────────────
 function useScalePress(scaleTo = 0.97) {
@@ -97,33 +85,180 @@ function useScalePress(scaleTo = 0.97) {
     transform: [{ scale: scale.value }],
   }));
   const onPressIn = useCallback(() => {
-    'worklet';
     scale.value = withSpring(scaleTo, { damping: 15, stiffness: 200 });
   }, [scale, scaleTo]);
   const onPressOut = useCallback(() => {
-    'worklet';
     scale.value = withSpring(1, { damping: 15, stiffness: 200 });
   }, [scale]);
   return { animatedStyle, onPressIn, onPressOut };
+}
+
+// ─── Room emoji helper ──────────────────────────────────────────────────────
+function getRoomIcon(type: string): string {
+  switch (type) {
+    case 'bedroom': return '\uD83D\uDECF\uFE0F';
+    case 'kitchen': return '\uD83C\uDF73';
+    case 'bathroom': return '\uD83D\uDEBF';
+    case 'livingRoom': return '\uD83D\uDECB\uFE0F';
+    case 'office': return '\uD83D\uDCBB';
+    case 'garage': return '\uD83D\uDD27';
+    case 'closet': return '\uD83D\uDC55';
+    default: return '\uD83C\uDFE0';
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Main Home Screen
 // ─────────────────────────────────────────────────────────────────────────────
 export default function HomeScreen() {
+  return (
+    <ScreenErrorBoundary screenName="home">
+      <HomeScreenContent />
+    </ScreenErrorBoundary>
+  );
+}
+
+function HomeScreenContent() {
   const rawScheme = useColorScheme();
   const isDark = rawScheme === 'dark';
   const t = getTheme(isDark);
   const insets = useSafeAreaInsets();
-  const { rooms, user, stats, activeRoomId, setActiveRoom } = useDeclutter();
+  const { width: SCREEN_WIDTH } = useWindowDimensions();
+  const {
+    rooms,
+    user,
+    stats,
+    activeRoomId,
+    setActiveRoom,
+    toggleTask,
+    isLoaded,
+    pendingCelebration,
+    clearCelebration,
+  } = useDeclutter();
   const { isPro } = useSubscription();
+  const reducedMotion = useReducedMotion();
+  const roomFreshness = useRoomFreshness(rooms);
+  const todaysTasks = useTodaysTasks(rooms);
+  const consistency = useConsistencyScore(rooms, stats);
+  const nudgeShownRef = useRef(false);
 
-  const heroPress = useScalePress(0.97);
-  const spacePress0 = useScalePress(0.97);
-  const spacePress1 = useScalePress(0.97);
-  const spacePress2 = useScalePress(0.97);
-  const spacePress3 = useScalePress(0.97);
-  const spacePresses = [spacePress0, spacePress1, spacePress2, spacePress3];
+  // Track if loading has timed out (10s without data)
+  const [loadTimedOut, setLoadTimedOut] = useState(false);
+  useEffect(() => {
+    if (isLoaded) {
+      setLoadTimedOut(false);
+      return;
+    }
+    const timer = setTimeout(() => {
+      if (!isLoaded) setLoadTimedOut(true);
+    }, 10000);
+    return () => clearTimeout(timer);
+  }, [isLoaded]);
+
+  // Pull-to-refresh with Convex auto-sync
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const handleRefresh = useCallback(() => {
+    setIsRefreshing(true);
+    // Convex queries auto-sync; show loading indicator briefly for feedback
+    setTimeout(() => setIsRefreshing(false), 800);
+  }, []);
+
+  // Server-side comeback status from Convex
+  const comebackStatus = useCheckComebackStatus();
+
+  // Comeback Engine state
+  const [comebackData, setComebackData] = useState<{
+    message: string;
+    submessage: string;
+    emoji: string;
+    bonusActive: boolean;
+    tinyTask: OneTinyThingTask;
+  } | null>(null);
+
+  const [tinyThingDone, setTinyThingDone] = useState(false);
+
+  // Check for comeback on mount — use server data when available, local fallback otherwise
+  useEffect(() => {
+    // Prefer server-side comeback status if available
+    if (comebackStatus && comebackStatus.isReturning) {
+      const serverStatus: ComebackStatus = {
+        isReturning: comebackStatus.isReturning,
+        daysSinceActivity: comebackStatus.daysSinceActivity,
+        comebackBonusXP: comebackStatus.comebackBonusXP ?? 0,
+        totalSessions: comebackStatus.totalSessions ?? 0,
+        isInGracePeriod: comebackStatus.isInGracePeriod,
+        gracePeriodEndsAt: comebackStatus.gracePeriodEndsAt ?? null,
+        streakSafe: comebackStatus.streakSafe,
+        currentStreak: comebackStatus.currentStreak,
+      };
+
+      if (shouldShowComebackFlow(serverStatus)) {
+        const welcome = getWelcomeBackMessage(serverStatus.daysSinceActivity);
+        const tinyTask = getOneTinyThingTask();
+        setComebackData({ ...welcome, tinyTask });
+      }
+      return;
+    }
+
+    // Local fallback while server data loads
+    if (!stats?.lastActivityDate) return;
+    const lastDate = new Date(stats.lastActivityDate);
+    const now = new Date();
+    const diffDays = Math.floor(
+      (now.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24),
+    );
+
+    const localStatus: ComebackStatus = {
+      isReturning: diffDays >= 2,
+      daysSinceActivity: diffDays,
+      comebackBonusXP: 0,
+      totalSessions: stats.totalCleaningSessions ?? 0,
+      isInGracePeriod: diffDays >= 1 && diffDays < 2,
+      gracePeriodEndsAt:
+        diffDays >= 1 && diffDays < 2
+          ? new Date(lastDate.getTime() + 48 * 60 * 60 * 1000).toISOString()
+          : null,
+      streakSafe: diffDays < 2,
+      currentStreak: stats.currentStreak,
+    };
+
+    if (shouldShowComebackFlow(localStatus)) {
+      const welcome = getWelcomeBackMessage(diffDays);
+      const tinyTask = getOneTinyThingTask();
+      setComebackData({ ...welcome, tinyTask });
+    }
+  }, [comebackStatus]);
+
+  // Schedule local notifications
+  useEffect(() => {
+    (async () => {
+      try {
+        const hasPermission = await checkNotificationPermissions();
+        if (!hasPermission) return;
+        await scheduleShameFreeReminder(9, 0);
+        await scheduleComebackNudge(3);
+      } catch (err) {
+        if (__DEV__) console.info('Error scheduling notifications:', err);
+      }
+    })();
+  }, []);
+
+  // Haptic on celebration
+  useEffect(() => {
+    if (pendingCelebration && pendingCelebration.length > 0) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    }
+  }, [pendingCelebration]);
+
+  // Auto-dismiss badge unlock modal after 4 seconds
+  useEffect(() => {
+    if (pendingCelebration && pendingCelebration.length > 0) {
+      const timer = setTimeout(() => {
+        clearCelebration();
+      }, 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [pendingCelebration]);
 
   const userName = user?.name || 'there';
   const streak = stats?.currentStreak || 0;
@@ -131,34 +266,111 @@ export default function HomeScreen() {
     const today = new Date().toDateString();
     let done = 0;
     let total = 0;
-    rooms.forEach(r => {
-      r.tasks?.forEach(task => {
+    rooms.forEach((r) => {
+      r.tasks?.forEach((task) => {
         total++;
-        if (task.completed && task.completedAt && new Date(task.completedAt).toDateString() === today) {
+        if (
+          task.completed &&
+          task.completedAt &&
+          new Date(task.completedAt).toDateString() === today
+        ) {
           done++;
         }
       });
     });
-    return { done, total: Math.min(total, 10) }; // Show max 10 as daily target
+    return { done, total: Math.min(total, 10) };
   }, [rooms]);
 
-  // Find "hero" room (most urgent / active)
+  // Hero room (most urgent / active)
   const heroRoom = useMemo(() => {
     if (rooms.length === 0) return null;
-    // Prefer active room, else the room with most incomplete tasks
-    const active = activeRoomId ? rooms.find(r => r.id === activeRoomId) : null;
+    const active = activeRoomId ? rooms.find((r) => r.id === activeRoomId) : null;
     if (active) return active;
     return [...rooms].sort((a, b) => {
-      const aIncomplete = (a.tasks || []).filter(t => !t.completed).length;
-      const bIncomplete = (b.tasks || []).filter(t => !t.completed).length;
+      const aIncomplete = (a.tasks || []).filter((tk) => !tk.completed).length;
+      const bIncomplete = (b.tasks || []).filter((tk) => !tk.completed).length;
       return bIncomplete - aIncomplete;
     })[0];
   }, [rooms, activeRoomId]);
 
-  const heroTaskCount = heroRoom ? (heroRoom.tasks || []).filter(t => !t.completed).length : 0;
-  const heroTotalMinutes = heroRoom
-    ? (heroRoom.tasks || []).filter(t => !t.completed).reduce((sum, t) => sum + (t.estimatedMinutes || 3), 0)
+  const heroTaskCount = heroRoom
+    ? (heroRoom.tasks || []).filter((tk) => !tk.completed).length
     : 0;
+  const heroTotalMinutes = heroRoom
+    ? (heroRoom.tasks || [])
+        .filter((tk) => !tk.completed)
+        .reduce((sum, tk) => sum + (tk.estimatedMinutes || 3), 0)
+    : 0;
+
+  // Continue where you left off
+  const continueRoom = useMemo(() => {
+    if (!activeRoomId) return null;
+    const room = rooms.find((r) => r.id === activeRoomId);
+    if (!room) return null;
+    const incomplete = (room.tasks || []).filter((tk) => !tk.completed);
+    if (incomplete.length === 0) return null;
+    const totalMin = incomplete.reduce((sum, tk) => sum + (tk.estimatedMinutes || 3), 0);
+    return { room, taskCount: incomplete.length, totalMin };
+  }, [activeRoomId, rooms]);
+
+  // "Start Here" room
+  const startHereRoomId = useMemo(() => {
+    if (rooms.length <= 1) return null;
+    let bestId: string | null = null;
+    let bestScore = 0;
+    rooms.forEach((room) => {
+      const highImpactIncomplete = (room.tasks || []).filter(
+        (tk) => !tk.completed && tk.visualImpact === 'high',
+      ).length;
+      if (highImpactIncomplete > bestScore) {
+        bestScore = highImpactIncomplete;
+        bestId = room.id;
+      }
+    });
+    return bestScore > 0 ? bestId : null;
+  }, [rooms]);
+
+  // Grace period badge
+  const gracePeriodBadge = useMemo(() => {
+    if (!stats?.lastActivityDate || streak === 0) return null;
+    const lastDate = new Date(stats.lastActivityDate);
+    const now = new Date();
+    const hoursSince = (now.getTime() - lastDate.getTime()) / (1000 * 60 * 60);
+    if (hoursSince >= 24 && hoursSince < 48) {
+      const gracePeriodEndsAt = new Date(
+        lastDate.getTime() + 48 * 60 * 60 * 1000,
+      ).toISOString();
+      return formatGracePeriodBadge(gracePeriodEndsAt);
+    }
+    return null;
+  }, [stats, streak]);
+
+  // Streak nudge (only show once per session)
+  const streakNudge = useMemo(() => {
+    if (nudgeShownRef.current) return null;
+    if (!stats || streak === 0) return null;
+    const lastActivity = stats.lastActivityDate;
+    if (!lastActivity) return null;
+    const lastDate = new Date(lastActivity);
+    const now = new Date();
+    const hoursSince = (now.getTime() - lastDate.getTime()) / (1000 * 60 * 60);
+    if (hoursSince >= 20) {
+      nudgeShownRef.current = true;
+      return "Your streak is safe until midnight! Just one tiny task to keep it going.";
+    }
+    return null;
+  }, [stats, streak]);
+
+  // Unclaimed rewards
+  const unclaimedRewards = useUnclaimedRewards();
+  const claimReward = useClaimReward();
+
+  const handleClaimReward = useCallback(async (rewardId: string) => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    try {
+      await claimReward({ rewardId: toConvexId<'variableRewards'>(rewardId) });
+    } catch {}
+  }, [claimReward]);
 
   const handleScanRoom = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -172,88 +384,97 @@ export default function HomeScreen() {
     router.push('/camera');
   }, [isPro, rooms.length]);
 
-  const handleStartBlitz = useCallback((roomId: string) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setActiveRoom(roomId);
-    router.push('/blitz' as any);
-  }, [setActiveRoom]);
+  const handleStartBlitz = useCallback(
+    (roomId: string) => {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      setActiveRoom(roomId);
+      router.push('/blitz');
+    },
+    [setActiveRoom],
+  );
 
   const handleOpenRoom = useCallback((roomId: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    router.push(`/room/${roomId}`);
+    router.push({ pathname: '/room/[id]', params: { id: roomId } });
   }, []);
+
+  // "Just 5 Minutes" handler — find room with most incomplete tasks
+  const handleJust5Minutes = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    if (rooms.length === 0) {
+      router.push('/camera');
+      return;
+    }
+    // Find room with the most incomplete tasks
+    const bestRoom = [...rooms].sort((a, b) => {
+      const aInc = (a.tasks || []).filter(tk => !tk.completed).length;
+      const bInc = (b.tasks || []).filter(tk => !tk.completed).length;
+      return bInc - aInc;
+    })[0];
+    if (!bestRoom || (bestRoom.tasks || []).filter(tk => !tk.completed).length === 0) {
+      router.push('/camera');
+      return;
+    }
+    setActiveRoom(bestRoom.id);
+    router.push({
+      pathname: '/single-task',
+      params: { roomId: bestRoom.id, duration: '300' },
+    });
+  }, [rooms, setActiveRoom]);
+
+  const heroPress = useScalePress(0.97);
+
+  // ── LOADING STATE ──────────────────────────────────────────────────────
+  if (!isLoaded) {
+    // Show error state if loading takes longer than 10 seconds
+    if (loadTimedOut) {
+      return (
+        <View style={[styles.container, { backgroundColor: t.bg }]}>
+          <QueryErrorState
+            variant="timeout"
+            title="Taking too long"
+            message="Data loading slowly. Tap to continue with cached data."
+            onRetry={() => {
+              setLoadTimedOut(false);
+              // Convex queries auto-reconnect; resetting the flag restarts the timer
+            }}
+          />
+        </View>
+      );
+    }
+
+    return (
+      <View style={[styles.container, { backgroundColor: t.bg }]}>
+        <ScrollView
+          contentContainerStyle={[
+            styles.scrollContent,
+            { paddingTop: insets.top + 12, paddingBottom: insets.bottom + 100 },
+          ]}
+          showsVerticalScrollIndicator={false}
+        >
+          <HomeSkeleton />
+        </ScrollView>
+      </View>
+    );
+  }
 
   // ── EMPTY STATE ─────────────────────────────────────────────────────────
   if (rooms.length === 0) {
     return (
       <View style={[styles.container, { backgroundColor: t.bg }]}>
         <ScrollView
-          contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top + 12, paddingBottom: insets.bottom + 100 }]}
+          contentContainerStyle={[
+            styles.scrollContent,
+            { paddingTop: insets.top + 12, paddingBottom: insets.bottom + 100 },
+          ]}
           showsVerticalScrollIndicator={false}
         >
-          {/* Header */}
-          <Animated.View entering={FadeInDown.duration(400)} style={styles.header}>
-            <View>
-              <Text style={[styles.greeting, { color: t.text }]}>
-                Breathe in, {userName}
-              </Text>
-              <Text style={[styles.timeContext, { color: t.textSecondary }]}>
-                {getTimeContext()}
-              </Text>
-            </View>
-            <LinearGradient
-              colors={['#FF6B6B', '#FF8E8E']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.mascotAvatar}
-            >
-              <Text style={styles.mascotInitial}>{userName.charAt(0).toUpperCase()}</Text>
-            </LinearGradient>
-          </Animated.View>
-
-          {/* Empty state mascot illustration */}
-          <Animated.View entering={FadeInDown.delay(100).duration(400)} style={styles.emptyStateCenter}>
-            <LinearGradient
-              colors={isDark ? ['rgba(255,107,107,0.2)', 'rgba(255,142,142,0.1)'] : ['rgba(255,107,107,0.12)', 'rgba(255,142,142,0.06)']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.emptyMascotCircle}
-            >
-              <Sparkles size={64} color={V1.coral} strokeWidth={1.5} />
-            </LinearGradient>
-
-            <Text style={[styles.emptyTitle, { color: t.text }]}>
-              Let's scan your first room!
-            </Text>
-            <Text style={[styles.emptySubtitle, { color: t.textSecondary }]}>
-              Take a photo of any room and Dusty will help you break it down into small, doable tasks.
-            </Text>
-
-            {/* Scan CTA */}
-            <Pressable
-              onPress={handleScanRoom}
-              style={({ pressed }) => [styles.scanCtaWrapper, { opacity: pressed ? 0.88 : 1 }]}
-            >
-              <LinearGradient
-                colors={['#FF6B6B', '#FF5252']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={[styles.scanCta, styles.scanCtaShadow]}
-              >
-                <Text style={styles.scanCtaText}>Scan a Room</Text>
-              </LinearGradient>
-            </Pressable>
-          </Animated.View>
-
-          {/* Tip card */}
-          <Animated.View entering={FadeInDown.delay(200).duration(400)} style={styles.tipCardWrapper}>
-            <View style={[styles.tipCard, { backgroundColor: isDark ? 'rgba(255,107,107,0.08)' : 'rgba(255,107,107,0.06)', borderColor: isDark ? 'rgba(255,107,107,0.15)' : 'rgba(255,107,107,0.1)' }]}>
-              <Text style={styles.tipBulb}>💡</Text>
-              <Text style={[styles.tipText, { color: V1.coral }]}>
-                Tip: Start with the room that bugs you most
-              </Text>
-            </View>
-          </Animated.View>
+          <EmptyState
+            userName={userName}
+            isDark={isDark}
+            reducedMotion={reducedMotion}
+            onScanRoom={handleScanRoom}
+          />
         </ScrollView>
       </View>
     );
@@ -263,129 +484,270 @@ export default function HomeScreen() {
   return (
     <View style={[styles.container, { backgroundColor: t.bg }]}>
       <ScrollView
-        contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top + 12, paddingBottom: insets.bottom + 100 }]}
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingTop: insets.top + 12, paddingBottom: insets.bottom + 100 },
+        ]}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={handleRefresh}
+            tintColor={V1.coral}
+            colors={[V1.coral]}
+          />
+        }
       >
-        {/* ── Header ──────────────────────────────────────────────────── */}
-        <Animated.View entering={FadeInDown.duration(400)} style={styles.header}>
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.greeting, { color: t.text }]}>
-              Breathe in, {userName}
-            </Text>
-            <Text style={[styles.timeContext, { color: t.textSecondary }]}>
-              {getTimeContext()}
-            </Text>
-          </View>
+        {/* Header with smart greeting */}
+        <HomeHeader
+          userName={userName}
+          textColor={t.text}
+          secondaryColor={t.textSecondary}
+          mutedColor={t.textMuted}
+          reducedMotion={reducedMotion}
+          showMascot
+        />
+
+        {/* Unclaimed Rewards Banner */}
+        {unclaimedRewards && unclaimedRewards.length > 0 && (
+          <Animated.View entering={reducedMotion ? undefined : FadeInDown.delay(40).duration(350)}>
+            <Pressable
+              onPress={() => handleClaimReward(unclaimedRewards[0]._id)}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 12,
+                marginHorizontal: SPACING.screenPadding,
+                marginBottom: SPACING.itemGap,
+                padding: 14,
+                borderRadius: RADIUS.md,
+                backgroundColor: isDark ? 'rgba(255,213,79,0.1)' : 'rgba(255,213,79,0.08)',
+                borderWidth: 1,
+                borderColor: isDark ? 'rgba(255,213,79,0.2)' : 'rgba(255,213,79,0.15)',
+              }}
+              accessibilityRole="button"
+              accessibilityLabel={`Claim reward: ${unclaimedRewards.length} unclaimed`}
+            >
+              <Gift size={22} color={V1.gold} />
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontFamily: DISPLAY_FONT, fontSize: 15, fontWeight: '700', color: t.text }}>
+                  {unclaimedRewards.length} Reward{unclaimedRewards.length > 1 ? 's' : ''} Waiting!
+                </Text>
+                <Text style={{ fontFamily: BODY_FONT, fontSize: 12, color: t.textSecondary }}>
+                  Tap to claim your prize
+                </Text>
+              </View>
+              <Text style={{ fontSize: 24 }}>{'\u{1F381}'}</Text>
+            </Pressable>
+          </Animated.View>
+        )}
+
+        {/* Continue Where You Left Off */}
+        {continueRoom && (
+          <Animated.View entering={reducedMotion ? undefined : FadeInDown.delay(55).duration(400)}>
+            <Pressable
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                router.push({ pathname: '/room/[id]', params: { id: continueRoom.room.id } });
+              }}
+              accessibilityRole="button"
+              accessibilityLabel={`Continue ${continueRoom.room.name}, ${continueRoom.taskCount} tasks left`}
+              style={({ pressed }) => [
+                styles.continueBanner,
+                {
+                  backgroundColor: isDark
+                    ? 'rgba(102,187,106,0.1)'
+                    : 'rgba(102,187,106,0.08)',
+                  borderColor: isDark
+                    ? 'rgba(102,187,106,0.25)'
+                    : 'rgba(102,187,106,0.2)',
+                  opacity: pressed ? 0.88 : 1,
+                },
+              ]}
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.continueBannerTitle, { color: t.text }]}>
+                  Continue: {continueRoom.room.name}
+                </Text>
+                <Text style={[styles.continueBannerSub, { color: t.textSecondary }]}>
+                  {continueRoom.taskCount} task{continueRoom.taskCount !== 1 ? 's' : ''} left{' '}
+                  {'\u00B7'} ~{continueRoom.totalMin} min
+                </Text>
+              </View>
+              <View style={[styles.continueBannerButton, { backgroundColor: V1.green }]}>
+                <Text style={styles.continueBannerButtonText}>Resume</Text>
+              </View>
+            </Pressable>
+          </Animated.View>
+        )}
+
+        {/* Quick Blitz CTA */}
+        {heroRoom && heroTaskCount > 0 && (
+          <Animated.View entering={reducedMotion ? undefined : FadeInDown.delay(60).duration(400)}>
+            <Pressable
+              onPress={() => handleStartBlitz(heroRoom.id)}
+              accessibilityRole="button"
+              accessibilityLabel={`Start a quick blitz cleaning session for ${heroRoom.name}`}
+              style={({ pressed }) => [{ opacity: pressed ? 0.88 : 1 }]}
+            >
+              <LinearGradient
+                colors={['#FF6B6B', '#FF5252']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={[styles.quickBlitzCta, styles.blitzCtaShadow]}
+              >
+                <Zap size={20} color="#FFFFFF" fill="#FFFFFF" />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.quickBlitzTitle}>Start Cleaning</Text>
+                  <Text style={styles.quickBlitzSub}>
+                    {heroRoom.name} - {heroTaskCount} tasks - ~{heroTotalMinutes} min
+                  </Text>
+                </View>
+              </LinearGradient>
+            </Pressable>
+          </Animated.View>
+        )}
+
+        {/* Just 5 Minutes Quick Clean */}
+        <Animated.View entering={reducedMotion ? undefined : FadeInDown.delay(80).duration(400)}>
           <Pressable
-            onPress={() => router.push('/mascot')}
+            onPress={handleJust5Minutes}
+            accessibilityRole="button"
+            accessibilityLabel="Just 5 minutes quick clean"
             style={({ pressed }) => [{ opacity: pressed ? 0.88 : 1 }]}
           >
-            <LinearGradient
-              colors={['#FF6B6B', '#FF8E8E']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.mascotAvatar}
+            <View
+              style={[
+                styles.just5MinButton,
+                {
+                  backgroundColor: V1.coral,
+                },
+              ]}
             >
-              <Text style={styles.mascotInitial}>{userName.charAt(0).toUpperCase()}</Text>
-            </LinearGradient>
+              <Clock size={20} color="#FFFFFF" />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.just5MinTitle}>Just 5 minutes</Text>
+                <Text style={styles.just5MinSub}>
+                  I'll pick the best tasks for you
+                </Text>
+              </View>
+            </View>
           </Pressable>
         </Animated.View>
 
-        {/* ── Quote ───────────────────────────────────────────────────── */}
-        <Animated.View entering={FadeInDown.delay(50).duration(400)}>
-          <Text style={[styles.quote, { color: t.textMuted }]}>
-            {getQuote()}
-          </Text>
-        </Animated.View>
+        {/* Streak Card */}
+        <StreakCard
+          streak={streak}
+          todayDone={todayTasksDone.done}
+          todayTotal={todayTasksDone.total}
+          consistency={consistency}
+          isDark={isDark}
+          reducedMotion={reducedMotion}
+        />
 
-        {/* ── Streak Card ─────────────────────────────────────────────── */}
-        <Animated.View entering={FadeInDown.delay(80).duration(400)}>
-          <View style={[
-            styles.streakCard,
-            cardStyle(isDark),
-            isDark && { borderColor: 'rgba(255,107,107,0.12)' },
-          ]}>
-            <View style={styles.streakLeft}>
-              <Flame size={16} color={V1.coral} strokeWidth={2.5} />
-              <Text style={[styles.streakText, { color: t.text }]}>
-                {streak} day streak
-              </Text>
-            </View>
-            <View style={styles.streakRight}>
-              <Text style={[styles.streakProgress, { color: t.textSecondary }]}>
-                {todayTasksDone.done}/{Math.max(todayTasksDone.total, 5)} today
-              </Text>
-              <View style={styles.progressDots}>
-                {Array.from({ length: Math.min(Math.max(todayTasksDone.total, 5), 5) }).map((_, i) => (
-                  <View
-                    key={i}
-                    style={[
-                      styles.progressDot,
-                      {
-                        backgroundColor: i < todayTasksDone.done
-                          ? V1.coral
-                          : isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.1)',
-                      },
-                    ]}
-                  />
-                ))}
-              </View>
-            </View>
-          </View>
-        </Animated.View>
+        {/* Grace Period Badge */}
+        {gracePeriodBadge && (
+          <GracePeriodBadge
+            badge={gracePeriodBadge}
+            isDark={isDark}
+            reducedMotion={reducedMotion}
+          />
+        )}
 
-        {/* ── Hero Mission Card ─────────────────────────────────────── */}
+        {/* Streak Nudge */}
+        {streakNudge && (
+          <StreakNudge message={streakNudge} isDark={isDark} reducedMotion={reducedMotion} />
+        )}
+
+        {/* Comeback Banner */}
+        {comebackData && (
+          <ComebackBanner
+            message={comebackData.message}
+            submessage={comebackData.submessage}
+            emoji={comebackData.emoji}
+            bonusActive={comebackData.bonusActive}
+            tinyTask={comebackData.tinyTask}
+            isDark={isDark}
+            reducedMotion={reducedMotion}
+            onDismiss={() => setComebackData(null)}
+            onTinyTaskPress={() => {
+              const tinyRoomId = comebackData?.tinyTask?.id;
+              const matchingRoom = tinyRoomId
+                ? rooms.find((r) => r.id === tinyRoomId)
+                : null;
+              if (matchingRoom) {
+                setComebackData(null);
+                router.push({ pathname: '/room/[id]', params: { id: matchingRoom.id } });
+              } else {
+                setComebackData(null);
+                setTinyThingDone(true);
+                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                setTimeout(() => setTinyThingDone(false), 2500);
+              }
+            }}
+          />
+        )}
+
+        {/* Today's Tasks */}
+        <TodaysTasksCard
+          todaysTasks={todaysTasks}
+          consistency={consistency}
+          isDark={isDark}
+          reducedMotion={reducedMotion}
+          onToggleTask={toggleTask}
+        />
+
+        {/* Hero Mission Card */}
         {heroRoom && (
-          <Animated.View entering={FadeInDown.delay(120).duration(400)}>
+          <Animated.View
+            entering={reducedMotion ? undefined : FadeInDown.delay(120).duration(400)}
+          >
             <AnimatedPressable
               onPress={() => handleOpenRoom(heroRoom.id)}
               onPressIn={heroPress.onPressIn}
               onPressOut={heroPress.onPressOut}
               style={heroPress.animatedStyle}
+              accessibilityRole="button"
+              accessibilityLabel={`Today's mission: ${heroRoom.name} Refresh, ${heroTaskCount} tasks, about ${heroTotalMinutes} minutes`}
             >
-              <View style={[
-                styles.heroCard,
-                isDark && styles.heroCardDarkBorder,
-              ]}>
-                {/* Room photo background */}
+              <View style={[styles.heroCard, isDark && styles.heroCardDarkBorder]}>
                 {heroRoom.photos && heroRoom.photos.length > 0 ? (
                   <Image
                     source={{ uri: heroRoom.photos[0].uri }}
                     style={styles.heroImage}
                     contentFit="cover"
+                    placeholder={{ blurhash: 'LGF5]+Yk^6#M@-5c,1J5@[or[Q6.' }}
+                    cachePolicy="memory-disk"
+                    transition={300}
                   />
                 ) : (
-                  <View style={[styles.heroImage, { backgroundColor: isDark ? '#2A2A2A' : '#D0D0D0' }]} />
+                  <View
+                    style={[
+                      styles.heroImage,
+                      { backgroundColor: isDark ? t.card : '#D0D0D0' },
+                    ]}
+                  />
                 )}
-
-                {/* Gradient overlay */}
                 <LinearGradient
                   colors={['transparent', 'rgba(0,0,0,0.3)', 'rgba(0,0,0,0.85)']}
                   locations={[0, 0.4, 1]}
                   style={styles.heroGradient}
                 />
-
-                {/* Content */}
                 <View style={styles.heroContent}>
-                  {/* Pills row */}
                   <View style={styles.heroPillsRow}>
                     <View style={[styles.heroPill, { backgroundColor: V1.coral }]}>
                       <Text style={styles.heroPillText}>Today's Mission</Text>
                     </View>
-                    <Text style={styles.heroTimeText}>~{heroTotalMinutes} min</Text>
+                    <Text style={styles.heroTimeText}>about {heroTotalMinutes} min</Text>
                   </View>
-
-                  {/* Room name */}
-                  <Text style={styles.heroRoomName}>
-                    {heroRoom.name} Refresh
-                  </Text>
+                  <Text style={styles.heroRoomName}>{heroRoom.name} Refresh</Text>
                   <Text style={styles.heroTaskCount}>
                     {heroTaskCount} quick tasks to feel the difference
                   </Text>
-
-                  {/* Start Blitz CTA */}
                   <Pressable
                     onPress={() => handleStartBlitz(heroRoom.id)}
+                    accessibilityRole="button"
+                    accessibilityLabel="Start a 15-minute blitz cleaning session"
                     style={({ pressed }) => [
                       styles.blitzCta,
                       styles.blitzCtaShadow,
@@ -400,65 +762,112 @@ export default function HomeScreen() {
           </Animated.View>
         )}
 
-        {/* ── YOUR SPACES ─────────────────────────────────────────── */}
-        <Animated.View entering={FadeInDown.delay(160).duration(400)}>
-          <Text style={[styles.sectionTitle, { color: t.textMuted }]}>
-            YOUR SPACES
-          </Text>
+        {/* Room Grid */}
+        <RoomGrid
+          rooms={rooms}
+          roomFreshness={roomFreshness}
+          startHereRoomId={startHereRoomId}
+          isDark={isDark}
+          reducedMotion={reducedMotion}
+          isPro={isPro}
+          freeRoomLimit={FREE_ROOM_LIMIT}
+          onOpenRoom={handleOpenRoom}
+          onScanRoom={handleScanRoom}
+        />
+      </ScrollView>
 
-          <View style={styles.spacesRow}>
-            {rooms.slice(0, 4).map((room, idx) => {
-              const totalTasks = (room.tasks || []).length;
-              const doneTasks = (room.tasks || []).filter(t => t.completed).length;
-              const progress = totalTasks > 0 ? (doneTasks / totalTasks) * 100 : 0;
-              const freshness = getFreshnessLabel(progress);
-              const sp = spacePresses[idx] || spacePresses[0];
+      {/* Floating Action Button */}
+      <ScanRoomFAB onPress={handleScanRoom} bottomInset={insets.bottom} />
 
-              return (
-                <AnimatedPressable
-                  key={room.id}
-                  onPress={() => handleOpenRoom(room.id)}
-                  onPressIn={sp.onPressIn}
-                  onPressOut={sp.onPressOut}
-                  style={[
-                    sp.animatedStyle,
-                    styles.spaceCard,
-                    cardStyle(isDark),
-                  ]}
-                >
-                  <Text style={styles.spaceIcon}>{getRoomIcon(room.type)}</Text>
-                  <Text style={[styles.spaceName, { color: t.text }]} numberOfLines={1}>
-                    {room.name}
-                  </Text>
-
-                  {/* Freshness bar */}
-                  <View style={[styles.freshnessBar, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)' }]}>
-                    <View style={[styles.freshnessBarFill, { width: `${Math.max(progress, 5)}%`, backgroundColor: freshness.color }]} />
-                  </View>
-
-                  <Text style={[styles.freshnessLabel, { color: freshness.color }]}>
-                    {freshness.label}
-                  </Text>
-                </AnimatedPressable>
-              );
-            })}
-          </View>
-
-          {/* Add room button if under limit */}
-          {(isPro || rooms.length < FREE_ROOM_LIMIT) && (
-            <Pressable
-              onPress={handleScanRoom}
-              style={({ pressed }) => [
-                styles.addRoomButton,
-                { borderColor: t.border, opacity: pressed ? 0.88 : 1 },
+      {/* Tiny Thing Quick Completion Modal */}
+      {tinyThingDone && (
+        <Modal
+          transparent
+          animationType="fade"
+          visible
+          onRequestClose={() => setTinyThingDone(false)}
+        >
+          <Pressable
+            style={styles.celebrationOverlay}
+            onPress={() => setTinyThingDone(false)}
+          >
+            <View
+              style={[
+                styles.celebrationCard,
+                { backgroundColor: t.card },
               ]}
             >
-              <Camera size={18} color={t.textSecondary} />
-              <Text style={[styles.addRoomText, { color: t.textSecondary }]}>Scan another room</Text>
-            </Pressable>
-          )}
-        </Animated.View>
-      </ScrollView>
+              <Text style={styles.celebrationEmoji}>{'Done! \u2728'}</Text>
+              <Text
+                style={[
+                  styles.celebrationTitle,
+                  { color: t.text },
+                ]}
+              >
+                +5 XP
+              </Text>
+              <Text
+                style={[
+                  styles.celebrationDescription,
+                  { color: isDark ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.5)' },
+                ]}
+              >
+                Every tiny thing counts. You showed up!
+              </Text>
+            </View>
+          </Pressable>
+        </Modal>
+      )}
+
+      {/* Celebration Modal for badge unlocks */}
+      {pendingCelebration && pendingCelebration.length > 0 && (
+        <Modal
+          transparent
+          animationType="fade"
+          visible
+          onRequestClose={clearCelebration}
+        >
+          <View style={styles.celebrationOverlay}>
+            <View
+              style={[
+                styles.celebrationCard,
+                { backgroundColor: t.card },
+              ]}
+            >
+              <Text style={styles.celebrationEmoji}>
+                {pendingCelebration[0]?.emoji || '\uD83C\uDFC6'}
+              </Text>
+              <Text
+                style={[
+                  styles.celebrationTitle,
+                  { color: t.text },
+                ]}
+              >
+                {pendingCelebration[0]?.name || 'Badge Unlocked!'}
+              </Text>
+              <Text
+                style={[
+                  styles.celebrationDescription,
+                  { color: isDark ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.5)' },
+                ]}
+              >
+                {pendingCelebration[0]?.description || 'You earned a new badge!'}
+              </Text>
+              <Pressable
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  clearCelebration();
+                }}
+                style={[styles.celebrationButton, { backgroundColor: V1.coral }]}
+                accessibilityRole="button"
+                accessibilityLabel="Dismiss celebration"
+              >
+                <Text style={styles.celebrationButtonText}>Nice!</Text>
+              </Pressable>
+            </View>
+          </View>
+        </Modal>
+      )}
     </View>
   );
 }
@@ -470,85 +879,90 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   scrollContent: { paddingHorizontal: SPACING.screenPadding },
 
-  // Header
-  header: {
+  // Continue Banner
+  continueBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 4,
+    gap: 12,
+    paddingVertical: 14,
+    paddingHorizontal: SPACING.cardPadding,
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    marginBottom: 12,
   },
-  greeting: {
-    fontSize: 22,
+  continueBannerTitle: {
+    fontSize: 15,
     fontWeight: '700',
-    fontFamily: DISPLAY_FONT,
-    letterSpacing: -0.4,
+    fontFamily: BODY_FONT,
   },
-  timeContext: {
-    fontSize: 14,
-    fontWeight: '400',
+  continueBannerSub: {
+    fontSize: 13,
     fontFamily: BODY_FONT,
     marginTop: 2,
   },
-  mascotAvatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
+  continueBannerButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: RADIUS.pill,
   },
-  mascotInitial: {
-    fontSize: 18,
-    fontWeight: '700',
-    fontFamily: DISPLAY_FONT,
+  continueBannerButtonText: {
     color: '#FFFFFF',
-  },
-
-  // Quote
-  quote: {
     fontSize: 13,
-    fontStyle: 'italic',
-    fontFamily: BODY_FONT,
-    marginBottom: 12,
-    marginTop: 8,
-  },
-
-  // Streak Card
-  streakCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 12,
-    paddingHorizontal: SPACING.cardPadding,
-    marginBottom: SPACING.cardPadding,
-  },
-  streakLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  streakText: {
-    fontSize: 14,
-    fontWeight: '600',
+    fontWeight: '700',
     fontFamily: BODY_FONT,
   },
-  streakRight: {
+
+  // Just 5 Minutes
+  just5MinButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 14,
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderRadius: RADIUS.lg,
+    marginBottom: 16,
+    shadowColor: '#FF6B6B',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 4,
   },
-  streakProgress: {
-    fontSize: 13,
+  just5MinTitle: {
+    color: '#FFFFFF',
+    fontSize: 17,
+    fontWeight: '700',
+    fontFamily: BODY_FONT,
+  },
+  just5MinSub: {
+    color: 'rgba(255,255,255,0.8)',
+    fontSize: 12,
     fontWeight: '500',
     fontFamily: BODY_FONT,
+    marginTop: 2,
   },
-  progressDots: {
+
+  // Quick Blitz CTA
+  quickBlitzCta: {
     flexDirection: 'row',
-    gap: 4,
+    alignItems: 'center',
+    gap: 14,
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderRadius: RADIUS.lg,
+    marginBottom: 16,
   },
-  progressDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
+  quickBlitzTitle: {
+    color: '#FFFFFF',
+    fontSize: 17,
+    fontWeight: '700',
+    fontFamily: BODY_FONT,
+  },
+  quickBlitzSub: {
+    color: 'rgba(255,255,255,0.8)',
+    fontSize: 12,
+    fontWeight: '500',
+    fontFamily: BODY_FONT,
+    marginTop: 2,
   },
 
   // Hero Mission Card
@@ -632,141 +1046,54 @@ const styles = StyleSheet.create({
     fontFamily: BODY_FONT,
   },
 
-  // Section Title
-  sectionTitle: {
-    fontSize: 11,
-    fontWeight: '600',
-    fontFamily: BODY_FONT,
-    letterSpacing: 1.5,
-    textTransform: 'uppercase',
-    marginBottom: SPACING.itemGap,
-    marginTop: 8,
-  },
-
-  // Space Cards
-  spacesRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: SPACING.itemGap,
-  },
-  spaceCard: {
-    width: (SCREEN_WIDTH - SPACING.screenPadding * 2 - SPACING.itemGap) / 2,
-    padding: SPACING.cardPadding,
-    overflow: 'hidden',
-  },
-  spaceIcon: {
-    fontSize: 24,
-    marginBottom: 10,
-  },
-  spaceName: {
-    fontSize: 15,
-    fontWeight: '600',
-    fontFamily: BODY_FONT,
-    marginBottom: 10,
-  },
-  freshnessBar: {
-    height: 5,
-    borderRadius: 3,
-    marginBottom: 6,
-  },
-  freshnessBarFill: {
-    height: 5,
-    borderRadius: 3,
-  },
-  freshnessLabel: {
-    fontSize: 12,
-    fontWeight: '500',
-    fontFamily: BODY_FONT,
-  },
-
-  // Add Room
-  addRoomButton: {
-    flexDirection: 'row',
+  // Celebration modal
+  celebrationOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 14,
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-    borderStyle: 'dashed',
-    marginTop: SPACING.itemGap,
+    paddingHorizontal: 32,
   },
-  addRoomText: {
-    fontSize: 14,
-    fontWeight: '500',
-    fontFamily: BODY_FONT,
-  },
-
-  // Empty State
-  emptyStateCenter: {
+  celebrationCard: {
+    width: '100%',
+    borderRadius: RADIUS.lg,
+    padding: 32,
     alignItems: 'center',
-    paddingTop: 40,
-    paddingHorizontal: SPACING.screenPadding,
+    gap: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.2,
+    shadowRadius: 24,
+    elevation: 12,
   },
-  emptyMascotCircle: {
-    width: 160,
-    height: 160,
-    borderRadius: 80,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 28,
+  celebrationEmoji: {
+    fontSize: 56,
+    marginBottom: 4,
   },
-  emptyTitle: {
+  celebrationTitle: {
     fontSize: 22,
     fontWeight: '700',
     fontFamily: DISPLAY_FONT,
+    letterSpacing: -0.3,
     textAlign: 'center',
-    marginBottom: 12,
   },
-  emptySubtitle: {
-    fontSize: 15,
+  celebrationDescription: {
+    fontSize: 14,
+    fontWeight: '500',
     fontFamily: BODY_FONT,
     textAlign: 'center',
-    lineHeight: 22,
-    marginBottom: 28,
+    lineHeight: 20,
   },
-  scanCtaWrapper: {
-    width: '100%',
+  celebrationButton: {
+    paddingVertical: 14,
+    paddingHorizontal: 40,
+    borderRadius: 24,
+    marginTop: 8,
   },
-  scanCta: {
-    paddingVertical: 16,
-    borderRadius: RADIUS.pill,
-    alignItems: 'center',
-  },
-  scanCtaShadow: {
-    shadowColor: '#FF6B6B',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  scanCtaText: {
+  celebrationButtonText: {
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '700',
     fontFamily: BODY_FONT,
-  },
-
-  // Tip Card
-  tipCardWrapper: {
-    marginTop: 24,
-  },
-  tipCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingVertical: 14,
-    paddingHorizontal: SPACING.cardPadding,
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-  },
-  tipBulb: {
-    fontSize: 18,
-  },
-  tipText: {
-    fontSize: 14,
-    fontWeight: '500',
-    fontFamily: BODY_FONT,
-    flex: 1,
   },
 });

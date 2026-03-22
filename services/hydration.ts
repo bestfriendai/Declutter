@@ -3,6 +3,7 @@ import {
   Badge,
   CleaningTask,
   CollectedItem,
+  EnergyLevel,
   CollectionStats,
   Mascot,
   MascotPersonality,
@@ -195,10 +196,10 @@ export function hydrateTask(task: unknown): CleaningTask {
         'setup',
       ]
     ),
-    energyRequired: asOptionalEnum(
-      taskData.energyRequired,
-      ['minimal', 'low', 'moderate', 'high']
-    ),
+    energyRequired: (() => {
+      const raw = asOptionalEnum(taskData.energyRequired, ['exhausted', 'minimal', 'low', 'moderate', 'high']);
+      return raw === 'minimal' ? 'exhausted' as const : raw as EnergyLevel | undefined;
+    })(),
     decisionLoad: asOptionalEnum(
       taskData.decisionLoad,
       ['none', 'low', 'medium', 'high']
@@ -218,7 +219,7 @@ export function hydrateTask(task: unknown): CleaningTask {
       ? undefined
       : asBoolean(taskData.userSkipped),
     skipReason: asOptionalString(taskData.skipReason),
-    decisionPoints: undefined,
+    decisionPoints: taskData.decisionPoints as CleaningTask['decisionPoints'] ?? undefined,
   };
 }
 
@@ -484,7 +485,7 @@ export function hydrateCollectionStats(
     rareCount: asNumber(stats.rareCount, 0),
     epicCount: asNumber(stats.epicCount, 0),
     legendaryCount: asNumber(stats.legendaryCount, 0),
-    lastCollected: asOptionalDate(stats.lastCollected),
+    lastCollected: typeof stats.lastCollected === 'number' ? stats.lastCollected : undefined,
   };
 }
 

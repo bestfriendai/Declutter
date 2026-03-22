@@ -8,7 +8,7 @@
  * - declutter_annual: $39.99/year (3-day free trial)
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Platform } from 'react-native';
 
 // Safely import react-native-purchases to avoid crash when native module is unavailable
@@ -145,9 +145,12 @@ export function useRevenueCat(): UseRevenueCatReturn {
   const [plans, setPlans] = useState<PlanOption[]>(defaultPlans);
   const [selectedPlan, setSelectedPlan] = useState<string | null>(PRODUCT_IDS.monthly);
 
+  const isMountedRef = useRef(true);
+  useEffect(() => () => { isMountedRef.current = false; }, []);
+
   // Initialize RevenueCat
   useEffect(() => {
-    let isSubscribed = true;
+    isMountedRef.current = true;
 
     // Guard: if Purchases native module is not available, bail out early
     if (!_purchasesAvailable || !Purchases) {
@@ -155,6 +158,8 @@ export function useRevenueCat(): UseRevenueCatReturn {
       setError('Subscriptions are not available in this build.');
       return;
     }
+
+    let removeCustomerInfoListener: (() => void) | undefined;
 
     const init = async () => {
       try {
@@ -172,16 +177,20 @@ export function useRevenueCat(): UseRevenueCatReturn {
           try { Purchases.setLogLevel(LOG_LEVEL.DEBUG); } catch { /* ignore */ }
         }
 
-        if (isSubscribed) {
+        if (isMountedRef.current) {
           setIsInitialized(true);
 
           // Listen for subscription changes (must be after configure)
           if (Purchases?.addCustomerInfoUpdateListener) {
-            Purchases.addCustomerInfoUpdateListener((info: CustomerInfo) => {
-              if (isSubscribed) {
+            const listenerCleanup = Purchases.addCustomerInfoUpdateListener((info: CustomerInfo) => {
+              if (isMountedRef.current) {
                 updateSubscriptionState(info);
               }
             });
+
+            if (typeof listenerCleanup === 'function') {
+              removeCustomerInfoListener = listenerCleanup;
+            }
           }
 
           // Fetch initial data
@@ -192,11 +201,11 @@ export function useRevenueCat(): UseRevenueCatReturn {
         }
       } catch (err) {
         if (__DEV__) console.error('Failed to initialize RevenueCat:', err);
-        if (isSubscribed) {
+        if (isMountedRef.current) {
           setError('Failed to initialize subscription service');
         }
       } finally {
-        if (isSubscribed) {
+        if (isMountedRef.current) {
           setIsLoading(false);
         }
       }
@@ -205,7 +214,9 @@ export function useRevenueCat(): UseRevenueCatReturn {
     init();
 
     return () => {
-      isSubscribed = false;
+      if (typeof removeCustomerInfoListener === 'function') {
+        removeCustomerInfoListener();
+      }
     };
   }, []);
 
@@ -214,12 +225,14 @@ export function useRevenueCat(): UseRevenueCatReturn {
     if (!_purchasesAvailable || !Purchases) return;
     try {
       const fetchedOfferings = await Purchases.getOfferings();
+      if (!isMountedRef.current) return;
+
       setOfferings(fetchedOfferings);
 
       // Build plans from offerings
       if (fetchedOfferings.current?.availablePackages) {
         const fetchedPlans = buildPlansFromPackages(fetchedOfferings.current.availablePackages);
-        if (fetchedPlans.length > 0) {
+        if (fetchedPlans.length > 0 && isMountedRef.current) {
           setPlans(fetchedPlans);
         }
       }
@@ -241,6 +254,8 @@ export function useRevenueCat(): UseRevenueCatReturn {
 
   // Update subscription state from customer info
   const updateSubscriptionState = useCallback((info: CustomerInfo) => {
+    if (!isMountedRef.current) return;
+
     const entitlements = info.entitlements.active;
     const proEntitlement = entitlements['pro'] || entitlements['premium'];
 
@@ -375,10 +390,10 @@ export function useRevenueCat(): UseRevenueCatReturn {
       }
 
       if (__DEV__) console.error('Purchase failed:', err);
-      setError(err.message || 'Purchase failed. Please try again.');
+      if (isMountedRef.current) setError(err.message || 'Purchase failed. Please try again.');
       return false;
     } finally {
-      setIsLoading(false);
+      if (isMountedRef.current) setIsLoading(false);
     }
   }, [plans, updateSubscriptionState]);
 
@@ -407,10 +422,10 @@ export function useRevenueCat(): UseRevenueCatReturn {
       return hasActiveSubscription;
     } catch (err: any) {
       if (__DEV__) console.error('Restore failed:', err);
-      setError(err.message || 'Failed to restore purchases');
+      if (isMountedRef.current) setError(err.message || 'Failed to restore purchases');
       return false;
     } finally {
-      setIsLoading(false);
+      if (isMountedRef.current) setIsLoading(false);
     }
   }, [updateSubscriptionState]);
 

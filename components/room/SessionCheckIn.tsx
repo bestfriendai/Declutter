@@ -15,13 +15,15 @@ import Animated, {
 import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 
-import { Colors } from '@/constants/Colors';
+import { V1, getTheme, RADIUS, DISPLAY_FONT, BODY_FONT } from '@/constants/designTokens';
 import { useColorScheme } from '@/hooks/useColorScheme';
-import { Typography } from '@/theme/typography';
-import { Spacing, BorderRadius } from '@/theme/spacing';
 import { GlassCard } from '@/components/ui/GlassCard';
 import { GlassButton } from '@/components/ui/GlassButton';
 import { EnergyLevel } from '@/types/declutter';
+
+// Legacy spacing constants mapped from old Spacing tokens
+const Spacing = { xs: 4, sm: 8, md: 12, ml: 16, lg: 20, xxs: 2 } as const;
+const BorderRadius = { lg: RADIUS.lg } as const;
 
 export type TimeAvailable = 'minimal' | 'quick' | 'standard' | 'complete';
 export type Mood = 'overwhelmed' | 'low' | 'okay' | 'motivated';
@@ -39,7 +41,7 @@ interface SessionCheckInProps {
 }
 
 const ENERGY_OPTIONS: { value: EnergyLevel; emoji: string; label: string; description: string }[] = [
-  { value: 'minimal', emoji: '😴', label: 'Exhausted', description: 'Just the basics' },
+  { value: 'exhausted', emoji: '😴', label: 'Exhausted', description: 'Just the basics' },
   { value: 'low', emoji: '😐', label: 'Low', description: 'A few easy tasks' },
   { value: 'moderate', emoji: '🙂', label: 'Moderate', description: 'Ready to work' },
   { value: 'high', emoji: '⚡', label: 'High', description: "Let's do this!" },
@@ -74,7 +76,8 @@ function OptionButton({
   subtitle: string;
   colorScheme: 'light' | 'dark';
 }) {
-  const colors = Colors[colorScheme];
+  const isDark = colorScheme === 'dark';
+  const t = getTheme(isDark);
 
   return (
     <Pressable
@@ -89,18 +92,18 @@ function OptionButton({
         styles.optionButton,
         {
           backgroundColor: selected
-            ? colors.primaryMuted
-            : colors.surfaceSecondary,
+            ? (isDark ? 'rgba(255,107,107,0.15)' : 'rgba(255,107,107,0.1)')
+            : (isDark ? V1.dark.cardElevated : '#F5F5F5'),
           borderColor: selected
-            ? colors.primary
+            ? V1.coral
             : 'transparent',
           borderWidth: selected ? 2 : 0,
         },
       ]}
     >
       <Text style={styles.optionEmoji}>{emoji}</Text>
-      <Text style={[styles.optionLabel, { color: colors.text }]}>{label}</Text>
-      <Text style={[styles.optionSubtitle, { color: colors.textSecondary }]}>
+      <Text style={[styles.optionLabel, { color: t.text, fontFamily: DISPLAY_FONT }]}>{label}</Text>
+      <Text style={[styles.optionSubtitle, { color: t.textSecondary, fontFamily: BODY_FONT }]}>
         {subtitle}
       </Text>
     </Pressable>
@@ -109,7 +112,8 @@ function OptionButton({
 
 export function SessionCheckIn({ visible, onComplete, onSkip }: SessionCheckInProps) {
   const colorScheme = useColorScheme() ?? 'dark';
-  const colors = Colors[colorScheme];
+  const isDark = colorScheme === 'dark';
+  const t = getTheme(isDark);
 
   const [step, setStep] = useState<'energy' | 'time' | 'mood'>('energy');
   const [energy, setEnergy] = useState<EnergyLevel>('moderate');
@@ -223,8 +227,8 @@ export function SessionCheckIn({ visible, onComplete, onSkip }: SessionCheckInPr
               {
                 backgroundColor:
                   steps.indexOf(step) >= i
-                    ? colors.primary
-                    : colorScheme === 'dark'
+                    ? V1.coral
+                    : isDark
                       ? 'rgba(255, 255, 255, 0.2)'
                       : 'rgba(0, 0, 0, 0.1)',
               },
@@ -259,10 +263,10 @@ export function SessionCheckIn({ visible, onComplete, onSkip }: SessionCheckInPr
         >
           <GlassCard variant="elevated" radius="xxl" contentStyle={{ padding: Spacing.lg }}>
             <View style={styles.header}>
-              <Text style={[styles.title, { color: colors.text }]}>
+              <Text style={[styles.title, { color: t.text }]}>
                 {getStepTitle()}
               </Text>
-              <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
+              <Text style={[styles.subtitle, { color: t.textSecondary }]}>
                 {getStepSubtitle()}
               </Text>
             </View>
@@ -294,7 +298,7 @@ export function SessionCheckIn({ visible, onComplete, onSkip }: SessionCheckInPr
               accessibilityRole="button"
               accessibilityLabel="Skip session check-in"
             >
-              <Text style={[styles.skipText, { color: colors.textTertiary }]}>
+              <Text style={[styles.skipText, { color: t.textMuted }]}>
                 Skip for now
               </Text>
             </Pressable>
@@ -322,13 +326,15 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.ml,
   },
   title: {
-    ...Typography.title2,
+    fontFamily: DISPLAY_FONT,
+    fontSize: 22,
     fontWeight: '700',
     textAlign: 'center',
     marginBottom: Spacing.xs,
   },
   subtitle: {
-    ...Typography.body,
+    fontFamily: BODY_FONT,
+    fontSize: 15,
     textAlign: 'center',
   },
   progressDots: {
@@ -361,12 +367,14 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.xs,
   },
   optionLabel: {
-    ...Typography.headline,
+    fontFamily: DISPLAY_FONT,
+    fontSize: 16,
     fontWeight: '600',
     marginBottom: Spacing.xxs,
   },
   optionSubtitle: {
-    ...Typography.caption1,
+    fontFamily: BODY_FONT,
+    fontSize: 12,
     textAlign: 'center',
   },
   buttons: {
@@ -386,7 +394,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   skipText: {
-    ...Typography.footnote,
+    fontFamily: BODY_FONT,
+    fontSize: 13,
   },
 });
 

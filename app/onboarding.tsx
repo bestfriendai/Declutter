@@ -1,22 +1,51 @@
-import { api } from '@/convex/_generated/api';
+/**
+ * Declutterly -- Onboarding Commitment Funnel (Noom-style)
+ * 15-step personalized flow: one question per screen, fast tapping,
+ * warm/friendly tone, animated transitions.
+ *
+ * Steps:
+ *  1. Welcome
+ *  2. ADHD Question
+ *  3. Biggest Struggle
+ *  4. Emotional Impact (multi-select)
+ *  5. Social Proof Insert
+ *  6. Living Situation
+ *  7. Worst Room
+ *  8. Energy Level
+ *  9. Time Available
+ * 10. Encouragement Insert
+ * 11. Commitment
+ * 12. Meet Your Guide (mascot)
+ * 13. Loading/Processing
+ * 14. Your Profile summary
+ * 15. → Navigate to notification-permission
+ */
+
+import { MascotAvatar, LoadingDots } from '@/components/ui';
+import { BODY_FONT, DISPLAY_FONT, V1, CARD_SHADOW_LG, CARD_SHADOW_SM, RADIUS, ANIMATION } from '@/constants/designTokens';
 import { useAuth } from '@/context/AuthContext';
 import { useDeclutter } from '@/context/DeclutterContext';
+import { api } from '@/convex/_generated/api';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
 import {
   LivingSituation,
-  MascotPersonality,
   MASCOT_PERSONALITIES,
+  MascotPersonality,
   OnboardingEnergyLevel,
+  RoomType,
   UserProfile,
 } from '@/types/declutter';
-import { Heart, Camera, ChevronLeft, Check, CheckCircle, Zap, BatteryLow, BatteryMedium, BatteryFull, Home, Building, BedDouble, Users, Play, Flag, Layers, Box, BarChart3, Award, Sparkles } from 'lucide-react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useMutation } from 'convex/react';
 import * as Haptics from 'expo-haptics';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Redirect, router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { ChevronLeft } from 'lucide-react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -24,338 +53,192 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import Animated, { FadeInDown, FadeOutUp, useAnimatedStyle, useSharedValue, withRepeat, withTiming, Easing } from 'react-native-reanimated';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, {
+  FadeIn,
+  FadeInDown,
+  FadeOutUp,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+  withTiming,
+  runOnJS,
+} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ScreenErrorBoundary } from '@/components/ErrorBoundary';
+import { STORAGE_KEYS } from '@/constants/storageKeys';
 
-// ─── V1 Color Palette ────────────────────────────────────────────────────────
-const V1 = {
-  coral: '#FF6B6B',
-  green: '#66BB6A',
-  amber: '#FFB74D',
-  gold: '#FFD54F',
-  blue: '#64B5F6',
-  indigo: '#6366F1',
-  dark: {
-    bg: '#0C0C0C',
-    card: '#1A1A1A',
-    border: 'rgba(255,255,255,0.08)',
-    text: '#FFFFFF',
-    textSecondary: 'rgba(255,255,255,0.5)',
-    textMuted: 'rgba(255,255,255,0.3)',
-  },
-  light: {
-    bg: '#FAFAFA',
-    card: '#F6F7F8',
-    border: '#E5E7EB',
-    text: '#1A1A1A',
-    textSecondary: '#6B7280',
-    textMuted: '#9CA3AF',
-  },
+// ─── Constants ───────────────────────────────────────────────────────────────
+const TOTAL_STEPS = 15;
+const STORAGE_KEY = STORAGE_KEYS.ONBOARDING_PROGRESS;
+
+const ENERGY_EMOJIS: Record<OnboardingEnergyLevel, string> = {
+  exhausted: '\uD83D\uDE34',
+  low: '\uD83D\uDE14',
+  moderate: '\uD83D\uDE10',
+  high: '\uD83D\uDE04',
+  hyperfocused: '\u26A1',
 };
 
-// ─── Step definitions ────────────────────────────────────────────────────────
-type StepId =
-  | 'welcome'
-  | 'problem'
-  | 'energy'
-  | 'living'
-  | 'struggle'
-  | 'time'
-  | 'motivation'
-  | 'scan'
-  | 'mascot'
-  | 'building'
-  | 'preview'
-  | 'commitment';
+const ROOM_OPTIONS: { type: RoomType; emoji: string; label: string }[] = [
+  { type: 'bedroom', emoji: '\uD83D\uDECF\uFE0F', label: 'Bedroom' },
+  { type: 'kitchen', emoji: '\uD83C\uDF73', label: 'Kitchen' },
+  { type: 'bathroom', emoji: '\uD83D\uDEBF', label: 'Bathroom' },
+  { type: 'livingRoom', emoji: '\uD83D\uDECB\uFE0F', label: 'Living Room' },
+  { type: 'office', emoji: '\uD83D\uDCBC', label: 'Office' },
+  { type: 'closet', emoji: '\uD83D\uDC54', label: 'Closet' },
+];
 
+// ─── Selections State ────────────────────────────────────────────────────────
 interface OnboardingSelections {
-  mascotName?: string;
+  adhdAnswer?: 'yes' | 'maybe' | 'no';
+  biggestStruggle?: string;
+  emotionalImpact: string[];
   livingSituation?: LivingSituation;
-  cleaningStruggles: string[];
+  worstRoom?: RoomType;
   energyLevel?: OnboardingEnergyLevel;
   timeAvailability?: number;
+  commitment?: 'yes' | 'try';
+  mascotName: string;
+  guidePersonality: MascotPersonality;
+  cleaningStruggles: string[];
   motivationStyle?: string;
-  guidePersonality?: MascotPersonality;
-  commitment?: boolean;
 }
 
-const STEP_IDS: StepId[] = [
-  'welcome',
-  'problem',
-  'energy',
-  'living',
-  'struggle',
-  'time',
-  'motivation',
-  'scan',
-  'mascot',
-  'building',
-  'preview',
-  'commitment',
-];
-
-// Steps that show the step indicator (1-10)
-const NUMBERED_STEPS: StepId[] = [
-  'welcome',
-  'problem',
-  'energy',
-  'living',
-  'struggle',
-  'time',
-  'motivation',
-  'scan',
-  'mascot',
-  'building',
-];
-
-function getStepNumber(id: StepId): number | null {
-  const idx = NUMBERED_STEPS.indexOf(id);
-  return idx >= 0 ? idx + 1 : null;
-}
-
-// ─── Option pill component ──────────────────────────────────────────────────
-function OptionPill({
-  icon,
-  title,
-  subtitle,
-  selected,
-  onPress,
-  isDark,
-}: {
-  icon?: React.ReactNode;
-  title: string;
-  subtitle: string;
-  selected: boolean;
-  onPress: () => void;
-  isDark: boolean;
-}) {
-  const t = isDark ? V1.dark : V1.light;
-  return (
-    <Pressable
-      onPress={onPress}
-      style={[
-        styles.optionPill,
-        {
-          backgroundColor: selected ? `${V1.coral}15` : t.card,
-          borderColor: selected ? V1.coral : t.border,
-          borderWidth: selected ? 1.5 : 1,
-        },
-      ]}
-    >
-      {icon && <View style={styles.optionIcon}>{icon}</View>}
-      <View style={styles.optionTextWrap}>
-        <Text style={[styles.optionTitle, { color: t.text }]}>{title}</Text>
-        <Text style={[styles.optionSubtitle, { color: t.textSecondary }]}>
-          {subtitle}
-        </Text>
-      </View>
-    </Pressable>
-  );
-}
-
-// ─── Time grid option ────────────────────────────────────────────────────────
-function TimeOption({
-  value: _value,
+// ─── Reusable Pill Button ────────────────────────────────────────────────────
+function PillButton({
   label,
-  subtitle,
-  selected,
+  isSelected,
+  isDark,
   onPress,
-  isDark,
+  emoji,
+  subtitle,
+  large,
 }: {
-  value: number;
   label: string;
-  subtitle: string;
-  selected: boolean;
+  isSelected: boolean;
+  isDark: boolean;
   onPress: () => void;
-  isDark: boolean;
+  emoji?: string;
+  subtitle?: string;
+  large?: boolean;
 }) {
   const t = isDark ? V1.dark : V1.light;
-  return (
-    <Pressable
-      onPress={onPress}
-      style={[
-        styles.timeOption,
-        {
-          backgroundColor: selected ? `${V1.coral}15` : t.card,
-          borderColor: selected ? V1.coral : t.border,
-          borderWidth: selected ? 1.5 : 1,
-        },
-      ]}
-    >
-      <Text style={[styles.timeValue, { color: t.text }]}>{label}</Text>
-      <Text style={[styles.timeSubtitle, { color: t.textSecondary }]}>
-        {subtitle}
-      </Text>
-    </Pressable>
-  );
-}
+  const scale = useSharedValue(1);
 
-// ─── Step dots indicator ─────────────────────────────────────────────────────
-function StepDots({
-  total,
-  current,
-  isDark,
-}: {
-  total: number;
-  current: number;
-  isDark: boolean;
-}) {
-  return (
-    <View style={styles.dotsRow}>
-      {Array.from({ length: total }).map((_, i) => (
-        <View
-          key={i}
-          style={[
-            styles.dot,
-            {
-              backgroundColor:
-                i < current
-                  ? V1.coral
-                  : i === current
-                    ? V1.coral
-                    : isDark
-                      ? 'rgba(255,255,255,0.15)'
-                      : 'rgba(0,0,0,0.12)',
-              width: i === current ? 8 : 6,
-              height: i === current ? 8 : 6,
-            },
-          ]}
-        />
-      ))}
-    </View>
-  );
-}
-
-// ─── Loading spinner with progress steps ─────────────────────────────────────
-function BuildingPlanView({ isDark }: { isDark: boolean }) {
-  const t = isDark ? V1.dark : V1.light;
-  const rotation = useSharedValue(0);
-  const [activeStep, setActiveStep] = useState(0);
-
-  useEffect(() => {
-    rotation.value = withRepeat(
-      withTiming(360, { duration: 2000, easing: Easing.linear }),
-      -1,
-      false
-    );
-    const t1 = setTimeout(() => setActiveStep(1), 800);
-    const t2 = setTimeout(() => setActiveStep(2), 1600);
-    return () => {
-      clearTimeout(t1);
-      clearTimeout(t2);
-    };
-  }, [rotation]);
-
-  const spinStyle = useAnimatedStyle(() => ({
-    transform: [{ rotate: `${rotation.value}deg` }],
+  const animStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
   }));
 
-  const steps = [
-    'Analyzing preferences',
-    'Building personal plan',
-    'Matching your guide',
-  ];
-
   return (
-    <View style={styles.buildingWrap}>
-      {/* Spinning pie chart icon */}
-      <Animated.View style={[styles.buildingSpinner, spinStyle]}>
-        <View style={[styles.pieChart, { borderColor: V1.coral }]}>
-          <View style={[styles.pieSlice, { backgroundColor: V1.coral }]} />
-        </View>
-      </Animated.View>
-
-      <Text style={[styles.buildingTitle, { color: t.text }]}>
-        Building your plan...
-      </Text>
-      <Text style={[styles.buildingSubtitle, { color: t.textSecondary }]}>
-        Analyzing your answers
-      </Text>
-
-      <View style={styles.buildingSteps}>
-        {steps.map((step, i) => (
-          <View key={step} style={styles.buildingStepRow}>
-            <View
-              style={[
-                styles.buildingStepDot,
-                {
-                  backgroundColor:
-                    i < activeStep
-                      ? V1.green
-                      : i === activeStep
-                        ? V1.coral
-                        : 'transparent',
-                  borderColor:
-                    i < activeStep
-                      ? V1.green
-                      : i === activeStep
-                        ? V1.coral
-                        : t.textMuted,
-                },
-              ]}
-            >
-              {i < activeStep && <Check size={12} color="#fff" />}
-            </View>
-            <Text
-              style={[
-                styles.buildingStepText,
-                {
-                  color:
-                    i <= activeStep ? t.text : t.textMuted,
-                },
-              ]}
-            >
-              {step}
+    <Animated.View style={animStyle}>
+      <Pressable
+        onPress={() => {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          onPress();
+        }}
+        onPressIn={() => {
+          scale.value = withSpring(0.95, { damping: 15, stiffness: 350 });
+        }}
+        onPressOut={() => {
+          scale.value = withSpring(1, { damping: 15, stiffness: 350 });
+        }}
+        accessibilityRole="button"
+        accessibilityLabel={label}
+        accessibilityState={{ selected: isSelected }}
+        style={[
+          styles.pill,
+          large && styles.pillLarge,
+          {
+            backgroundColor: isSelected
+              ? isDark ? `${V1.coral}20` : `${V1.coral}12`
+              : t.card,
+            borderColor: isSelected ? V1.coral : t.border,
+            borderWidth: isSelected ? 1.5 : 1,
+          },
+          isSelected && !isDark && {
+            ...CARD_SHADOW_SM,
+            shadowColor: V1.coral,
+            shadowOpacity: 0.15,
+          },
+        ]}
+      >
+        {emoji && <Text style={styles.pillEmoji}>{emoji}</Text>}
+        <View style={emoji ? { flex: 1 } : undefined}>
+          <Text
+            style={[
+              styles.pillText,
+              large && styles.pillTextLarge,
+              { color: isSelected ? V1.coral : t.text },
+            ]}
+          >
+            {label}
+          </Text>
+          {subtitle && (
+            <Text style={[styles.pillSubtitle, { color: t.textSecondary }]}>
+              {subtitle}
             </Text>
-          </View>
-        ))}
-      </View>
-
-      {/* Red progress bar */}
-      <View style={[styles.buildingProgress, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }]}>
-        <Animated.View
-          style={[
-            styles.buildingProgressFill,
-            {
-              backgroundColor: V1.coral,
-              width: `${((activeStep + 1) / 3) * 100}%`,
-            },
-          ]}
-        />
-      </View>
-    </View>
+          )}
+        </View>
+      </Pressable>
+    </Animated.View>
   );
 }
 
-// ─── Plan preview step card ──────────────────────────────────────────────────
-function PlanStepCard({
-  number,
-  title,
-  description,
-  isDark,
-  delay,
+// ─── Coral CTA Button ────────────────────────────────────────────────────────
+function CoralCTA({
+  label,
+  onPress,
+  disabled,
+  loading,
 }: {
-  number: number;
-  title: string;
-  description: string;
-  isDark: boolean;
-  delay: number;
+  label: string;
+  onPress: () => void;
+  disabled?: boolean;
+  loading?: boolean;
 }) {
-  const t = isDark ? V1.dark : V1.light;
+  const scale = useSharedValue(1);
+  const animStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+
   return (
     <Animated.View
-      entering={FadeInDown.delay(delay).duration(350)}
-      style={[styles.planCard, { backgroundColor: t.card, borderColor: t.border }]}
+      style={[
+        animStyle,
+        styles.ctaShadowWrap,
+        { opacity: disabled ? 0.5 : 1 },
+      ]}
     >
-      <View style={styles.planCardNumber}>
-        <Text style={styles.planCardNumberText}>{number}</Text>
-      </View>
-      <View style={styles.planCardContent}>
-        <Text style={[styles.planCardTitle, { color: t.text }]}>{title}</Text>
-        <Text style={[styles.planCardDesc, { color: t.textSecondary }]}>
-          {description}
-        </Text>
-      </View>
+      <Pressable
+        onPress={() => {
+          if (disabled || loading) return;
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+          onPress();
+        }}
+        onPressIn={() => {
+          scale.value = withSpring(0.96, { damping: 15, stiffness: 300 });
+        }}
+        onPressOut={() => {
+          scale.value = withSpring(1, { damping: 15, stiffness: 300 });
+        }}
+        disabled={disabled || loading}
+        accessibilityRole="button"
+        accessibilityLabel={label}
+      >
+        <LinearGradient
+          colors={[V1.coral, V1.coralLight]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.ctaButton}
+        >
+          {loading ? (
+            <ActivityIndicator color="#FFFFFF" />
+          ) : (
+            <Text style={styles.ctaText}>{label}</Text>
+          )}
+        </LinearGradient>
+      </Pressable>
     </Animated.View>
   );
 }
@@ -364,77 +247,150 @@ function PlanStepCard({
 // MAIN SCREEN
 // ─────────────────────────────────────────────────────────────────────────────
 export default function OnboardingScreen() {
+  return (
+    <ScreenErrorBoundary screenName="onboarding">
+      <OnboardingScreenContent />
+    </ScreenErrorBoundary>
+  );
+}
+
+function OnboardingScreenContent() {
   const rawScheme = useColorScheme();
   const isDark = rawScheme === 'dark';
   const t = isDark ? V1.dark : V1.light;
   const insets = useSafeAreaInsets();
   const reducedMotion = useReducedMotion();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, continueAsGuest } = useAuth();
   const { user, setUser, createMascot } = useDeclutter();
   const updateUser = useMutation(api.users.update);
 
-  const [stepIndex, setStepIndex] = useState(0);
-  const [answers, setAnswers] = useState<OnboardingSelections>({
+  const [step, setStep] = useState(1);
+  const [selections, setSelections] = useState<OnboardingSelections>({
+    emotionalImpact: [],
     cleaningStruggles: [],
     mascotName: 'Dusty',
-    commitment: false,
+    guidePersonality: 'dusty',
   });
+  const [isCompleting, setIsCompleting] = useState(false);
 
-  const stepId = STEP_IDS[stepIndex];
-  const stepNumber = getStepNumber(stepId);
+  // Animated progress bar
+  const progressWidth = useSharedValue(0);
 
-  // Auto-advance from building step
+  // ─── Restore partial progress from AsyncStorage ───────────────────────────
   useEffect(() => {
-    if (stepId !== 'building') return undefined;
-    const timer = setTimeout(() => {
-      setStepIndex((c) => Math.min(c + 1, STEP_IDS.length - 1));
-    }, reducedMotion ? 800 : 2400);
-    return () => clearTimeout(timer);
-  }, [stepId, reducedMotion]);
+    (async () => {
+      try {
+        const saved = await AsyncStorage.getItem(STORAGE_KEY);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed.step != null && parsed.step > 1) {
+            setStep(parsed.step);
+          }
+          if (parsed.selections) {
+            setSelections((prev) => ({ ...prev, ...parsed.selections }));
+          }
+        }
+      } catch {
+        // Start fresh
+      }
+    })();
+  }, []);
 
-  const canContinue = useMemo(() => {
-    switch (stepId) {
-      case 'welcome':
-      case 'problem':
-        return true;
-      case 'energy':
-        return !!answers.energyLevel;
-      case 'living':
-        return !!answers.livingSituation;
-      case 'struggle':
-        return answers.cleaningStruggles.length > 0;
-      case 'time':
-        return !!answers.timeAvailability;
-      case 'motivation':
-        return !!answers.motivationStyle;
-      case 'scan':
-        return true;
-      case 'mascot':
-        return !!answers.mascotName && answers.mascotName.trim().length >= 1;
-      case 'preview':
-        return true;
-      case 'commitment':
-        return true;
-      case 'building':
-        return false;
-      default:
-        return true;
+  // ─── Persist partial progress ─────────────────────────────────────────────
+  useEffect(() => {
+    (async () => {
+      try {
+        await AsyncStorage.setItem(
+          STORAGE_KEY,
+          JSON.stringify({ step, selections }),
+        );
+      } catch {
+        // Non-critical
+      }
+    })();
+  }, [step, selections]);
+
+  // ─── Animate progress bar ────────────────────────────────────────────────
+  useEffect(() => {
+    const percent = (step / TOTAL_STEPS) * 100;
+    progressWidth.value = withTiming(percent, {
+      duration: reducedMotion ? 0 : ANIMATION.duration.normal,
+    });
+  }, [step, progressWidth, reducedMotion]);
+
+  const progressBarAnimStyle = useAnimatedStyle(() => ({
+    width: `${progressWidth.value}%`,
+  }));
+
+  // ─── Navigation ──────────────────────────────────────────────────────────
+  const goNext = useCallback(() => {
+    if (step < TOTAL_STEPS) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      setStep((s) => s + 1);
     }
-  }, [answers, stepId]);
+  }, [step]);
 
+  const goBack = useCallback(() => {
+    if (step > 1) {
+      Haptics.selectionAsync();
+      setStep((s) => s - 1);
+    }
+  }, [step]);
+
+  // Auto-select and advance helper
+  const selectAndAdvance = useCallback(
+    (updater: (prev: OnboardingSelections) => OnboardingSelections) => {
+      setSelections(updater);
+      setTimeout(() => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        setStep((s) => Math.min(s + 1, TOTAL_STEPS));
+      }, 300);
+    },
+    [],
+  );
+
+  // ─── Swipe gesture ────────────────────────────────────────────────────────
+  const swipeGesture = Gesture.Pan()
+    .activeOffsetX([-30, 30])
+    .onEnd((event) => {
+      if (event.translationX < -50) {
+        runOnJS(goNext)();
+      } else if (event.translationX > 50 && step > 1) {
+        runOnJS(goBack)();
+      }
+    });
+
+  // ─── Persist and complete ─────────────────────────────────────────────────
   const persistOnboarding = useCallback(async () => {
+    // Derive guide personality from answers
+    let personality = selections.guidePersonality;
+    if (
+      selections.emotionalImpact.includes('It drains my energy') ||
+      selections.biggestStruggle === 'It stresses me out but I can\'t act'
+    ) {
+      personality = 'tidy'; // calm
+    } else if (
+      selections.biggestStruggle === 'I don\'t know where to start'
+    ) {
+      personality = 'spark'; // energetic
+    }
+
     const baseUser: UserProfile = {
       id: user?.id ?? 'local-user',
       name: user?.name || 'Declutterer',
       avatar: user?.avatar,
       createdAt: user?.createdAt ?? new Date(),
       onboardingComplete: true,
-      livingSituation: answers.livingSituation,
-      cleaningStruggles: answers.cleaningStruggles,
-      energyLevel: answers.energyLevel,
-      timeAvailability: answers.timeAvailability,
-      motivationStyle: answers.motivationStyle,
-      guidePersonality: answers.guidePersonality ?? 'dusty',
+      livingSituation: selections.livingSituation,
+      cleaningStruggles: selections.cleaningStruggles.length > 0
+        ? selections.cleaningStruggles
+        : selections.biggestStruggle
+          ? [selections.biggestStruggle]
+          : [],
+      energyLevel: selections.energyLevel,
+      timeAvailability: selections.timeAvailability,
+      motivationStyle: selections.motivationStyle,
+      guidePersonality: personality,
       subscriptionStatus: user?.subscriptionStatus,
       subscriptionTier: user?.subscriptionTier,
       trialEndsAt: user?.trialEndsAt,
@@ -444,732 +400,849 @@ export default function OnboardingScreen() {
 
     setUser(baseUser);
 
-    const personality = answers.guidePersonality ?? 'dusty';
     const guide = MASCOT_PERSONALITIES[personality];
-    createMascot(answers.mascotName || guide.name, personality);
+    createMascot(selections.mascotName || guide.name, personality);
 
     if (isAuthenticated) {
       try {
         await updateUser({
           onboardingComplete: true,
-          livingSituation: answers.livingSituation,
-          cleaningStruggles: answers.cleaningStruggles,
-          energyLevel: answers.energyLevel,
-          timeAvailability: answers.timeAvailability,
-          motivationStyle: answers.motivationStyle,
+          livingSituation: selections.livingSituation,
+          cleaningStruggles: selections.cleaningStruggles.length > 0
+            ? selections.cleaningStruggles
+            : selections.biggestStruggle
+              ? [selections.biggestStruggle]
+              : [],
+          energyLevel: selections.energyLevel,
+          timeAvailability: selections.timeAvailability,
+          motivationStyle: selections.motivationStyle,
         });
       } catch (error) {
-        console.error('Failed to persist onboarding answers', error);
+        if (__DEV__) console.error('Failed to persist onboarding answers', error);
       }
     }
-  }, [answers, createMascot, isAuthenticated, setUser, updateUser, user]);
 
-  // Complete onboarding and navigate to paywall
+    try {
+      await AsyncStorage.removeItem(STORAGE_KEY);
+    } catch {
+      // Non-critical
+    }
+  }, [selections, createMascot, isAuthenticated, setUser, updateUser, user]);
+
   const completeOnboarding = useCallback(async () => {
-    await persistOnboarding();
-    router.push('/paywall');
-  }, [persistOnboarding]);
+    setIsCompleting(true);
+    try {
+      await persistOnboarding();
+    } catch {
+      if (__DEV__) console.info('Onboarding persist partial failure, continuing');
+    }
 
-  const handleNext = useCallback(() => {
-    if (!canContinue) return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setStepIndex((c) => Math.min(c + 1, STEP_IDS.length - 1));
-  }, [canContinue]);
+    if (!isAuthenticated) {
+      try {
+        await continueAsGuest();
+      } catch {
+        if (__DEV__) console.warn('Guest auth failed during onboarding completion');
+      }
+    }
 
-  const handleBack = useCallback(() => {
-    if (stepIndex === 0 || stepId === 'building') return;
-    Haptics.selectionAsync();
-    setStepIndex((c) => Math.max(c - 1, 0));
-  }, [stepId, stepIndex]);
-
-  const handleSkip = useCallback(() => {
-    Haptics.selectionAsync();
-    setStepIndex((c) => Math.min(c + 1, STEP_IDS.length - 1));
-  }, []);
+    setIsCompleting(false);
+    router.replace('/notification-permission');
+  }, [persistOnboarding, isAuthenticated, continueAsGuest]);
 
   // Redirect if already onboarded
   if (user?.onboardingComplete && isAuthenticated) {
     return <Redirect href="/(tabs)" />;
   }
 
-  // ─── Step header with back + step counter ──────────────────────────────────
-  const showBackButton = stepIndex > 0 && stepId !== 'building';
-  const showSkip =
-    stepId === 'living' ||
-    stepId === 'struggle' ||
-    stepId === 'time' ||
-    stepId === 'motivation';
+  // ─── Auto-advance for timed steps ────────────────────────────────────────
+  const autoAdvanceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (autoAdvanceTimer.current) {
+      clearTimeout(autoAdvanceTimer.current);
+      autoAdvanceTimer.current = null;
+    }
+
+    // Step 5: Social proof auto-advance after 3s
+    if (step === 5) {
+      autoAdvanceTimer.current = setTimeout(() => {
+        setStep(6);
+      }, 3000);
+    }
+
+    // Step 10: Encouragement auto-advance after 2.5s
+    if (step === 10) {
+      autoAdvanceTimer.current = setTimeout(() => {
+        setStep(11);
+      }, 2500);
+    }
+
+    // Step 13: Loading auto-advance after 2.5s
+    if (step === 13) {
+      autoAdvanceTimer.current = setTimeout(() => {
+        setStep(14);
+      }, 2500);
+    }
+
+    return () => {
+      if (autoAdvanceTimer.current) {
+        clearTimeout(autoAdvanceTimer.current);
+      }
+    };
+  }, [step]);
+
+  // Step 15 triggers navigation to notification-permission
+  useEffect(() => {
+    if (step === 15) {
+      completeOnboarding();
+    }
+  }, [step, completeOnboarding]);
+
+  // ─── Step header (back + progress bar) ────────────────────────────────────
+  const showHeader = step > 1 && step < 15;
+  const showBack = step > 1 && step !== 5 && step !== 10 && step !== 13;
 
   const renderHeader = () => {
-    if (stepId === 'welcome' || stepId === 'building' || stepId === 'preview' || stepId === 'commitment') {
-      return null;
-    }
+    if (!showHeader) return null;
 
     return (
       <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
-        {showBackButton ? (
-          <Pressable onPress={handleBack} style={styles.backBtn} hitSlop={12}>
+        {showBack ? (
+          <Pressable
+            onPress={goBack}
+            style={styles.backBtn}
+            hitSlop={12}
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
+          >
             <ChevronLeft size={22} color={t.text} />
           </Pressable>
         ) : (
-          <View style={{ width: 32 }} />
+          <View style={{ width: 44 }} />
         )}
 
         <View style={styles.headerCenter}>
-          {stepNumber !== null && (
-            <>
-              <Text style={[styles.stepLabel, { color: V1.coral }]}>
-                STEP {stepNumber} OF 10
-              </Text>
-              <StepDots total={10} current={stepNumber - 1} isDark={isDark} />
-            </>
-          )}
+          <View
+            style={styles.progressBarContainer}
+            accessibilityRole="progressbar"
+            accessibilityValue={{
+              min: 0,
+              max: TOTAL_STEPS,
+              now: step,
+            }}
+            accessibilityLabel={`Step ${step} of ${TOTAL_STEPS}`}
+          >
+            <View
+              style={[
+                styles.progressBarTrack,
+                {
+                  backgroundColor: isDark
+                    ? 'rgba(255,255,255,0.08)'
+                    : 'rgba(0,0,0,0.06)',
+                },
+              ]}
+            >
+              <Animated.View
+                style={[
+                  styles.progressBarFill,
+                  { backgroundColor: V1.coral },
+                  progressBarAnimStyle,
+                ]}
+              />
+            </View>
+          </View>
         </View>
 
-        {showSkip ? (
-          <Pressable onPress={handleSkip} hitSlop={12}>
-            <Text style={[styles.skipText, { color: t.textSecondary }]}>
-              Skip
-            </Text>
-          </Pressable>
-        ) : (
-          <View style={{ width: 32 }} />
-        )}
+        <View style={{ width: 44 }} />
       </View>
     );
   };
 
-  // ─── Step content ──────────────────────────────────────────────────────────
+  // ─── Step content ─────────────────────────────────────────────────────────
   const renderStep = () => {
-    switch (stepId) {
-      // ── WELCOME ──────────────────────────────────────────────────────
-      case 'welcome':
+    switch (step) {
+      // ── Step 1: Welcome ──────────────────────────────────────────────────
+      case 1:
         return (
-          <View style={[styles.centerContent, { paddingTop: insets.top + 60 }]}>
-            {/* Mascot circle */}
-            <View style={styles.mascotCircle}>
-              <Text style={styles.mascotEmoji}>🐹</Text>
-            </View>
+          <View style={[styles.centeredContent, { paddingTop: insets.top + 60 }]}>
+            <Animated.View entering={FadeInDown.duration(600).delay(100)} style={styles.mascotWrap}>
+              <View style={styles.glowContainer}>
+                <LinearGradient
+                  colors={[`${V1.coral}30`, `${V1.coralLight}18`, 'transparent']}
+                  style={styles.mascotGlow}
+                  start={{ x: 0.5, y: 0 }}
+                  end={{ x: 0.5, y: 1 }}
+                />
+                <MascotAvatar imageKey="welcome" size={130} showBackground={false} />
+              </View>
+            </Animated.View>
 
-            <Text style={[styles.appTitle, { color: t.text }]}>Declutter</Text>
-            <Text style={[styles.appSubtitle, { color: t.textSecondary }]}>
-              Your ADHD-friendly cleaning companion
-            </Text>
+            <Animated.Text
+              entering={FadeInDown.duration(600).delay(250)}
+              style={[styles.heroTitle, { color: t.text }]}
+            >
+              Ready to take back{'\n'}your space?
+            </Animated.Text>
 
-            <View style={styles.welcomeActions}>
-              <Pressable onPress={handleNext} style={styles.coralButton}>
-                <Text style={styles.coralButtonText}>Get Started</Text>
-              </Pressable>
+            <Animated.Text
+              entering={FadeInDown.duration(600).delay(400)}
+              style={[styles.heroSubtitle, { color: t.textSecondary }]}
+            >
+              Declutter helps you clean without the overwhelm
+            </Animated.Text>
+
+            <Animated.View
+              entering={FadeInDown.duration(600).delay(600)}
+              style={styles.welcomeActions}
+            >
+              <CoralCTA label="Let's get started" onPress={goNext} />
 
               <Pressable
-                onPress={() => router.push('/auth/login')}
+                onPress={() => router.replace('/auth/login')}
                 hitSlop={12}
+                accessibilityRole="button"
+                accessibilityLabel="Sign in to existing account"
               >
                 <Text style={[styles.linkText, { color: t.textMuted }]}>
                   I already have an account
                 </Text>
               </Pressable>
-            </View>
-
-            <StepDots total={6} current={0} isDark={isDark} />
+            </Animated.View>
           </View>
         );
 
-      // ── PROBLEM ──────────────────────────────────────────────────────
-      case 'problem':
+      // ── Step 2: ADHD Question ────────────────────────────────────────────
+      case 2:
         return (
           <View style={styles.stepContent}>
-            <View style={styles.iconCircle}>
-              <Heart size={32} color={V1.coral} />
-            </View>
-
-            <Text style={[styles.stepTitle, { color: t.text }]}>
-              Cleaning feels impossible sometimes
-            </Text>
-
-            <Text style={[styles.stepDesc, { color: t.textSecondary }]}>
-              And that's okay. You're not lazy {'\u2014'} your brain just works
-              differently. We're here to help, not judge.
-            </Text>
-
-            <View style={{ flex: 1 }} />
-
-            <Pressable onPress={handleNext} style={styles.coralButton}>
-              <Text style={styles.coralButtonText}>That's me</Text>
-            </Pressable>
-          </View>
-        );
-
-      // ── ENERGY ───────────────────────────────────────────────────────
-      case 'energy':
-        return (
-          <View style={styles.stepContent}>
-            <Text style={[styles.stepTitle, { color: t.text }]}>
-              How's your energy right now?
-            </Text>
-            <Text style={[styles.stepSubhead, { color: t.textSecondary }]}>
-              This helps us suggest the right tasks
-            </Text>
-
-            <View style={styles.optionsList}>
-              <OptionPill
-                icon={<BatteryLow size={20} color={V1.coral} />}
-                title="Exhausted"
-                subtitle="Just basics today"
-                selected={answers.energyLevel === 'exhausted'}
-                onPress={() =>
-                  setAnswers((c) => ({ ...c, energyLevel: 'exhausted' }))
-                }
-                isDark={isDark}
-              />
-              <OptionPill
-                icon={<BatteryMedium size={20} color={V1.coral} />}
-                title="Low Energy"
-                subtitle="Small wins only"
-                selected={answers.energyLevel === 'low'}
-                onPress={() =>
-                  setAnswers((c) => ({ ...c, energyLevel: 'low' }))
-                }
-                isDark={isDark}
-              />
-              <OptionPill
-                icon={<Zap size={20} color={V1.coral} />}
-                title="Feeling Okay"
-                subtitle="Ready for a session"
-                selected={answers.energyLevel === 'moderate'}
-                onPress={() =>
-                  setAnswers((c) => ({ ...c, energyLevel: 'moderate' }))
-                }
-                isDark={isDark}
-              />
-              <OptionPill
-                icon={<BatteryFull size={20} color={V1.coral} />}
-                title="Good Energy!"
-                subtitle="Let's get stuff done"
-                selected={answers.energyLevel === 'high'}
-                onPress={() =>
-                  setAnswers((c) => ({ ...c, energyLevel: 'high' }))
-                }
-                isDark={isDark}
-              />
-            </View>
-
-            <View style={{ flex: 1 }} />
-
-            <Pressable
-              onPress={handleNext}
-              style={[styles.coralButton, { opacity: canContinue ? 1 : 0.4 }]}
-              disabled={!canContinue}
+            <Animated.Text
+              entering={FadeInDown.duration(400).delay(100)}
+              style={[styles.stepTitle, { color: t.text }]}
             >
-              <Text style={styles.coralButtonText}>Next</Text>
-            </Pressable>
+              Do you have ADHD, or{'\n'}suspect you might?
+            </Animated.Text>
+
+            <View style={styles.optionsColumn}>
+              {[
+                { value: 'yes' as const, label: 'Yes' },
+                { value: 'maybe' as const, label: 'I think so' },
+                { value: 'no' as const, label: 'No, but I struggle with cleaning' },
+              ].map((opt) => (
+                <Animated.View
+                  key={opt.value}
+                  entering={FadeInDown.duration(400).delay(200)}
+                >
+                  <PillButton
+                    label={opt.label}
+                    isSelected={selections.adhdAnswer === opt.value}
+                    isDark={isDark}
+                    large
+                    onPress={() =>
+                      selectAndAdvance((prev) => ({
+                        ...prev,
+                        adhdAnswer: opt.value,
+                      }))
+                    }
+                  />
+                </Animated.View>
+              ))}
+            </View>
+
+            <Animated.Text
+              entering={FadeInDown.duration(400).delay(400)}
+              style={[styles.helperText, { color: t.textMuted }]}
+            >
+              This helps us personalize your experience
+            </Animated.Text>
           </View>
         );
 
-      // ── LIVING ───────────────────────────────────────────────────────
-      case 'living':
+      // ── Step 3: Biggest Struggle ─────────────────────────────────────────
+      case 3:
         return (
           <View style={styles.stepContent}>
-            <Text style={[styles.stepTitle, { color: t.text }]}>
-              What's your space?
-            </Text>
-            <Text style={[styles.stepSubhead, { color: t.textSecondary }]}>
-              This helps us tailor tasks to your home
-            </Text>
+            <Animated.Text
+              entering={FadeInDown.duration(400).delay(100)}
+              style={[styles.stepTitle, { color: t.text }]}
+            >
+              What's your biggest frustration with clutter?
+            </Animated.Text>
 
-            <View style={styles.optionsList}>
-              <OptionPill
-                icon={<Building size={20} color={V1.coral} />}
-                title="Apartment"
-                subtitle="Compact living"
-                selected={answers.livingSituation === 'apartment'}
-                onPress={() =>
-                  setAnswers((c) => ({ ...c, livingSituation: 'apartment' }))
-                }
-                isDark={isDark}
-              />
-              <OptionPill
-                icon={<Home size={20} color={V1.coral} />}
-                title="House"
-                subtitle="Multiple rooms"
-                selected={answers.livingSituation === 'house'}
-                onPress={() =>
-                  setAnswers((c) => ({ ...c, livingSituation: 'house' }))
-                }
-                isDark={isDark}
-              />
-              <OptionPill
-                icon={<BedDouble size={20} color={V1.coral} />}
-                title="Single Room"
-                subtitle="One space to manage"
-                selected={
-                  answers.livingSituation === 'studio' ||
-                  answers.livingSituation === 'dorm'
-                }
-                onPress={() =>
-                  setAnswers((c) => ({ ...c, livingSituation: 'studio' }))
-                }
-                isDark={isDark}
-              />
-              <OptionPill
-                icon={<Users size={20} color={V1.coral} />}
-                title="Shared Space"
-                subtitle="Living with others"
-                selected={answers.livingSituation === 'shared'}
-                onPress={() =>
-                  setAnswers((c) => ({ ...c, livingSituation: 'shared' }))
-                }
-                isDark={isDark}
-              />
+            <View style={styles.optionsColumn}>
+              {[
+                'I don\'t know where to start',
+                'I start but can\'t finish',
+                'It builds up again fast',
+                'It stresses me out but I can\'t act',
+              ].map((label) => (
+                <Animated.View
+                  key={label}
+                  entering={FadeInDown.duration(400).delay(200)}
+                >
+                  <PillButton
+                    label={label}
+                    isSelected={selections.biggestStruggle === label}
+                    isDark={isDark}
+                    large
+                    onPress={() =>
+                      selectAndAdvance((prev) => ({
+                        ...prev,
+                        biggestStruggle: label,
+                        cleaningStruggles: [label],
+                      }))
+                    }
+                  />
+                </Animated.View>
+              ))}
+            </View>
+          </View>
+        );
+
+      // ── Step 4: Emotional Impact (multi-select) ──────────────────────────
+      case 4: {
+        const emotionalOptions = [
+          'I avoid having people over',
+          'I can\'t find things I need',
+          'It drains my energy',
+        ];
+        return (
+          <View style={styles.stepContent}>
+            <Animated.Text
+              entering={FadeInDown.duration(400).delay(100)}
+              style={[styles.stepTitle, { color: t.text }]}
+            >
+              How does clutter affect your daily life?
+            </Animated.Text>
+
+            <Animated.Text
+              entering={FadeInDown.duration(400).delay(200)}
+              style={[styles.stepSubhead, { color: t.textSecondary }]}
+            >
+              Select all that apply
+            </Animated.Text>
+
+            <View style={styles.optionsColumn}>
+              {emotionalOptions.map((label) => (
+                <PillButton
+                  key={label}
+                  label={label}
+                  isSelected={selections.emotionalImpact.includes(label)}
+                  isDark={isDark}
+                  large
+                  onPress={() => {
+                    setSelections((prev) => {
+                      const already = prev.emotionalImpact.includes(label);
+                      return {
+                        ...prev,
+                        emotionalImpact: already
+                          ? prev.emotionalImpact.filter((i) => i !== label)
+                          : [...prev.emotionalImpact, label],
+                      };
+                    });
+                  }}
+                />
+              ))}
             </View>
 
             <View style={{ flex: 1 }} />
 
-            <Pressable
-              onPress={handleNext}
-              style={[styles.coralButton, { opacity: canContinue ? 1 : 0.4 }]}
-              disabled={!canContinue}
-            >
-              <Text style={styles.coralButtonText}>Next</Text>
-            </Pressable>
+            <CoralCTA
+              label="Continue"
+              onPress={goNext}
+              disabled={selections.emotionalImpact.length === 0}
+            />
           </View>
         );
+      }
 
-      // ── STRUGGLE ─────────────────────────────────────────────────────
-      case 'struggle':
+      // ── Step 5: Social Proof Insert (auto-advance) ───────────────────────
+      case 5:
+        return (
+          <Pressable
+            style={[styles.centeredContent, { paddingTop: insets.top + 80 }]}
+            onPress={goNext}
+          >
+            <Animated.Text
+              entering={FadeInDown.duration(500).delay(100)}
+              style={[styles.socialProofTitle, { color: t.text }]}
+            >
+              You're not alone
+            </Animated.Text>
+
+            <Animated.Text
+              entering={FadeInDown.duration(500).delay(300)}
+              style={[styles.socialProofStat, { color: t.textSecondary }]}
+            >
+              3 in 4 adults with ADHD struggle with household management
+            </Animated.Text>
+
+            <Animated.Text
+              entering={FadeInDown.duration(500).delay(500)}
+              style={[styles.socialProofBody, { color: V1.coral }]}
+            >
+              Declutter has helped thousands take back their space
+            </Animated.Text>
+
+            <Animated.View entering={FadeIn.delay(800).duration(300)} style={{ marginTop: 40 }}>
+              <Text style={[styles.tapToContinue, { color: t.textMuted }]}>
+                Tap to continue
+              </Text>
+            </Animated.View>
+          </Pressable>
+        );
+
+      // ── Step 6: Living Situation ─────────────────────────────────────────
+      case 6:
         return (
           <View style={styles.stepContent}>
-            <Text style={[styles.stepTitle, { color: t.text }]}>
-              What feels hardest?
-            </Text>
-            <Text style={[styles.stepSubhead, { color: t.textSecondary }]}>
-              No judgment. Just so we know where to start.
-            </Text>
+            <Animated.Text
+              entering={FadeInDown.duration(400).delay(100)}
+              style={[styles.stepTitle, { color: t.text }]}
+            >
+              What kind of space do you live in?
+            </Animated.Text>
 
-            <View style={styles.optionsList}>
-              <OptionPill
-                icon={<Play size={20} color={V1.coral} />}
-                title="Starting"
-                subtitle="Getting going is the hardest part"
-                selected={answers.cleaningStruggles.includes('starting')}
-                onPress={() => {
-                  Haptics.selectionAsync();
-                  setAnswers((c) => ({
-                    ...c,
-                    cleaningStruggles: c.cleaningStruggles.includes('starting')
-                      ? c.cleaningStruggles.filter((s) => s !== 'starting')
-                      : [...c.cleaningStruggles, 'starting'],
-                  }));
-                }}
-                isDark={isDark}
-              />
-              <OptionPill
-                icon={<Flag size={20} color={V1.coral} />}
-                title="Finishing"
-                subtitle="I start but never complete"
-                selected={answers.cleaningStruggles.includes('finishing')}
-                onPress={() => {
-                  Haptics.selectionAsync();
-                  setAnswers((c) => ({
-                    ...c,
-                    cleaningStruggles: c.cleaningStruggles.includes('finishing')
-                      ? c.cleaningStruggles.filter((s) => s !== 'finishing')
-                      : [...c.cleaningStruggles, 'finishing'],
-                  }));
-                }}
-                isDark={isDark}
-              />
-              <OptionPill
-                icon={<Layers size={20} color={V1.coral} />}
-                title="Staying Organized"
-                subtitle="It gets messy again fast"
-                selected={answers.cleaningStruggles.includes('maintenance')}
-                onPress={() => {
-                  Haptics.selectionAsync();
-                  setAnswers((c) => ({
-                    ...c,
-                    cleaningStruggles: c.cleaningStruggles.includes(
-                      'maintenance'
-                    )
-                      ? c.cleaningStruggles.filter((s) => s !== 'maintenance')
-                      : [...c.cleaningStruggles, 'maintenance'],
-                  }));
-                }}
-                isDark={isDark}
-              />
-              <OptionPill
-                icon={<Box size={20} color={V1.coral} />}
-                title="Everything"
-                subtitle="It all feels overwhelming"
-                selected={answers.cleaningStruggles.includes('overwhelm')}
-                onPress={() => {
-                  Haptics.selectionAsync();
-                  setAnswers((c) => ({
-                    ...c,
-                    cleaningStruggles: c.cleaningStruggles.includes('overwhelm')
-                      ? c.cleaningStruggles.filter((s) => s !== 'overwhelm')
-                      : [...c.cleaningStruggles, 'overwhelm'],
-                  }));
-                }}
-                isDark={isDark}
-              />
+            <View style={styles.optionsColumn}>
+              {([
+                { value: 'studio' as const, emoji: '\uD83C\uDFE0', label: 'Studio' },
+                { value: 'apartment' as const, emoji: '\uD83C\uDFE2', label: 'Apartment' },
+                { value: 'house' as const, emoji: '\uD83C\uDFE1', label: 'House' },
+                { value: 'dorm' as const, emoji: '\uD83C\uDFEB', label: 'Dorm' },
+                { value: 'shared' as const, emoji: '\uD83D\uDC65', label: 'Shared' },
+              ] as { value: LivingSituation; emoji: string; label: string }[]).map(
+                (opt) => (
+                  <PillButton
+                    key={opt.value}
+                    label={opt.label}
+                    emoji={opt.emoji}
+                    isSelected={selections.livingSituation === opt.value}
+                    isDark={isDark}
+                    large
+                    onPress={() =>
+                      selectAndAdvance((prev) => ({
+                        ...prev,
+                        livingSituation: opt.value,
+                      }))
+                    }
+                  />
+                ),
+              )}
             </View>
-
-            <View style={{ flex: 1 }} />
-
-            <Pressable
-              onPress={handleNext}
-              style={[styles.coralButton, { opacity: canContinue ? 1 : 0.4 }]}
-              disabled={!canContinue}
-            >
-              <Text style={styles.coralButtonText}>Next</Text>
-            </Pressable>
           </View>
         );
 
-      // ── TIME ─────────────────────────────────────────────────────────
-      case 'time':
+      // ── Step 7: Worst Room ───────────────────────────────────────────────
+      case 7:
         return (
           <View style={styles.stepContent}>
-            <Text style={[styles.stepTitle, { color: t.text }]}>
-              How much time do you have?
-            </Text>
-            <Text style={[styles.stepSubhead, { color: t.textSecondary }]}>
-              Even 5 minutes can make a difference
-            </Text>
+            <Animated.Text
+              entering={FadeInDown.duration(400).delay(100)}
+              style={[styles.stepTitle, { color: t.text }]}
+            >
+              Which room stresses you out the most?
+            </Animated.Text>
+
+            <View style={styles.optionsGrid}>
+              {ROOM_OPTIONS.map((opt) => (
+                <View key={opt.type} style={styles.gridItem}>
+                  <PillButton
+                    label={opt.label}
+                    emoji={opt.emoji}
+                    isSelected={selections.worstRoom === opt.type}
+                    isDark={isDark}
+                    large
+                    onPress={() =>
+                      selectAndAdvance((prev) => ({
+                        ...prev,
+                        worstRoom: opt.type,
+                      }))
+                    }
+                  />
+                </View>
+              ))}
+            </View>
+          </View>
+        );
+
+      // ── Step 8: Energy Level ─────────────────────────────────────────────
+      case 8:
+        return (
+          <View style={styles.stepContent}>
+            <Animated.Text
+              entering={FadeInDown.duration(400).delay(100)}
+              style={[styles.stepTitle, { color: t.text }]}
+            >
+              How much energy do you have for cleaning right now?
+            </Animated.Text>
+
+            <View style={styles.optionsColumn}>
+              {([
+                { value: 'exhausted' as const, label: 'Exhausted' },
+                { value: 'low' as const, label: 'Low Energy' },
+                { value: 'moderate' as const, label: 'Moderate' },
+                { value: 'high' as const, label: 'High Energy' },
+                { value: 'hyperfocused' as const, label: 'Hyperfocused' },
+              ] as { value: OnboardingEnergyLevel; label: string }[]).map(
+                (opt) => (
+                  <PillButton
+                    key={opt.value}
+                    label={opt.label}
+                    emoji={ENERGY_EMOJIS[opt.value]}
+                    isSelected={selections.energyLevel === opt.value}
+                    isDark={isDark}
+                    large
+                    onPress={() =>
+                      selectAndAdvance((prev) => ({
+                        ...prev,
+                        energyLevel: opt.value,
+                      }))
+                    }
+                  />
+                ),
+              )}
+            </View>
+          </View>
+        );
+
+      // ── Step 9: Time Available ───────────────────────────────────────────
+      case 9:
+        return (
+          <View style={styles.stepContent}>
+            <Animated.Text
+              entering={FadeInDown.duration(400).delay(100)}
+              style={[styles.stepTitle, { color: t.text }]}
+            >
+              How much time could you clean today?
+            </Animated.Text>
 
             <View style={styles.timeGrid}>
-              <View style={styles.timeRow}>
-                <TimeOption
-                  value={5}
-                  label="5 min"
-                  subtitle="Quick tidy"
-                  selected={answers.timeAvailability === 5}
+              {[
+                { value: 5, label: '5 min' },
+                { value: 15, label: '15 min' },
+                { value: 30, label: '30 min' },
+                { value: 60, label: '1 hour+' },
+              ].map((opt) => (
+                <Pressable
+                  key={opt.value}
                   onPress={() =>
-                    setAnswers((c) => ({ ...c, timeAvailability: 5 }))
+                    selectAndAdvance((prev) => ({
+                      ...prev,
+                      timeAvailability: opt.value,
+                    }))
                   }
-                  isDark={isDark}
+                  style={[
+                    styles.timeCard,
+                    {
+                      backgroundColor:
+                        selections.timeAvailability === opt.value
+                          ? isDark ? `${V1.coral}20` : `${V1.coral}12`
+                          : t.card,
+                      borderColor:
+                        selections.timeAvailability === opt.value
+                          ? V1.coral
+                          : t.border,
+                      borderWidth: selections.timeAvailability === opt.value ? 1.5 : 1,
+                    },
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel={opt.label}
+                  accessibilityState={{
+                    selected: selections.timeAvailability === opt.value,
+                  }}
+                >
+                  <Text
+                    style={[
+                      styles.timeCardText,
+                      {
+                        color:
+                          selections.timeAvailability === opt.value
+                            ? V1.coral
+                            : t.text,
+                      },
+                    ]}
+                  >
+                    {opt.label}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+        );
+
+      // ── Step 10: Encouragement Insert (auto-advance) ─────────────────────
+      case 10:
+        return (
+          <Pressable
+            style={[styles.centeredContent, { paddingTop: insets.top + 80 }]}
+            onPress={goNext}
+          >
+            <Animated.Text
+              entering={FadeInDown.duration(500).delay(100)}
+              style={[styles.stepTitle, { color: t.textSecondary, textAlign: 'center' }]}
+            >
+              Based on your answers...
+            </Animated.Text>
+
+            <Animated.Text
+              entering={FadeInDown.duration(500).delay(400)}
+              style={[styles.encouragementText, { color: t.text }]}
+            >
+              People like you typically see their first room transformed in just 1 session
+            </Animated.Text>
+
+            <Animated.View entering={FadeIn.delay(600).duration(400)} style={{ marginTop: 32 }}>
+              <LoadingDots color={V1.coral} dotSize={10} />
+            </Animated.View>
+          </Pressable>
+        );
+
+      // ── Step 11: Commitment ──────────────────────────────────────────────
+      case 11:
+        return (
+          <View style={styles.stepContent}>
+            <Animated.Text
+              entering={FadeInDown.duration(400).delay(100)}
+              style={[styles.stepTitle, { color: t.text }]}
+            >
+              Can you commit to just{'\n'}5 minutes a day?
+            </Animated.Text>
+
+            <Animated.Text
+              entering={FadeInDown.duration(400).delay(250)}
+              style={[styles.stepSubhead, { color: t.textSecondary }]}
+            >
+              That's all it takes to build the habit
+            </Animated.Text>
+
+            <View style={{ flex: 1 }} />
+
+            <Animated.View entering={FadeInDown.duration(400).delay(400)}>
+              <CoralCTA
+                label="Yes, I can do 5 minutes"
+                onPress={() => {
+                  setSelections((prev) => ({ ...prev, commitment: 'yes' }));
+                  goNext();
+                }}
+              />
+            </Animated.View>
+
+            <Animated.View entering={FadeInDown.duration(400).delay(500)}>
+              <Pressable
+                onPress={() => {
+                  Haptics.selectionAsync();
+                  setSelections((prev) => ({ ...prev, commitment: 'try' }));
+                  goNext();
+                }}
+                style={styles.subtleLink}
+                accessibilityRole="button"
+                accessibilityLabel="I'll try"
+              >
+                <Text style={[styles.subtleLinkText, { color: t.textSecondary }]}>
+                  I'll try
+                </Text>
+              </Pressable>
+            </Animated.View>
+          </View>
+        );
+
+      // ── Step 12: Meet Your Guide ─────────────────────────────────────────
+      case 12: {
+        // Auto-assign personality based on answers
+        let autoPersonality: MascotPersonality = selections.guidePersonality;
+        if (
+          selections.emotionalImpact.includes('It drains my energy') ||
+          selections.biggestStruggle === 'It stresses me out but I can\'t act'
+        ) {
+          autoPersonality = 'tidy';
+        } else if (
+          selections.biggestStruggle === 'I don\'t know where to start'
+        ) {
+          autoPersonality = 'spark';
+        }
+
+        return (
+          <View style={styles.stepContent}>
+            <Animated.View
+              entering={FadeInDown.duration(500).delay(100)}
+              style={styles.mascotWrap}
+            >
+              <View style={styles.glowContainer}>
+                <LinearGradient
+                  colors={[`${V1.coral}28`, `${V1.coralLight}14`, 'transparent']}
+                  style={styles.mascotGlow}
+                  start={{ x: 0.5, y: 0 }}
+                  end={{ x: 0.5, y: 1 }}
                 />
-                <TimeOption
-                  value={15}
-                  label="15 min"
-                  subtitle="Power session"
-                  selected={answers.timeAvailability === 15}
-                  onPress={() =>
-                    setAnswers((c) => ({ ...c, timeAvailability: 15 }))
-                  }
-                  isDark={isDark}
-                />
+                <MascotAvatar imageKey="happy" size={130} showBackground={false} />
               </View>
-              <View style={styles.timeRow}>
-                <TimeOption
-                  value={30}
-                  label="30 min"
-                  subtitle="Deep clean"
-                  selected={answers.timeAvailability === 30}
-                  onPress={() =>
-                    setAnswers((c) => ({ ...c, timeAvailability: 30 }))
-                  }
-                  isDark={isDark}
-                />
-                <TimeOption
-                  value={60}
-                  label="60 min"
-                  subtitle="Full reset"
-                  selected={answers.timeAvailability === 60}
-                  onPress={() =>
-                    setAnswers((c) => ({ ...c, timeAvailability: 60 }))
-                  }
-                  isDark={isDark}
-                />
-              </View>
-            </View>
+            </Animated.View>
 
-            <View style={{ flex: 1 }} />
-
-            <Pressable
-              onPress={handleNext}
-              style={[styles.coralButton, { opacity: canContinue ? 1 : 0.4 }]}
-              disabled={!canContinue}
+            <Animated.Text
+              entering={FadeInDown.duration(500).delay(250)}
+              style={[styles.stepTitle, { color: t.text, textAlign: 'center' }]}
             >
-              <Text style={styles.coralButtonText}>Next</Text>
-            </Pressable>
-          </View>
-        );
+              Meet {selections.mascotName},{'\n'}your cleaning companion
+            </Animated.Text>
 
-      // ── MOTIVATION ───────────────────────────────────────────────────
-      case 'motivation':
-        return (
-          <View style={styles.stepContent}>
-            <Text style={[styles.stepTitle, { color: t.text }]}>
-              What keeps you going?
-            </Text>
-            <Text style={[styles.stepSubhead, { color: t.textSecondary }]}>
-              We'll focus on what motivates you most
-            </Text>
-
-            <View style={styles.optionsList}>
-              <OptionPill
-                icon={<BarChart3 size={20} color={V1.coral} />}
-                title="Visual Progress"
-                subtitle="Seeing bars fill up and stats grow"
-                selected={answers.motivationStyle === 'celebration'}
-                onPress={() =>
-                  setAnswers((c) => ({ ...c, motivationStyle: 'celebration' }))
-                }
-                isDark={isDark}
-              />
-              <OptionPill
-                icon={<Award size={20} color={V1.coral} />}
-                title="Rewards & Streaks"
-                subtitle="Earning badges and keeping streaks"
-                selected={answers.motivationStyle === 'challenge'}
-                onPress={() =>
-                  setAnswers((c) => ({ ...c, motivationStyle: 'challenge' }))
-                }
-                isDark={isDark}
-              />
-              <OptionPill
-                icon={<Users size={20} color={V1.coral} />}
-                title="Accountability"
-                subtitle="Knowing someone's counting on me"
-                selected={answers.motivationStyle === 'structured'}
-                onPress={() =>
-                  setAnswers((c) => ({ ...c, motivationStyle: 'structured' }))
-                }
-                isDark={isDark}
-              />
-              <OptionPill
-                icon={<Sparkles size={20} color={V1.coral} />}
-                title="A Clean Space"
-                subtitle="The feeling of a tidy room"
-                selected={answers.motivationStyle === 'gentle'}
-                onPress={() =>
-                  setAnswers((c) => ({ ...c, motivationStyle: 'gentle' }))
-                }
-                isDark={isDark}
-              />
-            </View>
-
-            <View style={{ flex: 1 }} />
-
-            <Pressable
-              onPress={handleNext}
-              style={[styles.coralButton, { opacity: canContinue ? 1 : 0.4 }]}
-              disabled={!canContinue}
+            <Animated.Text
+              entering={FadeInDown.duration(500).delay(400)}
+              style={[styles.stepSubhead, { color: t.textSecondary, textAlign: 'center' }]}
             >
-              <Text style={styles.coralButtonText}>Next</Text>
-            </Pressable>
-          </View>
-        );
+              {MASCOT_PERSONALITIES[autoPersonality].description}
+            </Animated.Text>
 
-      // ── SCAN INTRO ───────────────────────────────────────────────────
-      case 'scan':
-        return (
-          <View style={styles.stepContent}>
-            <View style={[styles.iconCircleLarge, { borderColor: V1.coral }]}>
-              <Camera size={36} color={V1.coral} />
-            </View>
-
-            <Text style={[styles.stepTitle, { color: t.text }]}>
-              Let's see your space
-            </Text>
-
-            <Text style={[styles.stepDesc, { color: t.textSecondary }]}>
-              Take a photo of any room. Our AI will spot what needs attention
-              {' \u2014 '}no judgment, just a gentle starting point.
-            </Text>
-
-            <View style={{ flex: 1 }} />
-
-            <Pressable
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                router.push('/camera');
-              }}
-              style={styles.coralButton}
-            >
-              <Text style={styles.coralButtonText}>Open Camera</Text>
-            </Pressable>
-
-            <Pressable onPress={handleNext} hitSlop={12} style={styles.skipLink}>
-              <Text style={[styles.linkText, { color: t.textMuted }]}>
-                Skip for now
-              </Text>
-            </Pressable>
-          </View>
-        );
-
-      // ── MEET MASCOT ──────────────────────────────────────────────────
-      case 'mascot':
-        return (
-          <View style={styles.stepContent}>
-            <View style={styles.mascotCircleLarge}>
-              <Text style={{ fontSize: 80 }}>🐹</Text>
-            </View>
-
-            <Text style={[styles.stepTitle, { color: t.text }]}>
-              Meet Dusty!
-            </Text>
-            <Text style={[styles.stepSubhead, { color: t.textSecondary }]}>
-              Your cleaning companion
-            </Text>
-
-            <View style={[styles.nameInput, { borderColor: t.border, backgroundColor: t.card }]}>
-              <Text style={{ fontSize: 16, marginRight: 8, color: t.textMuted }}>
-                {'\u270F\uFE0F'}
-              </Text>
-              <TextInput
-                style={[styles.nameInputText, { color: t.text }]}
-                value={answers.mascotName}
-                onChangeText={(text) =>
-                  setAnswers((c) => ({ ...c, mascotName: text }))
-                }
-                placeholder="Dusty"
-                placeholderTextColor={t.textMuted}
-                autoCapitalize="words"
-              />
-            </View>
-            <Text style={[styles.helperText, { color: t.textMuted }]}>
-              You can always change this later
-            </Text>
-
-            <View style={{ flex: 1 }} />
-
-            <Pressable
-              onPress={handleNext}
-              style={[styles.coralButton, { opacity: canContinue ? 1 : 0.4 }]}
-              disabled={!canContinue}
-            >
-              <Text style={styles.coralButtonText}>Let's clean together!</Text>
-            </Pressable>
-          </View>
-        );
-
-      // ── BUILDING PLAN ────────────────────────────────────────────────
-      case 'building':
-        return (
-          <View style={[styles.centerContent, { paddingTop: insets.top + 80 }]}>
-            <BuildingPlanView isDark={isDark} />
-          </View>
-        );
-
-      // ── PLAN PREVIEW ─────────────────────────────────────────────────
-      case 'preview':
-        return (
-          <View style={[styles.stepContent, { paddingTop: insets.top + 20 }]}>
-            <Text style={[styles.stepTitle, { color: t.text }]}>
-              Here's your path
-            </Text>
-            <Text style={[styles.stepTitleAccent, { color: V1.coral }]}>
-              to a clearer mind
-            </Text>
-            <Text style={[styles.stepSubhead, { color: t.textSecondary }]}>
-              Your personalized 3-step plan
-            </Text>
-
-            <View style={styles.planCards}>
-              <PlanStepCard
-                number={1}
-                title="Scan your space"
-                description="Take a photo and let AI find what needs attention"
-                isDark={isDark}
-                delay={200}
-              />
-              <PlanStepCard
-                number={2}
-                title="Follow bite-sized tasks"
-                description="Short, doable tasks matched to your energy level"
-                isDark={isDark}
-                delay={400}
-              />
-              <PlanStepCard
-                number={3}
-                title="Celebrate your wins"
-                description="Watch your space transform with Dusty cheering you on"
-                isDark={isDark}
-                delay={600}
-              />
-            </View>
-
-            <View style={{ flex: 1 }} />
-
-            <Pressable onPress={handleNext} style={styles.coralButton}>
-              <Text style={styles.coralButtonText}>Looks great!</Text>
-            </Pressable>
-          </View>
-        );
-
-      // ── COMMITMENT ───────────────────────────────────────────────────
-      case 'commitment':
-        return (
-          <View style={[styles.stepContent, { paddingTop: insets.top + 40 }]}>
-            <View style={[styles.commitCheck, { borderColor: V1.green }]}>
-              <CheckCircle size={48} color={V1.green} />
-            </View>
-
-            <Text style={[styles.stepTitle, { color: t.text, textAlign: 'center' }]}>
-              I'm ready to organize my space and my mind.
-            </Text>
-
-            {/* Commitment checkbox */}
-            <Pressable
-              onPress={() => {
-                Haptics.selectionAsync();
-                setAnswers((c) => ({ ...c, commitment: !c.commitment }));
-              }}
-              style={[
-                styles.commitRow,
-                {
-                  backgroundColor: t.card,
-                  borderColor: answers.commitment ? V1.coral : t.border,
-                },
-              ]}
+            {/* Name input */}
+            <Animated.View
+              entering={FadeInDown.duration(500).delay(500)}
+              style={styles.nameInputWrap}
             >
               <View
                 style={[
-                  styles.commitCheckbox,
+                  styles.nameInput,
                   {
-                    backgroundColor: answers.commitment
-                      ? V1.coral
-                      : 'transparent',
-                    borderColor: answers.commitment ? V1.coral : t.textMuted,
+                    backgroundColor: t.card,
+                    borderColor: t.border,
                   },
                 ]}
               >
-                {answers.commitment && <Check size={14} color="#fff" />}
+                <Text style={{ fontSize: 18, marginRight: 10, color: t.textMuted }}>
+                  {MASCOT_PERSONALITIES[autoPersonality].emoji}
+                </Text>
+                <TextInput
+                  style={[styles.nameInputText, { color: t.text }]}
+                  value={selections.mascotName}
+                  onChangeText={(text) =>
+                    setSelections((prev) => ({ ...prev, mascotName: text }))
+                  }
+                  placeholder="Name your companion"
+                  placeholderTextColor={t.textMuted}
+                  autoCapitalize="words"
+                  accessibilityLabel="Companion name"
+                />
               </View>
-              <Text style={[styles.commitText, { color: t.text }]}>
-                I commit to showing up for myself
+              <Text style={[styles.helperText, { color: t.textMuted }]}>
+                You can always change this later
               </Text>
-            </Pressable>
-
-            {/* Social proof */}
-            <View
-              style={[
-                styles.socialProof,
-                { backgroundColor: t.card, borderColor: t.border },
-              ]}
-            >
-              <Text style={[styles.proofNumber, { color: V1.coral }]}>
-                92%
-              </Text>
-              <Text style={[styles.proofText, { color: t.textSecondary }]}>
-                of users feel calmer after their first session
-              </Text>
-            </View>
+            </Animated.View>
 
             <View style={{ flex: 1 }} />
 
-            <Pressable
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                completeOnboarding();
-              }}
-              style={styles.coralButton}
+            <Animated.View entering={FadeInDown.duration(500).delay(600)}>
+              <CoralCTA
+                label="Nice to meet you!"
+                onPress={() => {
+                  setSelections((prev) => ({
+                    ...prev,
+                    guidePersonality: autoPersonality,
+                  }));
+                  goNext();
+                }}
+                disabled={!selections.mascotName.trim()}
+              />
+            </Animated.View>
+          </View>
+        );
+      }
+
+      // ── Step 13: Loading/Processing (auto-advance) ───────────────────────
+      case 13:
+        return (
+          <View style={[styles.centeredContent, { paddingTop: insets.top + 100 }]}>
+            <Animated.Text
+              entering={FadeInDown.duration(500).delay(100)}
+              style={[styles.stepTitle, { color: t.text, textAlign: 'center' }]}
             >
-              <Text style={styles.coralButtonText}>Let's do this</Text>
-            </Pressable>
+              Creating your{'\n'}personalized plan...
+            </Animated.Text>
+
+            <View style={{ marginTop: 32 }}>
+              <LoadingDots color={V1.coral} dotSize={12} gap={12} />
+            </View>
+          </View>
+        );
+
+      // ── Step 14: Your Profile Summary ────────────────────────────────────
+      case 14: {
+        const energyLabel =
+          selections.energyLevel
+            ? selections.energyLevel.charAt(0).toUpperCase() +
+              selections.energyLevel.slice(1)
+            : 'Not set';
+
+        const worstRoomLabel =
+          selections.worstRoom
+            ? ROOM_OPTIONS.find((r) => r.type === selections.worstRoom)?.label ??
+              selections.worstRoom
+            : 'Not set';
+
+        const timeLabel = selections.timeAvailability
+          ? selections.timeAvailability >= 60
+            ? '1 hour+'
+            : `${selections.timeAvailability} min`
+          : 'Not set';
+
+        return (
+          <View style={styles.stepContent}>
+            <Animated.Text
+              entering={FadeInDown.duration(400).delay(100)}
+              style={[styles.stepTitle, { color: t.text, textAlign: 'center' }]}
+            >
+              Your Declutter Profile
+            </Animated.Text>
+
+            <Animated.View
+              entering={FadeInDown.duration(400).delay(250)}
+              style={[
+                styles.profileCard,
+                {
+                  backgroundColor: t.card,
+                  borderColor: t.border,
+                },
+              ]}
+            >
+              <ProfileRow
+                label="Energy"
+                value={`${ENERGY_EMOJIS[selections.energyLevel ?? 'moderate']} ${energyLabel}`}
+                isDark={isDark}
+              />
+              <View style={[styles.divider, { backgroundColor: t.border }]} />
+              <ProfileRow
+                label="Focus room"
+                value={worstRoomLabel}
+                isDark={isDark}
+              />
+              <View style={[styles.divider, { backgroundColor: t.border }]} />
+              <ProfileRow
+                label="Time today"
+                value={timeLabel}
+                isDark={isDark}
+              />
+              <View style={[styles.divider, { backgroundColor: t.border }]} />
+              <ProfileRow
+                label="Your guide"
+                value={`${MASCOT_PERSONALITIES[selections.guidePersonality].emoji} ${selections.mascotName}`}
+                isDark={isDark}
+              />
+            </Animated.View>
+
+            <View style={{ flex: 1 }} />
+
+            <Animated.View entering={FadeInDown.duration(400).delay(500)}>
+              <CoralCTA
+                label="Looks good!"
+                onPress={() => setStep(15)}
+                loading={isCompleting}
+              />
+            </Animated.View>
+          </View>
+        );
+      }
+
+      // ── Step 15: Navigate to notification-permission (handled by useEffect)
+      case 15:
+        return (
+          <View style={[styles.centeredContent, { paddingTop: insets.top + 100 }]}>
+            <ActivityIndicator size="large" color={V1.coral} />
           </View>
         );
 
@@ -1184,20 +1257,43 @@ export default function OnboardingScreen() {
 
       {renderHeader()}
 
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-      >
-        <Animated.View
-          key={stepId}
-          entering={FadeInDown.duration(reducedMotion ? 120 : 300)}
-          exiting={FadeOutUp.duration(reducedMotion ? 120 : 200)}
+      <GestureDetector gesture={swipeGesture}>
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
         >
-          {renderStep()}
-        </Animated.View>
-      </ScrollView>
+          <Animated.View
+            key={step}
+            entering={FadeInDown.duration(reducedMotion ? 120 : 300)}
+            exiting={FadeOutUp.duration(reducedMotion ? 120 : 200)}
+          >
+            {renderStep()}
+          </Animated.View>
+        </ScrollView>
+      </GestureDetector>
+    </View>
+  );
+}
+
+// ─── Profile Row ─────────────────────────────────────────────────────────────
+function ProfileRow({
+  label,
+  value,
+  isDark,
+}: {
+  label: string;
+  value: string;
+  isDark: boolean;
+}) {
+  const t = isDark ? V1.dark : V1.light;
+  return (
+    <View style={styles.profileRow}>
+      <Text style={[styles.profileLabel, { color: t.textSecondary }]}>
+        {label}
+      </Text>
+      <Text style={[styles.profileValue, { color: t.text }]}>{value}</Text>
     </View>
   );
 }
@@ -1227,387 +1323,294 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
   },
   backBtn: {
-    width: 32,
-    height: 32,
+    width: 44,
+    height: 44,
     alignItems: 'center',
     justifyContent: 'center',
   },
   headerCenter: {
+    flex: 1,
     alignItems: 'center',
-    gap: 6,
+    paddingHorizontal: 8,
   },
-  stepLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 1,
+  progressBarContainer: {
+    width: '100%',
   },
-  skipText: {
-    fontSize: 15,
-    fontWeight: '500',
+  progressBarTrack: {
+    height: 5,
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  progressBarFill: {
+    height: '100%',
+    borderRadius: 3,
   },
 
-  // ── Dots ──
-  dotsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-    marginTop: 4,
-  },
-  dot: {
-    borderRadius: 10,
-  },
-
-  // ── Center content (welcome, building) ──
-  centerContent: {
+  // ── Content layouts ──
+  centeredContent: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     paddingBottom: 60,
     gap: 16,
   },
-
-  // ── Step content ──
   stepContent: {
     flex: 1,
     minHeight: 500,
     paddingTop: 20,
   },
 
-  // ── Mascot ──
-  mascotCircle: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 20,
-  },
-  mascotCircleLarge: {
-    width: 160,
-    height: 160,
-    borderRadius: 80,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    alignSelf: 'center',
-    marginBottom: 20,
-  },
-  mascotEmoji: {
-    fontSize: 60,
-  },
-
   // ── Welcome ──
-  appTitle: {
-    fontSize: 32,
-    fontWeight: '700',
-    letterSpacing: -0.8,
+  mascotWrap: {
+    alignSelf: 'center',
+    marginBottom: 24,
   },
-  appSubtitle: {
-    fontSize: 15,
-    lineHeight: 22,
-    textAlign: 'center',
+  glowContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mascotGlow: {
+    position: 'absolute',
+    width: 200,
+    height: 200,
+    borderRadius: 100,
   },
   welcomeActions: {
     width: '100%',
     gap: 16,
-    marginTop: 32,
-    marginBottom: 24,
-    paddingHorizontal: 20,
+    marginTop: 36,
+    paddingHorizontal: 0,
   },
 
-  // ── Step text ──
+  // ── Typography ──
+  heroTitle: {
+    fontSize: 32,
+    fontWeight: '800',
+    fontFamily: DISPLAY_FONT,
+    letterSpacing: -1,
+    textAlign: 'center',
+    lineHeight: 40,
+  },
+  heroSubtitle: {
+    fontSize: 16,
+    lineHeight: 24,
+    textAlign: 'center',
+    fontFamily: BODY_FONT,
+    paddingHorizontal: 20,
+  },
   stepTitle: {
     fontSize: 28,
     fontWeight: '800',
+    fontFamily: DISPLAY_FONT,
     letterSpacing: -0.6,
-    marginBottom: 8,
-  },
-  stepTitleAccent: {
-    fontSize: 28,
-    fontWeight: '800',
-    letterSpacing: -0.6,
-    marginTop: -8,
-    marginBottom: 8,
+    marginBottom: 12,
+    lineHeight: 36,
   },
   stepSubhead: {
     fontSize: 15,
     lineHeight: 22,
-    marginBottom: 20,
-  },
-  stepDesc: {
-    fontSize: 15,
-    lineHeight: 23,
-    textAlign: 'center',
-    paddingHorizontal: 12,
-    marginTop: 12,
-  },
-
-  // ── Icon circles ──
-  iconCircle: {
-    alignSelf: 'center',
+    fontFamily: BODY_FONT,
     marginBottom: 24,
-    marginTop: 40,
   },
-  iconCircleLarge: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    borderWidth: 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-    alignSelf: 'center',
-    marginBottom: 24,
-    marginTop: 40,
-  },
-
-  // ── Options list ──
-  optionsList: {
-    gap: 12,
-  },
-  optionPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: 16,
-    padding: 16,
-    gap: 14,
-  },
-  optionIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(255,107,107,0.1)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  optionTextWrap: {
-    flex: 1,
-    gap: 2,
-  },
-  optionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  optionSubtitle: {
-    fontSize: 13,
-  },
-
-  // ── Time grid ──
-  timeGrid: {
-    gap: 12,
-    marginTop: 4,
-  },
-  timeRow: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  timeOption: {
-    flex: 1,
-    borderRadius: 16,
-    padding: 20,
-    alignItems: 'center',
-    gap: 6,
-  },
-  timeValue: {
-    fontSize: 24,
-    fontWeight: '700',
-  },
-  timeSubtitle: {
-    fontSize: 13,
-  },
-
-  // ── Coral button ──
-  coralButton: {
-    backgroundColor: V1.coral,
-    borderRadius: 28,
-    height: 56,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 16,
-  },
-  coralButtonText: {
-    color: '#FFFFFF',
-    fontSize: 17,
-    fontWeight: '700',
-  },
-
-  // ── Link text ──
   linkText: {
     fontSize: 14,
     textAlign: 'center',
-  },
-  skipLink: {
-    alignItems: 'center',
-    paddingVertical: 8,
-  },
-
-  // ── Name input ──
-  nameInput: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderRadius: 14,
-    paddingHorizontal: 16,
-    height: 52,
-    marginTop: 16,
-  },
-  nameInputText: {
-    flex: 1,
-    fontSize: 16,
+    fontFamily: BODY_FONT,
   },
   helperText: {
     fontSize: 13,
     textAlign: 'center',
-    marginTop: 8,
+    fontFamily: BODY_FONT,
+    marginTop: 10,
   },
-
-  // ── Building plan ──
-  buildingWrap: {
-    alignItems: 'center',
-    gap: 16,
-  },
-  buildingSpinner: {
-    marginBottom: 16,
-  },
-  pieChart: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    borderWidth: 4,
-    overflow: 'hidden',
-    backgroundColor: 'transparent',
-  },
-  pieSlice: {
-    width: '50%',
-    height: '50%',
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    borderBottomRightRadius: 0,
-  },
-  buildingTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-  },
-  buildingSubtitle: {
-    fontSize: 15,
-  },
-  buildingSteps: {
-    gap: 16,
-    marginTop: 20,
-    width: '100%',
-    paddingHorizontal: 20,
-  },
-  buildingStepRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  buildingStepDot: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    borderWidth: 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  buildingStepText: {
-    fontSize: 15,
-    fontWeight: '500',
-  },
-  buildingProgress: {
-    width: '80%',
-    height: 4,
-    borderRadius: 2,
-    marginTop: 24,
-    overflow: 'hidden',
-  },
-  buildingProgressFill: {
-    height: '100%',
-    borderRadius: 2,
-  },
-
-  // ── Plan preview cards ──
-  planCards: {
-    gap: 12,
-    marginTop: 16,
-  },
-  planCard: {
-    flexDirection: 'row',
-    borderRadius: 16,
-    borderWidth: 1,
-    padding: 16,
-    gap: 14,
-    alignItems: 'flex-start',
-  },
-  planCardNumber: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: V1.coral,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  planCardNumberText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  planCardContent: {
-    flex: 1,
-    gap: 4,
-  },
-  planCardTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  planCardDesc: {
+  tapToContinue: {
     fontSize: 14,
-    lineHeight: 20,
+    fontFamily: BODY_FONT,
+    textAlign: 'center',
   },
 
-  // ── Commitment ──
-  commitCheck: {
-    alignSelf: 'center',
+  // ── Social proof ──
+  socialProofTitle: {
+    fontSize: 34,
+    fontWeight: '800',
+    fontFamily: DISPLAY_FONT,
+    letterSpacing: -1,
+    textAlign: 'center',
     marginBottom: 24,
   },
-  commitRow: {
+  socialProofStat: {
+    fontSize: 18,
+    lineHeight: 28,
+    textAlign: 'center',
+    fontFamily: BODY_FONT,
+    paddingHorizontal: 20,
+    marginBottom: 20,
+  },
+  socialProofBody: {
+    fontSize: 17,
+    fontWeight: '600',
+    textAlign: 'center',
+    fontFamily: BODY_FONT,
+    paddingHorizontal: 24,
+  },
+
+  // ── Encouragement ──
+  encouragementText: {
+    fontSize: 22,
+    fontWeight: '700',
+    fontFamily: DISPLAY_FONT,
+    letterSpacing: -0.4,
+    textAlign: 'center',
+    lineHeight: 32,
+    paddingHorizontal: 16,
+    marginTop: 20,
+  },
+
+  // ── Options ──
+  optionsColumn: {
+    gap: 12,
+    marginTop: 8,
+  },
+  optionsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    marginTop: 8,
+  },
+  gridItem: {
+    width: '47%',
+  },
+
+  // ── Pill button ──
+  pill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
-    borderRadius: 16,
-    borderWidth: 1,
-    padding: 18,
+    gap: 12,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderRadius: RADIUS.md,
+    overflow: 'hidden',
+  },
+  pillLarge: {
+    paddingVertical: 18,
+  },
+  pillEmoji: {
+    fontSize: 24,
+  },
+  pillText: {
+    fontSize: 16,
+    fontWeight: '600',
+    fontFamily: BODY_FONT,
+  },
+  pillTextLarge: {
+    fontSize: 16,
+  },
+  pillSubtitle: {
+    fontSize: 13,
+    fontFamily: BODY_FONT,
+    marginTop: 2,
+  },
+
+  // ── Time grid ──
+  timeGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
     marginTop: 16,
   },
-  commitCheckbox: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    borderWidth: 2,
+  timeCard: {
+    flex: 1,
+    minWidth: '45%',
+    paddingVertical: 28,
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  commitText: {
-    fontSize: 16,
-    fontWeight: '500',
-    flex: 1,
+  timeCardText: {
+    fontSize: 20,
+    fontWeight: '700',
+    fontFamily: DISPLAY_FONT,
   },
-  socialProof: {
-    borderRadius: 16,
-    borderWidth: 1,
-    padding: 20,
+
+  // ── CTA button ──
+  ctaShadowWrap: {
+    borderRadius: 28,
+    ...CARD_SHADOW_LG,
+    shadowColor: V1.coral,
+    shadowOpacity: 0.25,
+    marginBottom: 16,
+  },
+  ctaButton: {
+    borderRadius: 28,
+    height: 56,
     alignItems: 'center',
-    gap: 8,
-    marginTop: 16,
+    justifyContent: 'center',
   },
-  proofNumber: {
-    fontSize: 36,
-    fontWeight: '800',
+  ctaText: {
+    color: '#FFFFFF',
+    fontSize: 17,
+    fontWeight: '700',
+    fontFamily: BODY_FONT,
+    letterSpacing: 0.3,
   },
-  proofText: {
+
+  // ── Subtle link ──
+  subtleLink: {
+    alignItems: 'center',
+    paddingVertical: 14,
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  subtleLinkText: {
+    fontSize: 15,
+    fontWeight: '500',
+    fontFamily: BODY_FONT,
+  },
+
+  // ── Name input ──
+  nameInputWrap: {
+    marginTop: 24,
+  },
+  nameInput: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: RADIUS.md,
+    paddingHorizontal: 16,
+    height: 56,
+  },
+  nameInputText: {
+    flex: 1,
+    fontSize: 16,
+    fontFamily: BODY_FONT,
+  },
+
+  // ── Profile card ──
+  profileCard: {
+    borderWidth: 1,
+    borderRadius: RADIUS.lg,
+    padding: 20,
+    marginTop: 8,
+  },
+  profileRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 4,
+  },
+  profileLabel: {
     fontSize: 14,
-    textAlign: 'center',
+    fontWeight: '500',
+    fontFamily: BODY_FONT,
+  },
+  profileValue: {
+    fontSize: 15,
+    fontWeight: '600',
+    fontFamily: BODY_FONT,
+  },
+  divider: {
+    height: 1,
+    marginVertical: 12,
   },
 });
