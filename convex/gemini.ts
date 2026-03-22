@@ -344,7 +344,7 @@ export const analyzeRoom = action({
       ? args.additionalContext.slice(0, 2000).replace(/[<>{}]/g, "")
       : undefined;
 
-    const userPrompt = `Look at this room photo and tell me what to clean. Give me 5-8 simple tasks, easiest first.${args.roomType ? ` Room type: ${args.roomType}.` : ""}${sanitizedContext ? ` ${sanitizedContext}` : ""}`;
+    const userPrompt = `Scan this room photo. Find everything that needs cleaning and give me tasks with bounding boxes.${args.roomType ? ` Room type: ${args.roomType}.` : ""}${sanitizedContext ? ` ${sanitizedContext}` : ""}`;
 
     // Remove data URL prefix if present
     const base64Data = args.base64Image.includes("base64,")
@@ -742,6 +742,7 @@ function parseAnalysisResponse(responseText: string) {
           estimatedMinutes: st.estimatedMinutes ?? (st.estimatedSeconds ? Math.round((st.estimatedSeconds / 60) * 10) / 10 : undefined),
           isCheckpoint: st.isCheckpoint,
         })),
+        boundingBox: task.boundingBox ?? undefined,
         dependencies: task.dependencies,
         enables: task.enables,
         parallelWith: task.parallelWith,
