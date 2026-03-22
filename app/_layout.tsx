@@ -18,7 +18,6 @@ import { ConvexClientProvider } from '@/context/ConvexProvider';
 import { DeclutterProvider, useDeclutter } from '@/context/DeclutterContext';
 import { TransitionStack } from '@/components/navigation/TransitionStack';
 import {
-    BottomSheet,
     DraggableCard,
     FadeScale,
     ModalSlideUp,
@@ -117,14 +116,10 @@ function NotificationRouter() {
           } else {
             router.push('/(tabs)/rooms');
           }
-        } else if (data?.challengeId) {
-          router.push({ pathname: '/challenge/[id]', params: { id: String(data.challengeId) } });
         } else if (data?.type === 'badge' || data?.category === 'achievement' || data?.achievementId) {
           router.push('/achievements');
         } else if (data?.type === 'streak') {
           router.push('/');
-        } else if (data?.category === 'collectible' || data?.collectibleId) {
-          router.push('/collection');
         }
       } catch (e) {
         if (__DEV__) console.warn('Failed to handle notification response:', e);
@@ -291,28 +286,13 @@ export default function RootLayout() {
                           <TransitionStack.Screen name="room/[id]" options={{ ...SlideFromRight() }} />
                           <TransitionStack.Screen name="settings" options={{ ...SlideFromRight() }} />
                           <TransitionStack.Screen name="achievements" options={{ ...SlideFromRight() }} />
-                          <TransitionStack.Screen name="insights" options={{ ...SlideFromRight() }} />
-                          <TransitionStack.Screen name="social" options={{ ...SlideFromRight() }} />
-                          <TransitionStack.Screen name="accountability" options={{ ...SlideFromRight() }} />
-                          <TransitionStack.Screen name="collection" options={{ ...SlideFromRight() }} />
-                          <TransitionStack.Screen name="challenge/[id]" options={{ ...SlideFromRight() }} />
                           <TransitionStack.Screen name="task-customize" options={{ ...SlideFromRight() }} />
                           <TransitionStack.Screen name="today-tasks" options={{ ...SlideFromRight() }} />
-                          <TransitionStack.Screen name="leaderboard" options={{ ...SlideFromRight() }} />
-                          <TransitionStack.Screen name="wardrobe" options={{ ...SlideFromRight() }} />
-                          <TransitionStack.Screen name="weekly-summary" options={{ ...SlideFromRight() }} />
-                          <TransitionStack.Screen name="challenge/create" options={{ ...SlideFromRight() }} />
 
                           {/* -- Modals (slide from bottom) ------------------------- */}
                           <TransitionStack.Screen name="camera" options={{ ...ModalSlideUp(), gestureEnabled: true }} />
-                          <TransitionStack.Screen name="focus" options={{ ...ModalSlideUp() }} />
                           <TransitionStack.Screen name="blitz" options={{ ...ModalSlideUp(), gestureEnabled: false }} />
                           <TransitionStack.Screen name="single-task" options={{ ...ModalSlideUp(), gestureEnabled: false }} />
-
-                          {/* -- Bottom sheets -------------------------------------- */}
-                          <TransitionStack.Screen name="mascot" options={{ ...BottomSheet() }} />
-                          <TransitionStack.Screen name="join" options={{ ...BottomSheet() }} />
-                          <TransitionStack.Screen name="task-detail" options={{ ...BottomSheet() }} />
 
                           {/* -- Danger screens ------------------------------------ */}
                           <TransitionStack.Screen name="delete-account" options={{ ...SlideFromRight() }} />

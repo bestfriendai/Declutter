@@ -26,7 +26,7 @@ interface StreakCardProps {
   streak: number;
   todayDone: number;
   todayTotal: number;
-  consistency: ConsistencyResult;
+  consistency?: ConsistencyResult;
   isDark: boolean;
   reducedMotion: boolean;
 }
@@ -81,12 +81,14 @@ export function StreakCard({
         </View>
         <View style={styles.streakRight}>
           {/* Consistency Score */}
-          <View style={styles.consistencyBadge}>
-            <TrendingUp size={12} color={V1.green} strokeWidth={2.5} />
-            <Text style={[styles.consistencyText, { color: t.textSecondary }]}>
-              {consistency.activeDays}/{consistency.windowDays}d
-            </Text>
-          </View>
+          {consistency && (
+            <View style={styles.consistencyBadge}>
+              <TrendingUp size={12} color={V1.green} strokeWidth={2.5} />
+              <Text style={[styles.consistencyText, { color: t.textSecondary }]}>
+                {consistency.activeDays}/{consistency.windowDays}d
+              </Text>
+            </View>
+          )}
           <Text style={[styles.streakProgress, { color: t.textSecondary }]}>
             {todayDone}/{Math.max(todayTotal, 5)} today
           </Text>

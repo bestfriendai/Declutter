@@ -1,7 +1,7 @@
 /**
  * Declutterly -- Progress Screen (V1 Pencil Design)
- * Week view with day circles, streak card with freeze indicator,
- * animated stat counters, quick nav strip, motivation card, and empty state.
+ * Week view with day circles, streak card, animated stat counters,
+ * motivation card, and empty state.
  */
 
 import { useDeclutter } from '@/context/DeclutterContext';
@@ -16,17 +16,13 @@ import {
 } from '@/constants/designTokens';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
-import { useSubscription } from '@/hooks/useSubscription';
-import { useStreakFreeze, useCalendarData } from '@/hooks/useConvex';
-import { Flame, Check, Sparkles, Award, Gem, BarChart3, Trophy, Lock, Shield, Calendar } from 'lucide-react-native';
+import { Flame, Check, Sparkles } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { ScreenErrorBoundary } from '@/components/ErrorBoundary';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Alert,
-  Modal,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -41,9 +37,6 @@ import Animated, {
   useAnimatedProps,
   withTiming,
   Easing,
-  useAnimatedStyle,
-  withRepeat,
-  withSequence,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -218,12 +211,10 @@ function StreakCard({
   isDark,
   streak,
   bestThisMonth,
-  streakFreezes,
 }: {
   isDark: boolean;
   streak: number;
   bestThisMonth: number;
-  streakFreezes: number;
 }) {
   const progressPercent = bestThisMonth > 0
     ? Math.min(Math.round((streak / bestThisMonth) * 100), 100)
@@ -234,36 +225,12 @@ function StreakCard({
       styles.streakCard,
       cardStyle(isDark),
     ]}>
-      <View style={styles.streakHeader}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <Flame size={20} color={V1.coral} />
-          <Text style={[styles.streakTitle, { color: getTheme(isDark).text }]}>
-            {streak} Day Streak!
-          </Text>
-        </View>
-        {streakFreezes > 0 && (
-          <View style={{
-            flexDirection: 'row', alignItems: 'center', gap: 4,
-            backgroundColor: V1.blue + '15', borderRadius: 10,
-            paddingHorizontal: 8, paddingVertical: 3,
-          }}>
-            <Shield size={12} color={V1.blue} />
-            <Text style={{ fontFamily: BODY_FONT, fontSize: 11, fontWeight: '600', color: V1.blue }}>
-              {streakFreezes} freeze{streakFreezes !== 1 ? 's' : ''}
-            </Text>
-          </View>
-        )}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <Flame size={20} color={V1.coral} />
+        <Text style={[styles.streakTitle, { color: getTheme(isDark).text }]}>
+          {streak} Day Streak!
+        </Text>
       </View>
-      {streakFreezes > 0 && (
-        <View style={styles.freezeContainer}>
-          <Text style={[styles.freezeLabel, { color: getTheme(isDark).textSecondary }]}>
-            {streakFreezes} streak freeze{streakFreezes > 1 ? 's' : ''} available
-          </Text>
-          <Text style={[styles.freezeHint, { color: getTheme(isDark).textMuted }]}>
-            Auto-used if you miss a day
-          </Text>
-        </View>
-      )}
       <Text style={[styles.streakSubtitle, { color: getTheme(isDark).textSecondary }]}>
         Your best this month
       </Text>
@@ -276,86 +243,6 @@ function StreakCard({
         />
       </View>
     </View>
-  );
-}
-
-// Quick navigation strip for Achievements, Collection, Insights, League
-function QuickNavStrip({ isDark }: { isDark: boolean }) {
-  const t = getTheme(isDark);
-  const { stats, collection } = useDeclutter();
-  const badges = stats?.badges ?? [];
-
-  const items = [
-    {
-      icon: Award,
-      label: 'Achievements',
-      subtitle: `${badges.length} earned`,
-      color: V1.amber,
-      route: '/achievements' as const,
-    },
-    {
-      icon: Gem,
-      label: 'Collection',
-      subtitle: `${collection?.length ?? 0} items`,
-      color: V1.indigo,
-      route: '/collection' as const,
-    },
-    {
-      icon: BarChart3,
-      label: 'Insights',
-      subtitle: 'View trends',
-      color: V1.blue,
-      route: '/insights' as const,
-    },
-    {
-      icon: Calendar,
-      label: 'Weekly',
-      subtitle: 'Your recap',
-      color: V1.coral,
-      route: '/weekly-summary' as const,
-    },
-    {
-      icon: Trophy,
-      label: 'League',
-      subtitle: 'Community',
-      color: V1.gold,
-      route: '/social' as const,
-    },
-  ];
-
-  return (
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      contentContainerStyle={{ gap: 10, paddingHorizontal: 2 }}
-    >
-      {items.map((item) => (
-        <Pressable
-          key={item.label}
-          onPress={() => {
-            void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            router.push(item.route);
-          }}
-          accessibilityRole="button"
-          accessibilityLabel={`${item.label}: ${item.subtitle}`}
-          style={({ pressed }) => [{
-            ...cardStyle(isDark),
-            padding: 12,
-            width: 120,
-            gap: 6,
-            opacity: pressed ? 0.85 : 1,
-          }]}
-        >
-          {React.createElement(item.icon, { size: 18, color: item.color })}
-          <Text style={{ fontFamily: BODY_FONT, fontSize: 13, fontWeight: '600', color: t.text }}>
-            {item.label}
-          </Text>
-          <Text style={{ fontFamily: BODY_FONT, fontSize: 11, color: t.textSecondary }}>
-            {item.subtitle}
-          </Text>
-        </Pressable>
-      ))}
-    </ScrollView>
   );
 }
 
@@ -477,315 +364,6 @@ function EmptyState({
   );
 }
 
-// ─── Streak Freeze Button/Modal ──────────────────────────────────────────────
-function StreakFreezeSection({
-  isDark,
-  streakFreezes,
-  streak,
-}: {
-  isDark: boolean;
-  streakFreezes: number;
-  streak: number;
-}) {
-  const t = getTheme(isDark);
-  const streakFreeze = useStreakFreeze();
-  const [showModal, setShowModal] = useState(false);
-  const [isUsing, setIsUsing] = useState(false);
-
-  const handleUseFreeze = useCallback(async () => {
-    setIsUsing(true);
-    try {
-      const result = await streakFreeze({});
-      if (result?.success) {
-        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        Alert.alert('Streak Protected!', result.message ?? 'Your streak is safe for 24 more hours.');
-      } else {
-        Alert.alert('No Freezes', result?.message ?? 'No streak freezes available.');
-      }
-    } catch (error: any) {
-      Alert.alert('Error', error?.message ?? 'Could not use streak freeze.');
-    } finally {
-      setIsUsing(false);
-      setShowModal(false);
-    }
-  }, [streakFreeze]);
-
-  if (streakFreezes <= 0) return null;
-
-  return (
-    <>
-      <Pressable
-        onPress={() => {
-          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-          setShowModal(true);
-        }}
-        style={({ pressed }) => [{
-          flexDirection: 'row',
-          alignItems: 'center',
-          gap: 10,
-          padding: 14,
-          borderRadius: RADIUS.md,
-          backgroundColor: isDark ? 'rgba(100,181,246,0.08)' : 'rgba(100,181,246,0.06)',
-          borderWidth: 1,
-          borderColor: isDark ? 'rgba(100,181,246,0.15)' : 'rgba(100,181,246,0.12)',
-          opacity: pressed ? 0.8 : 1,
-        }]}
-        accessibilityRole="button"
-        accessibilityLabel={`Use streak freeze. ${streakFreezes} available.`}
-      >
-        <Shield size={20} color={V1.blue} />
-        <View style={{ flex: 1 }}>
-          <Text style={{ fontFamily: BODY_FONT, fontSize: 14, fontWeight: '600', color: t.text }}>
-            Streak Freeze
-          </Text>
-          <Text style={{ fontFamily: BODY_FONT, fontSize: 12, color: t.textSecondary }}>
-            {streakFreezes} freeze{streakFreezes !== 1 ? 's' : ''} available - protect your streak
-          </Text>
-        </View>
-        <View style={{
-          backgroundColor: V1.blue + '20',
-          width: 28,
-          height: 28,
-          borderRadius: 14,
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}>
-          <Text style={{ fontFamily: BODY_FONT, fontSize: 13, fontWeight: '700', color: V1.blue }}>
-            {streakFreezes}
-          </Text>
-        </View>
-      </Pressable>
-
-      <Modal
-        visible={showModal}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowModal(false)}
-      >
-        <Pressable
-          style={{
-            flex: 1,
-            backgroundColor: 'rgba(0,0,0,0.5)',
-            justifyContent: 'center',
-            alignItems: 'center',
-            padding: 32,
-          }}
-          onPress={() => setShowModal(false)}
-        >
-          <Pressable
-            onPress={() => {}}
-            style={{
-              width: '100%',
-              maxWidth: 340,
-              backgroundColor: isDark ? V1.dark.card : V1.light.card,
-              borderRadius: RADIUS.lg,
-              padding: 24,
-              gap: 16,
-              alignItems: 'center',
-            }}
-          >
-            <Shield size={40} color={V1.blue} />
-            <Text style={{
-              fontFamily: DISPLAY_FONT,
-              fontSize: 20,
-              fontWeight: '700',
-              color: t.text,
-              textAlign: 'center',
-            }}>
-              Use Streak Freeze?
-            </Text>
-            <Text style={{
-              fontFamily: BODY_FONT,
-              fontSize: 14,
-              color: t.textSecondary,
-              textAlign: 'center',
-              lineHeight: 20,
-            }}>
-              Use 1 streak freeze to protect your {streak}-day streak? Your grace period will extend by 24 hours.
-            </Text>
-            <Text style={{
-              fontFamily: BODY_FONT,
-              fontSize: 12,
-              color: t.textMuted,
-            }}>
-              {streakFreezes} freeze{streakFreezes !== 1 ? 's' : ''} remaining after use
-            </Text>
-
-            <View style={{ flexDirection: 'row', gap: 12, width: '100%' }}>
-              <Pressable
-                onPress={() => setShowModal(false)}
-                style={{
-                  flex: 1,
-                  height: 44,
-                  borderRadius: 22,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  borderWidth: 1,
-                  borderColor: t.border,
-                }}
-              >
-                <Text style={{ fontFamily: BODY_FONT, fontSize: 15, fontWeight: '600', color: t.text }}>
-                  Cancel
-                </Text>
-              </Pressable>
-              <Pressable
-                onPress={handleUseFreeze}
-                disabled={isUsing}
-                style={{
-                  flex: 1,
-                  height: 44,
-                  borderRadius: 22,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  backgroundColor: V1.blue,
-                  opacity: isUsing ? 0.6 : 1,
-                }}
-              >
-                <Text style={{ fontFamily: BODY_FONT, fontSize: 15, fontWeight: '600', color: '#FFFFFF' }}>
-                  {isUsing ? 'Using...' : 'Use Freeze'}
-                </Text>
-              </Pressable>
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
-    </>
-  );
-}
-
-// ─── Calendar Heatmap (last 12 weeks) ───────────────────────────────────────
-function CalendarHeatmap({ isDark }: { isDark: boolean }) {
-  const t = getTheme(isDark);
-  const calendarData = useCalendarData();
-
-  const heatmapData = useMemo(() => {
-    if (!calendarData) return null;
-
-    // Build a map of date -> task count
-    const dateMap = new Map<string, number>();
-    for (const entry of calendarData) {
-      dateMap.set(entry.date, entry.tasksCompleted ?? 0);
-    }
-
-    // Generate 12 weeks of data (84 days), ending today
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    // Find the Monday 12 weeks ago
-    const startDate = new Date(today);
-    const todayDow = (today.getDay() + 6) % 7; // Mon=0
-    startDate.setDate(startDate.getDate() - todayDow - (11 * 7));
-
-    const weeks: { date: string; count: number; isFuture: boolean }[][] = [];
-    let currentDate = new Date(startDate);
-
-    for (let w = 0; w < 12; w++) {
-      const week: { date: string; count: number; isFuture: boolean }[] = [];
-      for (let d = 0; d < 7; d++) {
-        const dateStr = currentDate.toISOString().split('T')[0];
-        const isFuture = currentDate > today;
-        week.push({
-          date: dateStr,
-          count: isFuture ? -1 : (dateMap.get(dateStr) ?? 0),
-          isFuture,
-        });
-        currentDate.setDate(currentDate.getDate() + 1);
-      }
-      weeks.push(week);
-    }
-
-    return weeks;
-  }, [calendarData]);
-
-  if (!heatmapData) return null;
-
-  const getColor = (count: number, isFuture: boolean): string => {
-    if (isFuture) return isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)';
-    if (count === 0) return isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
-    if (count <= 2) return V1.coral + '30';
-    if (count <= 5) return V1.coral + '60';
-    return V1.coral + 'BB';
-  };
-
-  const dayLabels = ['M', '', 'W', '', 'F', '', ''];
-
-  return (
-    <View style={{
-      ...cardStyle(isDark),
-      padding: SPACING.cardPadding,
-      gap: 10,
-    }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-        <Calendar size={16} color={V1.coral} />
-        <Text style={{
-          fontFamily: BODY_FONT,
-          fontSize: 14,
-          fontWeight: '600',
-          color: t.text,
-        }}>
-          Activity (12 weeks)
-        </Text>
-      </View>
-
-      <View style={{ flexDirection: 'row', gap: 3 }}>
-        {/* Day labels */}
-        <View style={{ gap: 3, marginRight: 4, justifyContent: 'flex-start' }}>
-          {dayLabels.map((label, i) => (
-            <View key={i} style={{ height: 12, width: 14, justifyContent: 'center' }}>
-              <Text style={{
-                fontFamily: BODY_FONT,
-                fontSize: 9,
-                color: t.textMuted,
-              }}>
-                {label}
-              </Text>
-            </View>
-          ))}
-        </View>
-
-        {/* Weeks */}
-        {heatmapData.map((week, wIdx) => (
-          <View key={wIdx} style={{ gap: 3 }}>
-            {week.map((day, dIdx) => (
-              <View
-                key={`${wIdx}-${dIdx}`}
-                style={{
-                  width: 12,
-                  height: 12,
-                  borderRadius: 2,
-                  backgroundColor: getColor(day.count, day.isFuture),
-                }}
-                accessibilityLabel={
-                  day.isFuture
-                    ? 'Future day'
-                    : `${day.date}: ${day.count} tasks`
-                }
-              />
-            ))}
-          </View>
-        ))}
-      </View>
-
-      {/* Legend */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 4 }}>
-        <Text style={{ fontFamily: BODY_FONT, fontSize: 9, color: t.textMuted }}>Less</Text>
-        {[0, 1, 3, 6].map((count) => (
-          <View
-            key={count}
-            style={{
-              width: 10,
-              height: 10,
-              borderRadius: 2,
-              backgroundColor: getColor(count, false),
-            }}
-          />
-        ))}
-        <Text style={{ fontFamily: BODY_FONT, fontSize: 9, color: t.textMuted }}>More</Text>
-      </View>
-    </View>
-  );
-}
-
 export default function ProgressScreen() {
   return (
     <ScreenErrorBoundary screenName="progress">
@@ -826,7 +404,6 @@ function ProgressScreenContent() {
   const reducedMotion = useReducedMotion();
   const insets = useSafeAreaInsets();
   const { stats, rooms: rawRooms, setActiveRoom, isLoaded } = useDeclutter();
-  const { isPro } = useSubscription();
   const rooms = rawRooms ?? [];
 
   // Pull-to-refresh
@@ -841,7 +418,6 @@ function ProgressScreenContent() {
   const completedTasks = stats?.totalTasksCompleted ?? 0;
   const completedRooms = stats?.totalRoomsCleaned ?? 0;
   const totalMinutes = stats?.totalMinutesCleaned ?? 0;
-  const streakFreezes = stats?.streakFreezesAvailable ?? 0;
   const t = getTheme(isDark);
 
   // Compute weekly active days (Monday-first: index 0=Mon, 6=Sun)
@@ -946,7 +522,7 @@ function ProgressScreenContent() {
 
             {/* Streak card */}
             <Animated.View entering={enter(120)}>
-              <StreakCard isDark={isDark} streak={streak} bestThisMonth={bestThisMonth} streakFreezes={streakFreezes} />
+              <StreakCard isDark={isDark} streak={streak} bestThisMonth={bestThisMonth} />
             </Animated.View>
 
             {/* Stats grid with animated counters */}
@@ -963,64 +539,8 @@ function ProgressScreenContent() {
               </View>
             </Animated.View>
 
-            {/* Calendar heatmap */}
-            <Animated.View entering={enter(200)}>
-              <CalendarHeatmap isDark={isDark} />
-            </Animated.View>
-
-            {/* Streak freeze button */}
-            {streakFreezes > 0 && (
-              <Animated.View entering={enter(210)}>
-                <StreakFreezeSection isDark={isDark} streakFreezes={streakFreezes} streak={streak} />
-              </Animated.View>
-            )}
-
-            {/* Quick navigation strip */}
-            <Animated.View entering={enter(240)}>
-              <QuickNavStrip isDark={isDark} />
-            </Animated.View>
-
-            {/* Locked insights teaser for non-premium */}
-            {!isPro && (
-              <Animated.View entering={enter(260)}>
-                <Pressable
-                  onPress={() => {
-                    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    router.push('/paywall');
-                  }}
-                  style={({ pressed }) => [{ opacity: pressed ? 0.85 : 1 }]}
-                >
-                  <LinearGradient
-                    colors={isDark
-                      ? ['rgba(99,102,241,0.12)', 'rgba(99,102,241,0.04)']
-                      : ['rgba(99,102,241,0.08)', 'rgba(99,102,241,0.02)']
-                    }
-                    style={{
-                      borderRadius: RADIUS.lg,
-                      padding: 16,
-                      borderWidth: 1,
-                      borderColor: isDark ? 'rgba(99,102,241,0.2)' : 'rgba(99,102,241,0.15)',
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      gap: 12,
-                    }}
-                  >
-                    <Lock size={18} color={V1.indigo} />
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ fontFamily: BODY_FONT, fontSize: 14, fontWeight: '600', color: t.text }}>
-                        Unlock Deep Insights
-                      </Text>
-                      <Text style={{ fontFamily: BODY_FONT, fontSize: 12, color: t.textSecondary }}>
-                        AI-powered trends, weekly summaries & more
-                      </Text>
-                    </View>
-                  </LinearGradient>
-                </Pressable>
-              </Animated.View>
-            )}
-
             {/* Motivation card */}
-            <Animated.View entering={enter(280)}>
+            <Animated.View entering={enter(220)}>
               <MotivationCard isDark={isDark} message={motivationMessage} />
             </Animated.View>
           </>
@@ -1078,11 +598,6 @@ const styles = StyleSheet.create({
     padding: SPACING.cardPadding,
     gap: 8,
   },
-  streakHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
   streakTitle: {
     fontFamily: DISPLAY_FONT,
     fontSize: 22,
@@ -1104,26 +619,6 @@ const styles = StyleSheet.create({
     height: '100%',
     borderRadius: 3,
   },
-  freezeContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 10,
-    backgroundColor: 'rgba(100,181,246,0.08)',
-  },
-  freezeLabel: {
-    fontFamily: BODY_FONT,
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  freezeHint: {
-    fontFamily: BODY_FONT,
-    fontSize: 11,
-    fontWeight: '400',
-  },
-
   // Stats grid
   statsGrid: {
     gap: SPACING.itemGap,

@@ -128,7 +128,7 @@ function RoomCard({ room, freshness, freshnessValue, isStartHere, isDark, cardWi
 interface RoomGridProps {
   rooms: Room[];
   roomFreshness: RoomFreshness[];
-  startHereRoomId: string | null;
+  startHereRoomId?: string | null;
   isDark: boolean;
   reducedMotion: boolean;
   isPro: boolean;
