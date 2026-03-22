@@ -527,20 +527,6 @@ function AnalysisScreenContent() {
     }
   }, [analysisResult, isCreating, roomName, roomType, photoUri]);
 
-  const handleSeeAllTasks = useCallback(() => {
-    if (!analysisResult) return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    router.push({
-      pathname: '/task-customize',
-      params: {
-        photoUri: photoUri || '',
-        roomType: roomType || 'bedroom',
-        roomName: roomName || 'Room',
-        tasks: JSON.stringify(analysisResult.tasks),
-      },
-    });
-  }, [analysisResult, photoUri, roomType, roomName]);
-
   const handleBack = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     cancelledRef.current = true;
@@ -618,7 +604,6 @@ function AnalysisScreenContent() {
       onRetakePhoto={() => router.back()}
       onCreateRoom={handleCreateRoom}
       onCreateRoomWithTasks={handleCreateRoomWithTasks}
-      onSeeAllTasks={handleSeeAllTasks}
       onUseFallback={handleUseFallback}
     />
   );

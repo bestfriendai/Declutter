@@ -95,7 +95,6 @@ interface ResultsPhaseProps {
   onRetakePhoto: () => void;
   onCreateRoom: () => void;
   onCreateRoomWithTasks?: (selectedTaskIds: Set<string>) => void;
-  onSeeAllTasks: () => void;
   onUseFallback: () => void;
 }
 
@@ -117,7 +116,6 @@ export function ResultsPhase({
   onRetakePhoto,
   onCreateRoom,
   onCreateRoomWithTasks,
-  onSeeAllTasks,
   onUseFallback,
 }: ResultsPhaseProps) {
   const t = isDark ? V1.dark : V1.light;

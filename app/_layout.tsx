@@ -286,13 +286,10 @@ export default function RootLayout() {
                           <TransitionStack.Screen name="room/[id]" options={{ ...SlideFromRight() }} />
                           <TransitionStack.Screen name="settings" options={{ ...SlideFromRight() }} />
                           <TransitionStack.Screen name="achievements" options={{ ...SlideFromRight() }} />
-                          <TransitionStack.Screen name="task-customize" options={{ ...SlideFromRight() }} />
-                          <TransitionStack.Screen name="today-tasks" options={{ ...SlideFromRight() }} />
 
                           {/* -- Modals (slide from bottom) ------------------------- */}
                           <TransitionStack.Screen name="camera" options={{ ...ModalSlideUp(), gestureEnabled: true }} />
                           <TransitionStack.Screen name="blitz" options={{ ...ModalSlideUp(), gestureEnabled: false }} />
-                          <TransitionStack.Screen name="single-task" options={{ ...ModalSlideUp(), gestureEnabled: false }} />
 
                           {/* -- Danger screens ------------------------------------ */}
                           <TransitionStack.Screen name="delete-account" options={{ ...SlideFromRight() }} />
