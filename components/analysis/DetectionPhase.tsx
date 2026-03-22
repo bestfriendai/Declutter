@@ -3,8 +3,8 @@
  * Shows the room photo with real zone overlays, scan animation, and summary CTA.
  */
 
-import React, { useEffect, useMemo } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { LayoutChangeEvent, Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, {
   FadeIn,
   cancelAnimation,
@@ -84,24 +84,24 @@ function generateFallbackBoxes(
 
 // ── Scan Line ───────────────────────────────────────────────────────────────
 
-function ScanLine({ reducedMotion }: { reducedMotion: boolean }) {
+function ScanLine({ reducedMotion, containerHeight }: { reducedMotion: boolean; containerHeight: number }) {
   const progress = useSharedValue(0);
 
   useEffect(() => {
-    if (reducedMotion) return;
+    if (reducedMotion || containerHeight === 0) return;
     progress.value = withRepeat(
       withTiming(1, { duration: 2400, easing: Easing.inOut(Easing.ease) }),
       -1,
       true,
     );
     return () => cancelAnimation(progress);
-  }, [reducedMotion]);
+  }, [reducedMotion, containerHeight]);
 
   const lineStyle = useAnimatedStyle(() => ({
     position: 'absolute' as const,
     left: 0,
     right: 0,
-    top: `${progress.value * 100}%`,
+    top: progress.value * containerHeight,
     height: 2,
     backgroundColor: 'rgba(255,107,107,0.5)',
     shadowColor: V1.coral,
@@ -111,7 +111,7 @@ function ScanLine({ reducedMotion }: { reducedMotion: boolean }) {
     zIndex: 20,
   }));
 
-  if (reducedMotion) return null;
+  if (reducedMotion || containerHeight === 0) return null;
   return <Animated.View style={lineStyle} />;
 }
 
@@ -216,6 +216,12 @@ export function DetectionPhase({
   onBack,
   onContinue,
 }: DetectionPhaseProps) {
+  // Track photo container height for scan line animation
+  const [photoHeight, setPhotoHeight] = useState(0);
+  const handlePhotoLayout = (e: LayoutChangeEvent) => {
+    setPhotoHeight(e.nativeEvent.layout.height);
+  };
+
   // Highest-priority zone = the one with the most tasks
   const highestPriorityIndex = useMemo(() => {
     if (areas.length === 0) return -1;
@@ -263,7 +269,7 @@ export function DetectionPhase({
       </View>
 
       {/* Photo with bounding box overlays */}
-      <View style={styles.photoContainer}>
+      <View style={styles.photoContainer} onLayout={handlePhotoLayout}>
         {photoUri && (
           <Image
             source={{ uri: photoUri }}
@@ -278,7 +284,7 @@ export function DetectionPhase({
         <View style={styles.darkOverlay} />
 
         {/* Scan line animation */}
-        <ScanLine reducedMotion={reducedMotion} />
+        <ScanLine reducedMotion={reducedMotion} containerHeight={photoHeight} />
 
         {/* Zone bounding boxes */}
         {areasWithBoxes.map(({ area, box }, i) => (

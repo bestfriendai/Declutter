@@ -501,7 +501,7 @@ function AnalysisScreenContent() {
     } finally {
       setIsCreating(false);
     }
-  }, [analysisResult, isCreating, roomName, roomType, photoUri, isPro, rooms.length]);
+  }, [analysisResult, isCreating, isAnonymous, roomName, roomType, photoUri, isPro, rooms.length]);
 
   // Create room with only selected tasks (from inline customization)
   const handleCreateRoomWithTasks = useCallback(async (selectedTaskIds: Set<string>) => {
