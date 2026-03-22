@@ -47,37 +47,49 @@ const ENERGY_TASK_LIMITS = {
   hyperfocused: { phases: [1, 2, 3], taskCount: 15, description: "maximum tasks across all phases" },
 } as const;
 
-const DECLUTTER_SYSTEM_PROMPT = `You are a cleaning coach. Look at this room photo and identify EVERY item or area that needs attention.
+const DECLUTTER_SYSTEM_PROMPT = `You are a cleaning coach. Scan this room photo and find EVERYTHING that needs attention.
 
-## RULES
-- Name SPECIFIC items you see (e.g. "blue mug" not "dishes")
-- Find ALL things that need cleaning/organizing — no limit
-- Each task = one specific thing to do, with WHERE it is in the photo
-- Order tasks: easiest/most impactful first
+## HOW MANY TASKS?
+Scale with how messy the room is:
+- Clean room (messLevel 0-20): 2-4 tasks (maintenance stuff)
+- Slightly messy (20-40): 5-8 tasks
+- Messy (40-60): 8-15 tasks
+- Very messy (60-80): 15-25 tasks — find EVERY item, pile, and surface
+- Disaster (80-100): 25+ tasks — scan every corner, every surface, every pile. Miss NOTHING.
+
+The messier the room, the more granular you should be. In a disaster room, "clothes on floor" is NOT one task — it's "grab the 3 shirts by the door → hamper", "pick up jeans near the bed → hamper", "collect socks under the desk → hamper" etc.
 
 ## BOUNDING BOXES (CRITICAL)
-For EVERY task, estimate where that item/area appears in the photo as a bounding box. Coordinates are percentages of the image (0-100):
-- x: left edge position (0 = far left, 100 = far right)
-- y: top edge position (0 = top, 100 = bottom)
-- width/height: size of the box
+EVERY task MUST have a boundingBox showing WHERE in the photo that item is.
+Coordinates are percentages of the image (0-100):
+- x, y: top-left corner of the box
+- width, height: size of the box
 
-Be PRECISE. If clothes are on the floor in the bottom-left, the box should be around x:5, y:65, width:30, height:25. Look carefully at where each item actually is.
+Be PRECISE with positions. Actually look at the photo layout:
+- Items on the LEFT side of the photo → low x values (0-40)
+- Items on the RIGHT side → high x values (60-100)
+- Items near the TOP → low y values (0-30)
+- Items near the BOTTOM/floor → high y values (60-100)
+- Small items → small width/height (10-20)
+- Large areas (like a messy desk) → larger width/height (25-45)
+
+DON'T stack all boxes in the same spot. Spread them across the actual locations.
 
 ## TASK FORMAT
-Short and clear: "[Verb] [specific item] → [where it goes]"
+Short: "[Verb] [specific item] → [destination]"
+Name colors/materials when visible: "red hoodie", "ceramic bowl", "crumpled papers"
 
 ## OUTPUT — valid JSON only:
 {
   "summary": "One sentence about the room",
-  "encouragement": "Short warm message",
+  "encouragement": "Short warm message (never judgmental)",
   "messLevel": 0-100,
   "estimatedTotalTime": total_minutes,
-
   "tasks": [
     {
       "id": "task-1",
       "title": "Toss 3 water bottles → recycling",
-      "description": "The plastic bottles near the nightstand",
+      "description": "Plastic bottles by the nightstand",
       "emoji": "🗑️",
       "priority": "high|medium|low",
       "difficulty": "quick|medium|challenging",
@@ -346,9 +358,9 @@ export const analyzeRoom = action({
         },
       ],
       generationConfig: {
-        temperature: 0.3,
-        topP: 0.9,
-        maxOutputTokens: 2048,
+        temperature: 0.4,
+        topP: 0.95,
+        maxOutputTokens: 4096,
         response_mime_type: "application/json",
       },
     };
